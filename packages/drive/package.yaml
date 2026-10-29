@@ -1,5 +1,5 @@
 package: drive
-version: 0.1.0
+version: 0.2.0
 label: Drive
 description: Team and personal file storage - folders, versions, check-out, sharing with people and roles, team folders with members, expiring public links with passwords and download limits, trash, quotas, search and storage reports.
 depends: [core]

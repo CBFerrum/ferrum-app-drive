@@ -411,7 +411,7 @@ async fn active_link(tx: &mut Tx, tenant: Uuid, token: &str) -> Result<(Link, It
 }
 
 /// The per-tenant key signing unlock grants (created on first use; never in any entity).
-async fn tenant_key(tx: &mut Tx, tenant: Uuid) -> Result<Vec<u8>> {
+pub(crate) async fn tenant_key(tx: &mut Tx, tenant: Uuid) -> Result<Vec<u8>> {
     let existing: Option<Vec<u8>> = sqlx::query_scalar("select secret from drive_secret where tenant_id = $1").bind(tenant).fetch_optional(&mut **tx).await?;
     if let Some(k) = existing {
         return Ok(k);
