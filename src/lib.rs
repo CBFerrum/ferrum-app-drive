@@ -18,6 +18,7 @@ mod acl;
 mod content;
 mod files;
 mod hooks;
+mod office;
 mod ops;
 mod reports;
 mod sharing;

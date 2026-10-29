@@ -20,6 +20,36 @@ Workspace administrators install it from **Apps** in Ferrum; it ships in the off
 server image. Self-hosters building their own image enable the `drive` feature of the server.
 Everything it adds is also available to AI agents over Ferrum's MCP server.
 
+## Online editing
+
+Documents, spreadsheets and presentations open in an editor server that the operator runs:
+Collabora Online, or ONLYOFFICE Docs in WOPI mode. The editor reads and saves files over WOPI, with
+the person's own Drive rights. Every save becomes a new version: autosaves, explicit saves and the
+save when the last person leaves.
+
+* `FERRUM_OFFICE_URL`: the editor server as Ferrum reaches it. Ferrum reads
+  `<url>/hosting/discovery`, and private addresses are allowed.
+* `FERRUM_OFFICE_WOPI_URL`: Ferrum as the editor server reaches it. It becomes
+  `WOPISrc=<url>/api/site/<workspace>/drive/wopi/files/<file>`.
+* `FERRUM_OFFICE_IPS` (optional): the only addresses WOPI calls are accepted from.
+* The web app's `FERRUM_OFFICE_ORIGIN`: the editor's origin, which the app may frame and post to.
+
+Collabora needs to know Ferrum and the web app:
+* `aliasgroup1=<FERRUM_OFFICE_WOPI_URL>` lets Ferrum be its WOPI host.
+* `--o:net.frame_ancestors=<web app origin>` lets the app frame it.
+
+Tokens last ten hours and are bound to the workspace, the file and the person. Locks lapse 30
+minutes after their last refresh. A file is saved only by the session holding its lock, and an
+empty file can be filled without one.
+
+The stock Collabora image publishes no proof key, so proof signatures are not checked. Use the
+token, `FERRUM_OFFICE_IPS` and network policy to keep the WOPI endpoints to the editor server.
+Saves are limited by Drive's upload limit (at most 32 MB).
+
+`POST /api/app/drive/new?kind=docx|xlsx|pptx|odt|ods|odp&folder=<id>` makes a blank file for the
+editor to fill. `POST /api/app/drive/editor/<file>` returns the editor page and the token to post
+to it.
+
 ## Develop
 
 Clone it next to the platform and point the platform dependencies at your checkout (this file

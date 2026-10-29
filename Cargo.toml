@@ -28,7 +28,7 @@ rand = "0.9"
 sha2 = "0.10"
 
 [dev-dependencies]
-tokio = { version = "1.45", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+tokio = { version = "1.45", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net", "io-util"] }
 
 [lints.clippy]
 # Deliberate patterns shared with the platform: sqlx row tuples, index-based maths, engine entry points.
