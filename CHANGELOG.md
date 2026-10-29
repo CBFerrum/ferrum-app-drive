@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- WOPI proof keys: when the editor server publishes a proof key, every WOPI call must carry a valid
+  proof signature over its token, URL and time (current or previous key, at most 20 minutes old).
+  Unsigned calls are refused. Checked against Collabora Online 26.04 with a mounted key.
+
 ## 0.2.0
 
 - Online editing: an editor server the operator runs (Collabora Online, or ONLYOFFICE Docs in WOPI
