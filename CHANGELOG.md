@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0
+
+- Online editing: an editor server the operator runs (Collabora Online, or ONLYOFFICE Docs in WOPI
+  mode, set with `FERRUM_OFFICE_URL` and `FERRUM_OFFICE_WOPI_URL`) opens Drive files with the
+  person's own rights and saves every change as a new version. `POST /editor/{file}` returns the
+  editor page and a token bound to the workspace, the file, the person and ten hours. The WOPI
+  endpoints (`/api/site/{tenant}/drive/wopi/files/{file}`) lock the file while it is open, accept
+  saves only from the session holding the lock, and can be limited to the editor's addresses
+  (`FERRUM_OFFICE_IPS`). `POST /new?kind=docx|xlsx|pptx|odt|ods|odp` makes a blank document for
+  the editor to fill.
+
 ## 0.1.0
 
 - First release. Drive gives every person a space and teams shared folders with members and quotas.

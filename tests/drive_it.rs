@@ -966,4 +966,121 @@ async fn scenario() {
     let active: Vec<&str> = public["rows"].as_array().unwrap().iter().map(|r| r["item"].as_str().unwrap()).collect();
     assert_eq!(active, ["Secret", "Secret"], "the capped, expired and revoked links are not active; the two Secret links are");
     t.consistent().await;
+
+    // ── online editing over WOPI (src/office.rs) ──
+    let err = t.site(Some(&alice.ctx), "POST", "/editor/00000000-0000-0000-0000-000000000000", &[], &[], vec![]).await.unwrap_err();
+    assert!(err.to_string().contains("not set up"), "{err}");
+    let editor = fake_editor().await;
+    // SAFETY: the scenario is this binary's only test; nothing else reads the environment now.
+    unsafe {
+        std::env::set_var("FERRUM_OFFICE_URL", &editor);
+        std::env::set_var("FERRUM_OFFICE_WOPI_URL", "http://ferrum.test/");
+        std::env::remove_var("FERRUM_OFFICE_IPS");
+    }
+    let doc = uid(&t.upload(&alice, alice.root, "plan.docx", b"PK first version").await);
+    let opened = t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.unwrap());
+    assert_eq!(opened["action"], json!("edit"));
+    let url = opened["url"].as_str().unwrap();
+    assert!(url.starts_with("http://office.test/browser/x/cool.html?WOPISrc=http%3A%2F%2Fferrum.test%2Fapi%2Fsite%2Facme%2Fdrive%2Fwopi%2Ffiles%2F"), "{url}");
+    assert!(url.ends_with(&doc.to_string()), "{url}");
+    let token = opened["access_token"].as_str().unwrap().to_string();
+    assert!(opened["access_token_ttl"].as_i64().unwrap() > chrono::Utc::now().timestamp_millis());
+
+    let wopi = |file: Uuid, tail: &'static str, method: &'static str, token: String, headers: Vec<(&'static str, String)>, body: Vec<u8>| {
+        let t = &t;
+        async move {
+            let headers: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            t.site(None, method, &format!("/wopi/files/{file}{tail}"), &[("access_token", token.as_str())], &headers, body).await.unwrap()
+        }
+    };
+    let info = wopi(doc, "", "GET", token.clone(), vec![], vec![]).await;
+    assert_eq!(info.status, 200);
+    let info = t.json(info);
+    assert_eq!((info["BaseFileName"].clone(), info["Size"].clone(), info["UserCanWrite"].clone()), (json!("plan.docx"), json!(16), json!(true)));
+    assert_eq!(info["SupportsLocks"], json!(true));
+    let got = wopi(doc, "/contents", "GET", token.clone(), vec![], vec![]).await;
+    assert_eq!((got.status, got.body.as_slice()), (200, &b"PK first version"[..]));
+    assert_eq!(header(&got, "X-WOPI-ItemVersion"), Some("1"));
+
+    let put = |lock: Option<&str>, body: &'static [u8]| {
+        let mut h = vec![("x-wopi-override", "PUT".to_string())];
+        if let Some(l) = lock {
+            h.push(("x-wopi-lock", l.to_string()));
+        }
+        wopi(doc, "/contents", "POST", token.clone(), h, body.to_vec())
+    };
+    let op = |name: &'static str, lock: &'static str| {
+        wopi(doc, "", "POST", token.clone(), vec![("x-wopi-override", name.into()), ("x-wopi-lock", lock.into())], vec![])
+    };
+    assert_eq!(put(None, b"PK no lock").await.status, 409, "a file with content is saved under a lock");
+    assert_eq!(op("LOCK", "L1").await.status, 200);
+    let taken = op("LOCK", "L2").await;
+    assert_eq!((taken.status, header(&taken, "X-WOPI-Lock")), (409, Some("L1")));
+    assert_eq!(header(&op("GET_LOCK", "").await, "X-WOPI-Lock"), Some("L1"));
+    assert_eq!(put(Some("L2"), b"PK wrong lock").await.status, 409);
+    let saved = put(Some("L1"), b"PK second version").await;
+    assert_eq!((saved.status, header(&saved, "X-WOPI-ItemVersion")), (200, Some("2")));
+    let versions = t.ok(&alice, "list_versions", json!({"file": doc})).await;
+    assert_eq!(versions["versions"].as_array().map(Vec::len), Some(2), "{versions}");
+    assert_eq!(wopi(doc, "/contents", "GET", token.clone(), vec![], vec![]).await.body, b"PK second version");
+    assert_eq!(op("REFRESH_LOCK", "L1").await.status, 200);
+    assert_eq!(op("UNLOCK", "L2").await.status, 409);
+    assert_eq!(op("UNLOCK", "L1").await.status, 200);
+    assert_eq!(header(&op("GET_LOCK", "").await, "X-WOPI-Lock"), Some(""));
+
+    // Tokens: only genuine, for this file, workspace and person.
+    let other = uid(&t.upload(&alice, alice.root, "other.docx", b"PK other").await);
+    assert_eq!(wopi(other, "", "GET", token.clone(), vec![], vec![]).await.status, 401, "another file");
+    let forged = format!("{}x", &token[..token.len() - 1]);
+    assert_eq!(wopi(doc, "", "GET", forged, vec![], vec![]).await.status, 401);
+    assert_eq!(wopi(doc, "", "GET", String::new(), vec![], vec![]).await.status, 401);
+
+    // Bob sees nothing of Alice's until she shares; then he may read but not save or lock.
+    let hidden = t.site(Some(&bob.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.unwrap_err();
+    assert_eq!(hidden.to_string(), "Drive item not found");
+    t.ok(&alice, "share", json!({"item": doc, "email": "bob@acme.test", "permission": "View"})).await;
+    let bobs = t.json(t.site(Some(&bob.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.unwrap());
+    let bob_token = bobs["access_token"].as_str().unwrap().to_string();
+    assert_eq!(t.json(wopi(doc, "", "GET", bob_token.clone(), vec![], vec![]).await)["UserCanWrite"], json!(false));
+    let bob_lock = wopi(doc, "", "POST", bob_token.clone(), vec![("x-wopi-override", "LOCK".into()), ("x-wopi-lock", "B".into())], vec![]).await;
+    assert_eq!(bob_lock.status, 404, "no edit right: answered like a missing file");
+
+    // A blank spreadsheet, filled by its first save without a lock (it is empty).
+    let blank = t.json(t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "xlsx"), ("folder", &alice.root.to_string())], &[], vec![]).await.unwrap());
+    assert_eq!(blank["name"], json!("Untitled.xlsx"));
+    let sheet = uid(&blank);
+    let sheet_token =
+        t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{sheet}"), &[], &[], vec![]).await.unwrap())["access_token"].as_str().unwrap().to_string();
+    let first = wopi(sheet, "/contents", "POST", sheet_token, vec![("x-wopi-override", "PUT".into())], b"PK sheet".to_vec()).await;
+    assert_eq!(first.status, 200);
+    let bad_kind = t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "exe")], &[], vec![]).await.unwrap_err();
+    assert!(bad_kind.to_string().contains("kind must be"), "{bad_kind}");
+
+    // Only from the editor's addresses, when the operator lists them.
+    unsafe { std::env::set_var("FERRUM_OFFICE_IPS", "10.9.9.9") };
+    assert_eq!(wopi(doc, "", "GET", token.clone(), vec![], vec![]).await.status, 403);
+    unsafe { std::env::remove_var("FERRUM_OFFICE_IPS") };
+    t.consistent().await;
+}
+
+/// An editor server that only answers discovery: Writer for docx, Calc for xlsx.
+async fn fake_editor() -> String {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    const XML: &str = r#"<wopi-discovery><net-zone name="external-http">
+<app name="writer"><action default="true" ext="docx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
+<app name="calc"><action default="true" ext="xlsx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
+</net-zone></wopi-discovery>"#;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut s, _)) = listener.accept().await {
+            tokio::spawn(async move {
+                let mut buf = [0u8; 4096];
+                let _ = s.read(&mut buf).await;
+                let reply = format!("HTTP/1.1 200 OK\r\ncontent-type: text/xml\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{XML}", XML.len());
+                let _ = s.write_all(reply.as_bytes()).await;
+            });
+        }
+    });
+    format!("http://{addr}")
 }

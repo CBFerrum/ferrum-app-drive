@@ -1,6 +1,8 @@
 //! HTTP endpoints. Signed in (`/api/app/drive/...`, Drive users): the caller's space, the
-//! read-only actions as `GET /{action}`, raw-body uploads (new files and versions) and downloads.
-//! Public (`/api/site/{tenant}/drive/...`): public links, see [`crate::sharing`].
+//! read-only actions as `GET /{action}`, raw-body uploads (new files and versions), downloads, new
+//! blank documents and the editor page of a file ([`crate::office`]). Public
+//! (`/api/site/{tenant}/drive/...`): public links ([`crate::sharing`]) and the WOPI endpoints the
+//! editor server calls.
 
 use crate::acl::Grants;
 use crate::files::{self, Content, OnConflict};
@@ -24,6 +26,7 @@ impl Site for DriveSite {
     async fn handle(&self, k: &Kernel, req: SiteRequest) -> Result<SiteResponse> {
         let path: Vec<&str> = req.path.split('/').filter(|p| !p.is_empty()).collect();
         match &req.user {
+            None if path.first() == Some(&"wopi") => crate::office::wopi(k, &req, &path).await,
             None => crate::sharing::public(k, &req, &path).await,
             Some(ctx) => app(k, ctx, &req, &path).await,
         }
@@ -52,11 +55,22 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             })
             .await?
         }
-        ("POST", ["upload"]) => {
+        ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view")).await?,
+        // A blank document, spreadsheet or presentation (the editor fills in an empty file).
+        ("POST", [verb @ ("upload" | "new")]) => {
             let space = tree::ensure_space(k, ctx).await?;
             let folder = p.uuid("folder")?.unwrap_or(space.root);
-            let on = OnConflict::parse(p.str("on_conflict"))?;
-            let c = Content::new(p.req("name")?, &req.body);
+            let (name, on) = if *verb == "new" {
+                let kind = p.req("kind")?;
+                if !["docx", "xlsx", "pptx", "odt", "ods", "odp"].contains(&kind) {
+                    return Err(Error::invalid(format!("kind must be docx, xlsx, pptx, odt, ods or odp, not {kind}")));
+                }
+                (format!("{}.{kind}", p.str("name").filter(|n| !n.trim().is_empty()).unwrap_or("Untitled")), OnConflict::KeepBoth)
+            } else {
+                (p.req("name")?.to_string(), OnConflict::parse(p.str("on_conflict"))?)
+            };
+            let body: &[u8] = if *verb == "new" { &[] } else { &req.body };
+            let c = Content::new(&name, body);
             let mut tx = k.db.tenant_tx(ctx.tenant).await?;
             let g = Grants::load(&mut tx, ctx).await?;
             files::check_upload(&mut tx, ctx, &g, folder, &c, on).await?;
