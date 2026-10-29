@@ -1,0 +1,37 @@
+package: drive
+version: 0.1.0
+label: Drive
+description: Team and personal file storage - folders, versions, check-out, sharing with people and roles, team folders with members, expiring public links with passwords and download limits, trash, quotas, search and storage reports.
+depends: [core]
+
+modules:
+  - name: drive
+    label: Drive
+    icon: hard-drive
+    order: 47
+    items: [DriveSpace, DriveFolder, DriveFile, DriveFileVersion, DriveShare, DriveLink, DriveActivity, DriveComment, DriveSettings,
+            report:drive_storage_by_user, report:drive_storage_by_team, report:drive_storage_by_type, report:drive_largest_files, report:drive_shared_externally]
+
+roles:
+  - name: Drive User
+    description: >-
+      Uses Drive: a personal space, the team folders they belong to and whatever is shared with them. Every operation is an action on
+      their own Drive Space, checked against Drive's sharing rules; folders, files and their records stay hidden from the generic API.
+    permissions:
+      - {entity: DriveSpace, read: true, create: true, if_owner: true}
+      - {entity: DriveSettings, read: true}
+  - name: Drive Administrator
+    description: >-
+      Manages Drive: settings, quotas, team folders, and full access to every space, folder, file, share, link, comment and activity record;
+      runs the storage reports.
+    permissions:
+      - {entity: DriveSettings, read: true, write: true, create: true}
+      - {entity: DriveSpace, read: true, write: true, create: true, export: true}
+      - {entity: DriveFolder, read: true, export: true}
+      - {entity: DriveFile, read: true, export: true}
+      - {entity: DriveFileVersion, read: true, export: true}
+      - {entity: DriveShare, read: true, export: true}
+      - {entity: DriveLink, read: true, export: true}
+      - {entity: DriveActivity, read: true, export: true}
+      - {entity: DriveComment, read: true, export: true}
+      - {entity: DriveStar, read: true}
