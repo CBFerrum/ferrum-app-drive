@@ -42,9 +42,12 @@ Tokens last ten hours and are bound to the workspace, the file and the person. L
 minutes after their last refresh. A file is saved only by the session holding its lock, and an
 empty file can be filled without one.
 
-The stock Collabora image publishes no proof key, so proof signatures are not checked. Use the
-token, `FERRUM_OFFICE_IPS` and network policy to keep the WOPI endpoints to the editor server.
-Saves are limited by Drive's upload limit (at most 32 MB).
+When the editor publishes a proof key in its discovery, every WOPI call must carry a valid proof
+signature (current or previous key, at most 20 minutes old), so a token alone opens nothing. The
+stock Collabora image publishes no key until one is mounted, and Collabora can make one:
+`ssh-keygen -t rsa -N "" -m PEM -f proof_key`, mounted at `/etc/coolwsd/proof_key`. Without a key,
+keep the WOPI endpoints to the editor with `FERRUM_OFFICE_IPS` or network policy. Saves are limited
+by Drive's upload limit (at most 32 MB).
 
 `POST /api/app/drive/new?kind=docx|xlsx|pptx|odt|ods|odp&folder=<id>` makes a blank file for the
 editor to fill. `POST /api/app/drive/editor/<file>` returns the editor page and the token to post

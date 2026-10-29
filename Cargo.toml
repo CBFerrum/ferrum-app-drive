@@ -25,6 +25,7 @@ chrono-tz = { version = "0.10", default-features = false }
 hex = "0.4"
 hmac = "0.12"
 rand = "0.9"
+ring = "0.17"
 sha2 = "0.10"
 
 [dev-dependencies]
