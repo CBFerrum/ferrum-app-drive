@@ -6,16 +6,16 @@
 //! The operator turns it on with `FERRUM_OFFICE_URL` (the editor server as this server reaches it,
 //! for `/hosting/discovery`) and `FERRUM_OFFICE_WOPI_URL` (this server as the editor server reaches
 //! it). `FERRUM_OFFICE_IPS`, when set, lists the only addresses WOPI calls are accepted from.
-//
-// ponytail: WOPI proof signatures are not checked (the stock Collabora image publishes no proof
-// key); the token and FERRUM_OFFICE_IPS guard the endpoints. Add the check once SiteRequest keeps
-// the raw URL the signature covers.
+//!
+//! When the editor publishes a proof key in its discovery, every WOPI call must carry a valid
+//! proof signature over its token, URL and time ([`proof_valid`]), so a stolen token alone opens
+//! nothing. The stock Collabora image publishes none until a key is mounted (`proof_key`).
 
 use crate::acl::{Grants, Level};
 use crate::files::{self, Content};
 use crate::tree::{self, Item, Kind};
 use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use ferrum_kernel::{Ctx, Error, Kernel, Result, SiteRequest, SiteResponse, Tx};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
@@ -49,11 +49,16 @@ fn config() -> Option<Config> {
 #[derive(Debug, Default)]
 pub struct Discovery {
     actions: BTreeMap<(String, String), String>,
+    /// The proof key (modulus, exponent), and the one it replaced.
+    proof: Option<(Vec<u8>, Vec<u8>)>,
+    old_proof: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl Discovery {
     pub fn parse(xml: &str) -> Discovery {
         let mut actions = BTreeMap::new();
+        let key = |a: &BTreeMap<String, String>, m: &str, e: &str| Some((STANDARD.decode(a.get(m)?).ok()?, STANDARD.decode(a.get(e)?).ok()?));
+        let proof = xml.split('<').find_map(|t| t.strip_prefix("proof-key ")).map(attributes);
         for tag in xml.split('<').filter_map(|t| t.strip_prefix("action ")) {
             let a = attributes(tag);
             if let (Some(ext), Some(name), Some(src)) = (a.get("ext"), a.get("name"), a.get("urlsrc")) {
@@ -62,7 +67,11 @@ impl Discovery {
                 actions.entry((ext.to_ascii_lowercase(), name.clone())).or_insert(src);
             }
         }
-        Discovery { actions }
+        Discovery {
+            actions,
+            proof: proof.as_ref().and_then(|a| key(a, "modulus", "exponent")),
+            old_proof: proof.as_ref().and_then(|a| key(a, "oldmodulus", "oldexponent")),
+        }
     }
 
     /// The editor page for files with extension `ext`: editing when wanted and offered, else viewing.
@@ -113,6 +122,39 @@ async fn discovery(k: &Kernel, cfg: &Config) -> Result<Arc<Discovery>> {
     }
     *DISCOVERY.lock().unwrap_or_else(|e| e.into_inner()) = Some((cfg.office.clone(), Instant::now(), d.clone()));
     Ok(d)
+}
+
+/// What a WOPI proof signs: the token, the URL in upper case and the time (.NET ticks), each after
+/// its length.
+fn proof_message(token: &str, url: &str, ticks: i64) -> Vec<u8> {
+    let url = url.to_uppercase();
+    let mut m = Vec::with_capacity(token.len() + url.len() + 20);
+    for part in [token.as_bytes(), url.as_bytes()] {
+        m.extend((part.len() as i32).to_be_bytes());
+        m.extend(part);
+    }
+    m.extend(8i32.to_be_bytes());
+    m.extend(ticks.to_be_bytes());
+    m
+}
+
+fn signed_by(key: &(Vec<u8>, Vec<u8>), message: &[u8], proof: &str) -> bool {
+    let Ok(sig) = STANDARD.decode(proof.trim()) else { return false };
+    ring::signature::RsaPublicKeyComponents { n: &key.0, e: &key.1 }.verify(&ring::signature::RSA_PKCS1_2048_8192_SHA256, message, &sig).is_ok()
+}
+
+/// Whether a WOPI call comes from the editor (MS-WOPI proof keys). Its `X-WOPI-Proof` must verify
+/// with the current key, its `X-WOPI-ProofOld` with the current key, or its `X-WOPI-Proof` with the
+/// old one (keys rotate), and its time be within 20 minutes. Editors publishing no key pass.
+pub fn proof_valid(d: &Discovery, token: &str, url: &str, ticks: Option<&str>, proof: Option<&str>, proof_old: Option<&str>, now: i64) -> bool {
+    let Some(key) = &d.proof else { return true };
+    let Some(ticks) = ticks.and_then(|t| t.trim().parse::<i64>().ok()) else { return false };
+    if (now - (ticks / 10_000_000 - 62_135_596_800)).abs() > 20 * 60 {
+        return false;
+    }
+    let m = proof_message(token, url, ticks);
+    proof.is_some_and(|p| signed_by(key, &m, p) || d.old_proof.as_ref().is_some_and(|old| signed_by(old, &m, p)))
+        || proof_old.is_some_and(|p| signed_by(key, &m, p))
 }
 
 fn token_mac(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64) -> Result<Hmac<Sha256>> {
@@ -207,10 +249,19 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let key = crate::sharing::tenant_key(&mut tx, req.tenant).await?;
     tx.commit().await?;
-    let Some(user) = verify(&key, req.tenant, file, token, chrono::Utc::now().timestamp()) else { return Ok(status(401)) };
+    let now = chrono::Utc::now().timestamp();
+    let Some(user) = verify(&key, req.tenant, file, token, now) else { return Ok(status(401)) };
+    let header = |name: &str| req.headers.get(name).and_then(Value::as_str);
+    // The URL as the editor called it: this server's address for it, then the path and query
+    // exactly as received (the server passes them as x-ferrum-uri).
+    let url = format!("{}{}", cfg.wopi, header("x-ferrum-uri").unwrap_or_default());
+    let d = discovery(k, &cfg).await?;
+    if !proof_valid(&d, token, &url, header("x-wopi-timestamp"), header("x-wopi-proof"), header("x-wopi-proofold"), now) {
+        tracing::warn!(tenant = %req.tenant, %file, "WOPI call refused: no valid proof signature");
+        return Ok(status(500));
+    }
     // A deactivated person's tokens stop working with their account.
     let Ok(ctx) = k.load_ctx(req.tenant, user, None, format!("wopi-{}", Uuid::now_v7())).await else { return Ok(status(401)) };
-    let header = |name: &str| req.headers.get(name).and_then(Value::as_str);
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let g = Grants::load(&mut tx, &ctx).await?;
     let out = match (req.method.as_str(), contents, header("x-wopi-override").unwrap_or_default()) {
@@ -374,6 +425,38 @@ mod tests {
         assert_eq!(d.page("docx", false), Some(("edit", "http://office:9980/browser/42745e44dd/cool.html?")), "no view action: the editor");
         assert_eq!(d.page("pdf", true), Some(("view", "https://ms.example/wv/wordviewerframe.aspx?")), "placeholders dropped, entities read");
         assert_eq!(d.page("png", true), None);
+    }
+
+    // Two 2048-bit RSA keys and their signatures over one proof (made with OpenSSL).
+    const CUR_MODULUS: &str = "njVeFnIdgNoAytImKQjZ4cPy6oUT3dowSkpC3TBz43stPyniV5X8AO2cWtd+WylbAJ/wI9Bm8UWrPCRCbxzO0QLjiNGsJ+LUEawou9/FY6BYFAdb4IqdDusp5ErsEY3x5yDO35rJ9cwqfbehtT1L2KY0ra5D064CazxvagsijqJC8Lq8l62+EE50EtXY4RdK8ApQ/yoIPmU+pRoaAzVQecrv8/l1uVMV+Rw+Yb0SJxZ27GrZuqCoO6TZF/7mdjk9wOkfCf5w0FtYmp9YAxRR/nLklIYbVp5IdCpav4eMW0SWK64R7Rq1bcMhjqOJ2mH+2cU8ZIdxa3pZGdcWkiDIHw==";
+    const CUR_SIG: &str = "MgIcG0cWRXKCbSqaY+O/qGeArj1UDho3zP3kOGknP6ou8ocAe6uwdZ9xSqt4Ew4fa2KXNz2C8JGGulnAPMwHuHyuZECWVxbRlQRkXzvOgHGWqlsWBttkjXSwExOaSzlMfPepj9T328CYDWJfHg0XNP+32gBNKGRgsR/1l3yCCni3rCli8eeeKDYWiKIiheBPToIHjH2WVOIv9OWB4Lt5T6Yd+VJ4Tmocl9KMy++Y098d1bQNVjzGSvGndsqMPVDyrWPNb90aaDoha28v0ED2De882aV2vXQzRI92ldc8PzdqmzOGu+hekjtMtxVjeLC6/sRmubF9NzxsbnKZ4O90uw==";
+    const OLD_MODULUS: &str = "iFcN/qJXDtMHwCgfpGVAu/Nwp3S2VCbSrJglOgm9evly7pdAZTuwG+dtVI4NFDYmfsnL328MBCvXBzjL+Du0iMNvvvKH5D914IoutQHweChsxgP8sY94vLvEUHRQQSai7AYI7Ui9kZmHQEu5akWfeJuNwRmhFlDxXG0wpAk1pGijad2PHSLK9nl4KcPA+IrZgfhm9hmDJixqOzwyEdyaZGLLSwCTDdLJH+ZhsVB6NhIN00EIQU5I97zIymQ/opNvF1ymnt6rJw6RowyBVrq6cSuZ7ywdkRzG+7w/rntP/6CAbHW5bZhrPzDa9ZpkX0kxEeoCfB9dWZ1SJX+9Gu2sUw==";
+    const OLD_SIG: &str = "ZhUSpfQan+AwruBo6Mi/m6/QybudX+ty7El1MwEceC3ITfN9nwXR1xDqMG+gj96AC3Xh6H5xVWL52KIXEhfA5HX+uhWXjjyq9ahh+YQMF+waw8RbILUA66WO0c38wJooySoJw9smNTDyLyjPOqMcuDe17ff/9Mro650I0N7oOZsHxrA4FEEqr1gCHgZJSvGFvP5tNdI/UB1aRCtmRAdGxQTRf74u3+JO5kGt41x4bX3x7Q6RcsUGQC3WvwDZyIQTyvJV1WD/dG1fU6mhKvS4nNHQYP8MQ8cFcqgxxKWGAL30c/QF4Qw+zHdwhYWG89LZiDJ1qsGRRXz5W+EX/xlefA==";
+    const URL: &str = "http://ferrum.test/api/site/acme/drive/wopi/files/0190f2b4-0000-7000-8000-000000000001?access_token=tok";
+    const TICKS: &str = "638655000000000000";
+    const AT: i64 = 1_729_903_200; // TICKS as Unix time
+
+    #[test]
+    fn proofs_are_checked_when_the_editor_publishes_a_key() {
+        let xml = |old: bool| {
+            let old = if old { format!(r#" oldmodulus="{OLD_MODULUS}" oldexponent="AQAB""#) } else { String::new() };
+            format!(r#"<wopi-discovery><proof-key value="x" modulus="{CUR_MODULUS}" exponent="AQAB"{old}/>{COLLABORA}</wopi-discovery>"#)
+        };
+        let d = Discovery::parse(&xml(true));
+        assert!(d.page("docx", true).is_some());
+        let ok = |d: &Discovery, url: &str, proof: Option<&str>, old: Option<&str>, now: i64| proof_valid(d, "tok", url, Some(TICKS), proof, old, now);
+        assert!(ok(&d, URL, Some(CUR_SIG), None, AT + 60));
+        assert!(ok(&d, &URL.to_uppercase(), Some(CUR_SIG), None, AT), "the URL is compared in upper case");
+        assert!(ok(&d, URL, Some(OLD_SIG), None, AT), "signed with the old key during a rotation");
+        assert!(ok(&d, URL, Some("bad"), Some(CUR_SIG), AT), "the proof made with the previous key");
+        assert!(!ok(&d, URL, None, None, AT), "a key is published: unsigned calls fail");
+        assert!(!ok(&d, &URL.replace("tok", "other"), Some(CUR_SIG), None, AT), "another URL");
+        assert!(!ok(&d, URL, Some(CUR_SIG), None, AT + 21 * 60), "too old");
+        assert!(!proof_valid(&d, "other", URL, Some(TICKS), Some(CUR_SIG), None, AT), "another token");
+        assert!(!proof_valid(&d, "tok", URL, None, Some(CUR_SIG), None, AT), "no time");
+        let no_old = Discovery::parse(&xml(false));
+        assert!(!ok(&no_old, URL, Some(OLD_SIG), None, AT), "the old key is no longer published");
+        assert!(proof_valid(&Discovery::parse(COLLABORA), "tok", URL, None, None, None, AT), "no key published: nothing to check");
     }
 
     #[test]
