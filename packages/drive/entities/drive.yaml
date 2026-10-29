@@ -1,0 +1,251 @@
+- name: DriveSettings
+  label: Drive Settings
+  label_plural: Drive Settings
+  kind: settings
+  module: drive
+  description: "Upload limits, default quotas, trash retention, version history and public-link policy for the whole workspace."
+  fields:
+    - {name: max_upload_mb, type: int, label: Largest Upload (MB), default: 25, min: 1, max: 32, required: true,
+       description: "Largest file accepted per upload or new version; the server accepts at most 32 MB per request"}
+    - {name: user_quota_mb, type: int, label: Personal Quota (MB), default: 5120, min: 0, required: true,
+       description: "Storage of a new personal space, including versions and trash; 0 = unlimited. Change a person's quota on their Drive Space"}
+    - {name: team_quota_mb, type: int, label: Team Folder Quota (MB), default: 51200, min: 0, required: true,
+       description: "Storage of a new team folder; 0 = unlimited"}
+    - {name: trash_days, type: int, label: Keep Trash (Days), default: 30, min: 1, max: 3650, required: true,
+       description: "Items in the trash longer than this are deleted for good, with their stored files"}
+    - {name: max_versions, type: int, label: Versions Kept per File, default: 100, min: 0, max: 10000, required: true,
+       description: "Older versions beyond this many are removed when a new one arrives; 0 = keep every version"}
+    - {name: allow_public_links, type: check, default: true, description: "Allow anyone with a link to open shared files and folders without signing in"}
+    - {name: max_link_days, type: int, label: Public Links Expire Within (Days), default: 0, min: 0, max: 3650, required: true,
+       description: "Every public link must expire within this many days; 0 = links may never expire"}
+    - {name: link_password_required, type: check, description: "Public links must have a password"}
+  form:
+    - {label: Uploads and Storage, fields: [max_upload_mb, user_quota_mb, team_quota_mb, max_versions, trash_days]}
+    - {label: Public Links, fields: [allow_public_links, max_link_days, link_password_required]}
+
+- name: DriveSpace
+  label: Drive Space
+  kind: master
+  module: drive
+  title_field: owner
+  search_fields: [owner, full_name]
+  owner_fields: [owner]
+  description: >-
+    A person's Drive: their personal folders and quota. Every Drive operation is an action on your own space (create it with an empty
+    record if you have none); actions name the folders and files they work on in their parameters and are checked against Drive's
+    sharing rules: your own folders, team folders you belong to, and items shared with you or your roles.
+  fields:
+    - {name: owner, type: email, required: true, unique: true, in_list: true, description: "The person this space belongs to (empty: you)"}
+    - {name: full_name, type: data, read_only: true, in_list: true}
+    - {name: quota_mb, type: int, label: Quota (MB), min: 0, in_list: true, description: "Storage including versions and trash; 0 = unlimited (empty: the workspace default)"}
+    - {name: used_bytes, type: int, label: Used (Bytes), default: 0, read_only: true, in_list: true}
+    - {name: root_folder, type: link, to: DriveFolder, label: My Folders, read_only: true}
+  actions:
+    - {name: list_folder, label: List Folder, permission: read}
+    - {name: search, label: Search, permission: read}
+    - {name: recent, label: Recent Files, permission: read}
+    - {name: starred, label: Starred, permission: read}
+    - {name: shared_with_me, label: Shared With Me, permission: read}
+    - {name: list_trash, label: Trash, permission: read}
+    - {name: usage, label: Storage Usage, permission: read}
+    - {name: item_info, label: Item Details, permission: read}
+    - {name: list_versions, label: Versions, permission: read}
+    - {name: download, label: Download, permission: read}
+    - {name: list_shares, label: Who Has Access, permission: read}
+    - {name: list_links, label: Public Links, permission: read}
+    - {name: activity, label: Activity, permission: read}
+    - {name: list_comments, label: Comments, permission: read}
+    - {name: upload, label: Upload File, permission: read}
+    - {name: upload_version, label: Upload New Version, permission: read}
+    - {name: create_folder, label: New Folder, permission: read}
+    - {name: create_team_folder, label: New Team Folder, permission: read}
+    - {name: add_team_member, label: Add Team Member, permission: read}
+    - {name: remove_team_member, label: Remove Team Member, permission: read}
+    - {name: set_team_quota, label: Set Team Folder Quota, permission: read}
+    - {name: rename, label: Rename, permission: read}
+    - {name: set_colour, label: Folder Colour, permission: read}
+    - {name: move, label: Move, permission: read}
+    - {name: copy, label: Copy, permission: read}
+    - {name: trash, label: Move to Trash, permission: read}
+    - {name: restore, label: Restore from Trash, permission: read}
+    - {name: delete_forever, label: Delete Forever, permission: read, confirm: "The item and every version of its files are deleted for good. Continue?"}
+    - {name: empty_trash, label: Empty Trash, permission: read, confirm: "Everything in the trash is deleted for good. Continue?"}
+    - {name: check_out, label: Check Out, permission: read}
+    - {name: check_in, label: Check In, permission: read}
+    - {name: restore_version, label: Restore Version, permission: read}
+    - {name: share, label: Share, permission: read}
+    - {name: unshare, label: Stop Sharing, permission: read}
+    - {name: create_link, label: Create Public Link, permission: read}
+    - {name: revoke_link, label: Revoke Public Link, permission: read}
+    - {name: star, label: Star, permission: read}
+    - {name: unstar, label: Unstar, permission: read}
+    - {name: add_comment, label: Comment, permission: read}
+    - {name: delete_comment, label: Delete Comment, permission: read}
+  list: {columns: [owner, full_name, quota_mb, used_bytes], sort: owner asc}
+
+- name: DriveTeamMember
+  label: Team Member
+  kind: child
+  fields:
+    - {name: member, type: email, required: true, in_list: true}
+    - {name: role, type: select, options: [Viewer, Commenter, Editor, Manager], default: Viewer, required: true, in_list: true,
+       description: "Viewer: open and download. Commenter: also comment. Editor: also upload, rename, move and trash. Manager: also share, publish links and manage members"}
+
+- name: DriveFolder
+  label: Drive Folder
+  kind: master
+  module: drive
+  title_field: name
+  search_fields: [name]
+  description: "A folder in someone's space or a team folder. Changed only through Drive's actions; administrators can read every folder here."
+  fields:
+    - {name: name, type: data, required: true, max_length: 255, in_list: true}
+    - {name: parent, type: link, to: DriveFolder, in_list: true, in_filter: true, description: "Empty for the top folder of a space or a team folder"}
+    - {name: root, type: link, to: DriveFolder, read_only: true, in_filter: true, description: "The space's top folder or the team folder this folder is in (empty on top folders)"}
+    - {name: ancestors, type: json, read_only: true, hidden: true, description: "Enclosing folders, outermost first"}
+    - {name: is_team, type: check, label: Team Folder, read_only: true, in_list: true, in_filter: true}
+    - {name: owner, type: email, read_only: true, in_list: true, in_filter: true, description: "Owner of the personal space this folder is in (empty in team folders)"}
+    - {name: members, type: table, of: DriveTeamMember, read_only: true, description: "Team folders: who may use them, and how"}
+    - {name: quota_mb, type: int, label: Quota (MB), read_only: true, description: "Team folders: storage including versions and trash; 0 = unlimited"}
+    - {name: used_bytes, type: int, label: Used (Bytes), default: 0, read_only: true}
+    - {name: colour, type: color, read_only: true}
+    - {name: trashed, type: check, read_only: true, in_list: true, in_filter: true}
+    - {name: trashed_at, type: datetime, read_only: true}
+    - {name: trashed_by, type: email, read_only: true}
+  form:
+    - {label: Folder, fields: [name, parent, root, owner, is_team, colour]}
+    - {label: Team, fields: [members, quota_mb, used_bytes], visible_if: "doc.is_team == true"}
+    - {label: Trash, collapsible: true, fields: [trashed, trashed_at, trashed_by]}
+  list: {columns: [name, parent, owner, is_team, trashed], sort: name asc}
+
+- name: DriveFile
+  label: Drive File
+  kind: master
+  module: drive
+  title_field: name
+  search_fields: [name]
+  description: "A file and its current version. Changed only through Drive's actions; administrators can read every file here."
+  fields:
+    - {name: name, type: data, required: true, max_length: 255, in_list: true}
+    - {name: folder, type: link, to: DriveFolder, required: true, in_list: true, in_filter: true}
+    - {name: root, type: link, to: DriveFolder, read_only: true, in_filter: true, description: "The space's top folder or the team folder this file is in"}
+    - {name: ancestors, type: json, read_only: true, hidden: true, description: "Enclosing folders, outermost first"}
+    - {name: owner, type: email, read_only: true, in_list: true, in_filter: true, description: "Owner of the personal space this file is in (empty in team folders)"}
+    - {name: file_type, type: select, read_only: true, in_list: true, in_filter: true,
+       options: [Document, Spreadsheet, Presentation, PDF, Image, Video, Audio, Archive, Text, Other]}
+    - {name: content_type, type: data, read_only: true, description: "Detected from the file's bytes, never from what the uploader claimed"}
+    - {name: size, type: int, label: Size (Bytes), read_only: true, in_list: true}
+    - {name: sha256, type: data, label: SHA-256, read_only: true}
+    - {name: version_no, type: int, label: Version, read_only: true, in_list: true}
+    - {name: current_version, type: link, to: DriveFileVersion, read_only: true, on_delete: set_null}
+    - {name: modified_at, type: datetime, read_only: true, in_list: true, description: "When the current version arrived"}
+    - {name: modified_by, type: email, read_only: true}
+    - {name: locked_by, type: email, label: Checked Out By, read_only: true, in_filter: true}
+    - {name: locked_at, type: datetime, label: Checked Out At, read_only: true}
+    - {name: trashed, type: check, read_only: true, in_list: true, in_filter: true}
+    - {name: trashed_at, type: datetime, read_only: true}
+    - {name: trashed_by, type: email, read_only: true}
+  form:
+    - {label: File, fields: [name, folder, root, owner, file_type, content_type, size, sha256]}
+    - {label: Version, fields: [version_no, current_version, modified_at, modified_by, locked_by, locked_at]}
+    - {label: Trash, collapsible: true, fields: [trashed, trashed_at, trashed_by]}
+  list: {columns: [name, folder, owner, file_type, size, modified_at], sort: modified_at desc}
+
+- name: DriveFileVersion
+  label: Drive File Version
+  kind: master
+  module: drive
+  description: "One stored version of a file. Restoring an old version adds it again as the newest version."
+  fields:
+    - {name: file, type: link, to: DriveFile, required: true, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: version_no, type: int, label: Version, required: true, min: 1, in_list: true}
+    - {name: stored_file, type: data, read_only: true, hidden: true, description: "The platform file holding this version's bytes"}
+    - {name: size, type: int, label: Size (Bytes), read_only: true, in_list: true}
+    - {name: sha256, type: data, label: SHA-256, read_only: true}
+    - {name: content_type, type: data, read_only: true}
+    - {name: author, type: email, read_only: true, in_list: true}
+    - {name: comment, type: data, max_length: 500}
+  unique: [[file, version_no]]
+  list: {columns: [file, version_no, size, author, created_at], sort: created_at desc}
+
+- name: DriveShare
+  label: Drive Share
+  kind: master
+  module: drive
+  description: "Access to a file, or to a folder and everything in it, for one person (email) or everyone holding a role, optionally until a moment."
+  fields:
+    - {name: file, type: link, to: DriveFile, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: folder, type: link, to: DriveFolder, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: email, type: email, label: Person, in_list: true, in_filter: true}
+    - {name: role, type: data, max_length: 100, in_list: true, in_filter: true}
+    - {name: permission, type: select, options: [View, Comment, Edit, Manage], default: View, required: true, in_list: true}
+    - {name: level, type: int, read_only: true, hidden: true}
+    - {name: expires_at, type: datetime, in_list: true}
+    - {name: shared_by, type: email, read_only: true}
+  unique: [[file, email], [file, role], [folder, email], [folder, role]]
+  indexes: [[email], [role]]
+  list: {columns: [file, folder, email, role, permission, expires_at], sort: created_at desc}
+
+- name: DriveLink
+  label: Drive Link
+  kind: master
+  module: drive
+  description: "A public link: anyone holding its token may view (or download) the file or folder until it expires, is revoked or runs out of downloads."
+  fields:
+    - {name: file, type: link, to: DriveFile, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: folder, type: link, to: DriveFolder, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: access, type: select, options: [View, Download], default: View, required: true, in_list: true,
+       description: "View: browse and preview images and PDFs. Download: also download any file"}
+    - {name: token_hash, type: data, read_only: true, hidden: true, unique: true, perm_group: secret, description: "SHA-256 of the link's token; the token itself is shown once"}
+    - {name: password_hash, type: data, read_only: true, hidden: true, perm_group: secret}
+    - {name: has_password, type: check, read_only: true, in_list: true}
+    - {name: expires_at, type: datetime, in_list: true}
+    - {name: max_downloads, type: int, min: 0, description: "0 or empty = unlimited"}
+    - {name: download_count, type: int, default: 0, read_only: true, in_list: true}
+    - {name: revoked, type: check, read_only: true, in_list: true, in_filter: true}
+    - {name: revoked_at, type: datetime, read_only: true}
+    - {name: revoked_by, type: email, read_only: true}
+    - {name: shared_by, type: email, read_only: true, in_list: true}
+    - {name: failed_attempts, type: int, default: 0, read_only: true, hidden: true}
+    - {name: locked_until, type: datetime, read_only: true, hidden: true}
+    - {name: last_accessed_at, type: datetime, read_only: true}
+  indexes: [[expires_at]]
+  list: {columns: [file, folder, access, shared_by, expires_at, download_count, revoked], sort: created_at desc}
+
+- name: DriveActivity
+  label: Drive Activity
+  label_plural: Drive Activity
+  kind: master
+  module: drive
+  title_field: item_name
+  description: "What happened to files and folders, by whom: uploads, downloads, moves, shares, public-link access and deletions."
+  fields:
+    - {name: file, type: link, to: DriveFile, on_delete: set_null, in_filter: true}
+    - {name: folder, type: link, to: DriveFolder, on_delete: set_null, in_filter: true}
+    - {name: item_name, type: data, max_length: 255, in_list: true}
+    - {name: action, type: data, max_length: 40, in_list: true, in_filter: true}
+    - {name: actor, type: email, in_list: true, in_filter: true, description: "Empty for public-link visitors and system jobs"}
+    - {name: details, type: json}
+  list: {columns: [created_at, action, item_name, actor], sort: created_at desc}
+
+- name: DriveComment
+  label: Drive Comment
+  kind: master
+  module: drive
+  description: "A comment on a file, by someone with at least comment access."
+  fields:
+    - {name: file, type: link, to: DriveFile, required: true, on_delete: cascade, in_list: true, in_filter: true}
+    - {name: author, type: email, read_only: true, in_list: true}
+    - {name: body, type: text, required: true, max_length: 4000}
+  list: {columns: [file, author, created_at], sort: created_at desc}
+
+- name: DriveStar
+  label: Drive Star
+  kind: master
+  module: drive
+  fields:
+    - {name: email, type: email, required: true, in_list: true}
+    - {name: file, type: link, to: DriveFile, on_delete: cascade, in_list: true}
+    - {name: folder, type: link, to: DriveFolder, on_delete: cascade, in_list: true}
+  unique: [[email, file], [email, folder]]
+  list: {columns: [email, file, folder], sort: created_at desc}

@@ -1,0 +1,14 @@
+id: drive
+name: Drive
+version: 0.1.0
+publisher: cbferrum
+summary: "Team and personal file storage: folders, versions, sharing with people and teams, expiring public links, trash, quotas and search"
+description: README.md
+categories: [productivity]
+license: AGPL-3.0-only
+homepage: https://github.com/CBFerrum/ferrum-app-drive
+support: https://github.com/CBFerrum/ferrum-app-drive/issues
+runtime: native
+platform: ">=0.3, <0.4"
+packages: [drive]
+uninstall: ask
