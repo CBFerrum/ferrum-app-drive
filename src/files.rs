@@ -59,10 +59,10 @@ async fn attach(tx: &mut Tx, tenant: Uuid, object: Uuid, file: Uuid) -> Result<(
     Ok(())
 }
 
-/// Removes an object that never became part of a file (best effort: a failure is only logged —
-/// the object is attached to nothing and its id was never handed out).
+/// Removes an object that never became part of a file, record and bytes (best effort: a failure
+/// is only logged — the object is attached to nothing and its id was never handed out).
 pub async fn discard(k: &Kernel, ctx: &Ctx, object: Uuid) {
-    if let Err(e) = k.delete_file(&sys(ctx), object).await {
+    if let Err(e) = k.remove_file(&sys(ctx), object).await {
         tracing::warn!(%object, "drive: could not discard an unused stored object: {e}");
     }
 }
