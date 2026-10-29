@@ -68,7 +68,8 @@ pub async fn discard(k: &Kernel, ctx: &Ctx, object: Uuid) {
 }
 
 /// Deletes the platform file records of Drive files (`files`) or of single objects (`objects`)
-/// in the caller's transaction, so nothing can read them once it commits.
+/// in the caller's transaction, so nothing can read them once it commits; their bytes leave
+/// storage after the commit (never if it rolls back).
 pub async fn drop_objects(tx: &mut Tx, tenant: Uuid, files: &[Uuid], objects: &[Uuid]) -> Result<()> {
     let keys: Vec<String> = sqlx::query_scalar(
         "delete from file_object where tenant_id = $1 and entity = 'DriveFile' and (record_id = any($2) or id = any($3)) returning storage_key",
@@ -78,12 +79,7 @@ pub async fn drop_objects(tx: &mut Tx, tenant: Uuid, files: &[Uuid], objects: &[
     .bind(objects)
     .fetch_all(&mut **tx)
     .await?;
-    if !keys.is_empty() {
-        // The platform's file store has no deletion API for apps yet (see README "Known limits"):
-        // the records are gone, so no API can reach these objects; storage reclaims them by key.
-        tracing::info!(count = keys.len(), keys = ?keys, "drive: stored objects released");
-    }
-    Ok(())
+    ferrum_kernel::outbox::release_objects(tx, tenant, &keys).await
 }
 
 /// Checks size and quota before any bytes are stored, so refused uploads never reach storage.
