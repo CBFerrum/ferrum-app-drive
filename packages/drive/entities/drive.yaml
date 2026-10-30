@@ -207,6 +207,7 @@
     - {name: revoked_at, type: datetime, read_only: true}
     - {name: revoked_by, type: email, read_only: true}
     - {name: shared_by, type: email, read_only: true, in_list: true}
+    - {name: email, type: email, read_only: true, in_list: true, in_filter: true, description: "The person outside the workspace this link was made for and sent to; empty for a link anyone may hold"}
     - {name: failed_attempts, type: int, default: 0, read_only: true, hidden: true}
     - {name: locked_until, type: datetime, read_only: true, hidden: true}
     - {name: last_accessed_at, type: datetime, read_only: true}

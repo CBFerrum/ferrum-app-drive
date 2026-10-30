@@ -115,9 +115,9 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `check_out` | `file` → Item (Edit) |
 | `check_in` | `file`, `content_base64`/`text?` (a last version), `comment?`, `force?` → Item (the holder; Manage with `force` breaks someone else's check-out) |
 | `restore_version` | `file`, `version` → Item (Edit): the old content becomes the newest version |
-| `share` | `item`, `email` or `role`, `permission?` (View), `expires_at?` → `{id, item, email, role, permission, expires_at}` (Manage); sharing again replaces the grant; the person is notified in the app and, with the Mail app, by email (the email names no item) |
+| `share` | `item`, `email` or `role`, `permission?` (View), `expires_at?` → `{id, item, email, role, permission, expires_at}` (Manage); sharing again replaces the grant; the person is notified in the app and, with the Mail app, by email (the email names no item). An email outside the workspace (a guest): see below |
 | `unshare` | `item`, `share?` / `email?` / `role?` → `{removed}` (Manage; anyone may remove their own share) |
-| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?` → `{id, item, token, url, access, expires_at, has_password, max_downloads}` (Manage; within the workspace's link policy) |
+| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?` → `{id, item, token, url, page, access, expires_at, has_password, max_downloads}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
 | `revoke_link` | `link` → `{link, revoked}` (Manage on its item, even in the trash) |
 | `star` / `unstar` | `item` → `{item, starred}` (View) |
 | `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
@@ -142,6 +142,15 @@ parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, an
 
 Uploads are checked (name, access, size, quota) before any bytes are stored, stored holding no
 database transaction, then committed under the folder's lock; a refused commit discards the bytes.
+
+**Guests.** Sharing with an email that is no user of the workspace makes a Download link for that
+person alone (`email` on the link) and mails it to them: `{id, item, email, guest: true, permission:
+"View", expires_at, mailed, page}`. The link page's address is built from the server's public
+address (`PUBLIC_URL`); without the Mail app nothing is mailed and `page` carries the address to
+send. It follows the workspace's link rules: refused while public links are off or need a password,
+ending within `max_link_days` (by default at that limit). Guests can only be Viewers. Sharing with the
+same person again revokes their previous link. A deactivated colleague's address is refused, not
+made a guest. `list_links` shows each link's `email`; `revoke_link` removes a guest.
 
 ### Public — `/api/site/{tenant}/drive/…` (no sign-in)
 
