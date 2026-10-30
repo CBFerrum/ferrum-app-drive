@@ -46,7 +46,7 @@ one the person may see.
 
 | Entity | Kind | Holds |
 |---|---|---|
-| **DriveSettings** | settings | `max_upload_mb` (1–32, default 25), `user_quota_mb` (default 5120; 0 = unlimited), `team_quota_mb` (default 51200), `trash_days` (default 30), `max_versions` (default 100; 0 = all), `allow_public_links` (default on), `max_link_days` (0 = links may never expire), `link_password_required` |
+| **DriveSettings** | settings | `max_upload_mb` (1–1024, default 25; the server's `FERRUM_DRIVE_MAX_FILE_MB` caps it), `user_quota_mb` (default 5120; 0 = unlimited), `team_quota_mb` (default 51200), `trash_days` (default 30), `max_versions` (default 100; 0 = all), `allow_public_links` (default on), `max_link_days` (0 = links may never expire), `link_password_required` |
 | **DriveSpace** | master | `owner` (email, unique), `full_name`, `quota_mb` (0 = unlimited), `used_bytes`, `root_folder` ("My Folders"). The anchor of every Drive action. Spaces cannot be deleted |
 | **DriveFolder** | master | `name`, `parent`, `root`, `ancestors`, `is_team`, `owner` (personal trees; empty in team folders), `members` (**DriveTeamMember**: `member` email, `role` Viewer/Commenter/Editor/Manager — team folders), `quota_mb`, `used_bytes` (team folders), `colour`, `trashed`, `trashed_at`, `trashed_by` |
 | **DriveFile** | master | `name` (unique per folder ignoring case, among items out of the trash), `folder`, `root`, `ancestors`, `owner`, `file_type`, `content_type` (from the bytes), `size`, `sha256`, `version_no`, `current_version`, `modified_at`, `modified_by`, `locked_by`, `locked_at` (check-out), `trashed`, `trashed_at`, `trashed_by` |
@@ -136,7 +136,7 @@ parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, an
 |---|---|
 | `GET /space` | → `{id, owner, root_folder}`; creates your space on first use |
 | `GET /{action}` | a read action above, parameters as query → its JSON |
-| `POST /upload` | query `name`, `folder?`, `on_conflict?`, `comment?`; body: the raw bytes (≤ the workspace limit, at most 32 MB) → `201` Item |
+| `POST /upload` | query `name`, `folder?`, `on_conflict?`, `comment?`; body: the raw bytes (≤ the workspace limit, within the server's `FERRUM_DRIVE_MAX_FILE_MB`) → `201` Item |
 | `POST /files/{id}/versions` | query `comment?`, `check_in=1?`; body: raw bytes → `201` Item |
 | `GET /files/{id}/content` | query `version?`, `inline=1?` → the bytes. `inline` applies to PNG, JPEG, GIF, WebP, BMP, AVIF and PDF; everything else is `attachment`, and HTML, SVG, XML and JavaScript are sent as `application/octet-stream`. Headers: `Content-Disposition` (UTF-8 name), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: … sandbox`, `Cache-Control: private, no-store`, `ETag` (SHA-256), `X-Drive-Version` |
 
@@ -174,8 +174,10 @@ bytes), `drive_storage_by_type`, `drive_largest_files` (`limit` 50/100/500, `inc
 - Deleting versions removes their platform file records, so no API can reach the bytes, but the
   platform gives apps no way to delete objects from its file store yet: the bytes stay in storage
   (their keys are logged) until it does.
-- One upload is one request of at most 32 MB. `content_base64` through the generic API or MCP is
-  also bound by that API's JSON body limit; use `POST /api/app/drive/upload` for large files.
+- One upload is one request, held in memory while it is stored: at most the server's
+  `FERRUM_DRIVE_MAX_FILE_MB` (32 MB unless raised, at most 1 GiB). `content_base64` through the
+  generic API or MCP is also bound by that API's JSON body limit; use `POST /api/app/drive/upload`
+  for large files. Drive's other routes take at most 1 MB.
 - Public links stay valid when the person who created them loses access (as in other drives):
   review an item's links with `list_links`.
 - Role shares notify nobody; email notifications need the Mail app.
