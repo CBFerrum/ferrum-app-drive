@@ -244,7 +244,12 @@ async fn scenario() {
     // The Mail app's `Communication`, as far as Drive writes it (delivery is Mail's job).
     packages.extend(
         ferrum_meta::catalog::load_embedded(&[
-            ("comms", "package.yaml", "package: comms\nversion: 0.0.0\nlabel: Mail (stand-in)\ndepends: [core]\n"),
+            // With a role of its own, for people who hold another app's role (sharing with roles).
+            (
+                "comms",
+                "package.yaml",
+                "package: comms\nversion: 0.0.0\nlabel: Mail (stand-in)\ndepends: [core]\nroles:\n  - name: Comms User\n    description: Another app's role\n    permissions: []\n",
+            ),
             (
                 "comms",
                 "entities/mail.yaml",
@@ -306,10 +311,10 @@ async fn scenario() {
         root: mine["root_folder"].as_str().unwrap().parse().unwrap(),
     };
     let bob = t.user("bob@acme.test", &["Drive User"]).await;
-    let mut carol = t.user("carol@acme.test", &["Drive User", "Accounts Manager"]).await;
+    let mut carol = t.user("carol@acme.test", &["Drive User", "Comms User"]).await;
     let frank = t.user("frank@acme.test", &["Drive User"]).await;
     let erin = t.user("erin@acme.test", &["Drive Administrator"]).await;
-    let (_, dave) = t.person("dave@acme.test", &["Accounts Manager"]).await;
+    let (_, dave) = t.person("dave@acme.test", &["Comms User"]).await;
     let again = t.json(t.site(Some(&bob.ctx), "GET", "/space", &[], &[], vec![]).await.unwrap());
     assert_eq!(uid(&again), bob.space, "opening Drive again finds the same space");
     let e = k.insert(&bob.ctx, "DriveSpace", obj(json!({"owner": "alice@acme.test"}))).await.expect_err("a space for someone else");
@@ -486,7 +491,7 @@ async fn scenario() {
     assert_eq!(names(&t.ok(&bob, "starred", json!({})).await["items"]), ["Q3"]);
 
     // A role share: everyone holding the role, until the role is taken away.
-    t.ok(&alice, "share", json!({"item": q3, "role": "Accounts Manager", "permission": "Comment"})).await;
+    t.ok(&alice, "share", json!({"item": q3, "role": "Comms User", "permission": "Comment"})).await;
     let c = t.ok(&carol, "add_comment", json!({"file": plan, "body": "Looks good"})).await;
     assert_eq!(c["author"], json!("carol@acme.test"));
     assert_eq!(code(&t.no(&carol, "upload_version", json!({"file": plan, "text": "nope"})).await), "forbidden", "Comment cannot edit");
@@ -504,7 +509,7 @@ async fn scenario() {
     t.hidden(&carol, "list_folder", json!({"folder": q3})).await;
     t.hidden(&carol, "list_comments", json!({"file": plan})).await;
     assert_eq!(t.ok(&carol, "shared_with_me", json!({})).await["items"], json!([]));
-    k.set_user_roles(&admin, carol.id, &["Drive User".to_string(), "Accounts Manager".to_string()]).await.unwrap();
+    k.set_user_roles(&admin, carol.id, &["Drive User".to_string(), "Comms User".to_string()]).await.unwrap();
     t.refresh(&mut carol).await;
     assert_eq!(t.ok(&carol, "list_comments", json!({"file": plan})).await["comments"][0]["body"], json!("Looks good"));
 
