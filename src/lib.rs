@@ -36,6 +36,10 @@ include!(concat!(env!("OUT_DIR"), "/packages.rs"));
 /// This app's manifest (`app.yaml`).
 pub const MANIFEST: &str = include_str!("../app.yaml");
 
+/// The manifest of Drive's add-on Browser editors (`addons/editors/app.yaml`): no code, only the
+/// editors it contributes to `drive.editor`. It ships with Drive.
+pub const EDITORS_MANIFEST: &str = include_str!("../addons/editors/app.yaml");
+
 /// This app's metadata packages, embedded at build time.
 pub fn packages() -> std::result::Result<Vec<ferrum_meta::Package>, ferrum_meta::MetaError> {
     ferrum_meta::catalog::load_embedded(EMBEDDED)

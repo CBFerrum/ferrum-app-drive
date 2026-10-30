@@ -1,0 +1,22 @@
+# Browser editors: an add-on of Drive with no code of its own (Ferrum docs/plan/browser-editors.md).
+# It offers Drive the editors on the operator's editor server (FERRUM_EDITORS_URL); a workspace
+# turns them on by installing it. Their brand terms keep the ArtCraft name and logos out of this
+# listing: the editors are named by their product names only.
+id: drive-editors
+name: Browser editors
+version: 0.1.0
+publisher: cbferrum
+summary: "Edit spreadsheets, documents and PDFs from Drive in the browser, with GridCraft, WordCraft and PdfCraft"
+categories: [productivity]
+license: AGPL-3.0-only
+homepage: https://github.com/CBFerrum/ferrum-app-drive
+support: https://github.com/CBFerrum/ferrum-app-drive/issues
+runtime: native
+platform: ">=0.3, <0.4"
+parent: drive
+requires: { drive: ">=0.4, <0.5" }
+contributes:
+  drive.editor:
+    - { id: sheets, title: Spreadsheet (GridCraft), kind: browser, program: gridcraft, types: [xlsx, csv, tsv], max_mb: 50 }
+    - { id: documents, title: Document (WordCraft), kind: browser, program: wordcraft, types: [docx, odt, rtf], max_mb: 50 }
+    - { id: pdf, title: PDF (PdfCraft), kind: browser, program: pdfcraft, types: [pdf], max_mb: 100 }

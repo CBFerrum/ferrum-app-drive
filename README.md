@@ -54,6 +54,38 @@ by Drive's upload limit.
 editor to fill. `POST /api/app/drive/editor/<file>` returns the editor page and the token to post
 to it.
 
+## Browser editors
+
+With the add-on **Browser editors** (`drive-editors`, shipped with Drive) installed in a workspace,
+spreadsheets, documents and PDFs also open in editors that run in the person's browser:
+* GridCraft for xlsx, csv and tsv;
+* WordCraft for docx, odt and rtf;
+* PdfCraft for pdf.
+
+The operator serves the editors' official builds from the editor server (Ferrum's
+`deploy/editors`), on an origin of its own, and sets `FERRUM_EDITORS_URL` (the editor server as
+browsers reach it) on the server and the web app. The web app downloads the file, hands it to the
+editor through the editor server's relay page, and saves what the editor returns as a new version,
+with the person's rights. Files are never sent to the editor server.
+
+**One session at a time.**
+* Browser and online editor sessions share the file's lock: 30 minutes, refreshed while the
+  editor is open.
+* While a session holds the lock, others open the file read-only and are told who is editing.
+* Every other save is refused meanwhile: uploads, restores, the online editor.
+
+**Conflicts.** Saves carry the version they were made from, so a file changed since it was opened
+is never overwritten. The person saves a copy or replaces it.
+
+**API.**
+* `POST /api/app/drive/editor/<file>?kind=browser` (`action=view`, `take_over`) starts a session:
+  `{url, lock, version, action, held_by, held_in, …}`.
+* `POST /api/app/drive/editor/<file>/lock?lock=…&op=refresh|release` keeps or ends it.
+* A save is `POST /api/app/drive/files/<file>/versions?lock=…&base=<version>`.
+
+**More editors.** Other add-ons can offer editors on Drive's extension point `drive.editor`, with
+`title`, `kind: browser`, `program` (a directory of the editor server), `types` and `max_mb`.
+
 ## File size
 
 A file travels in one request: an upload, a new version or an editor save. How large it may be

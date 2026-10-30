@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+- Browser editors (Ferrum docs/plan/browser-editors.md). Drive offers the extension point
+  `drive.editor`, and its add-on Browser editors (`drive-editors`, shipped with Drive) contributes
+  GridCraft (xlsx, csv, tsv), WordCraft (docx, odt, rtf) and PdfCraft (pdf). They run in the
+  browser from the operator's editor server (`FERRUM_EDITORS_URL`); each save is a new version,
+  made with the person's rights.
+- One editor lock per file, shared by browser and online editor sessions, now records who holds
+  it. While a session holds a file, others open it read-only and are told who is editing.
+- Uploads, restores and check-ins no longer overwrite a file that an editor session holds. They
+  are refused until it closes; before, the next online save turned such a version into an old one.
+- Saves can carry the version they were made from (`base`): a file that changed since it was
+  opened is not overwritten.
+
 ## 0.3.0
 
 - Large files. Uploads, new versions and the editor's saves take files up to the operator's

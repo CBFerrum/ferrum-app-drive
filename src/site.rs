@@ -1,6 +1,6 @@
 //! HTTP endpoints. Signed in (`/api/app/drive/...`, Drive users): the caller's space, the
 //! read-only actions as `GET /{action}`, raw-body uploads (new files and versions), downloads, new
-//! blank documents and the editor page of a file ([`crate::office`]). Public
+//! blank documents, and editor sessions of a file with their locks ([`crate::office`]). Public
 //! (`/api/site/{tenant}/drive/...`): public links ([`crate::sharing`]) and the WOPI endpoints the
 //! editor server calls.
 
@@ -75,7 +75,11 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             })
             .await?
         }
+        ("POST", ["editor", file]) if p.str("kind") == Some("browser") => {
+            crate::office::launch_browser(k, ctx, id(file)?, p.str("action") != Some("view"), p.flag("take_over")).await?
+        }
         ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view")).await?,
+        ("POST", ["editor", file, "lock"]) => crate::office::browser_lock(k, ctx, id(file)?, p.req("lock")?, p.req("op")?).await?,
         // A blank document, spreadsheet or presentation (the editor fills in an empty file).
         ("POST", [verb @ ("upload" | "new")]) => {
             let space = tree::ensure_space(k, ctx).await?;
@@ -112,17 +116,19 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
         ("POST", ["files", file, "versions"]) => {
             let file = id(file)?;
             let check_in = p.flag("check_in");
+            // A browser editor's save: the session's lock and the version it opened.
+            let expect = files::Expect { lock: p.str("lock"), base: p.int("base")? };
             let mut tx = k.db.tenant_tx(ctx.tenant).await?;
             let g = Grants::load(&mut tx, ctx).await?;
             let f = tree::open_kind(&mut tx, ctx, &g, tree::Kind::File, file, crate::acl::Level::Edit, false).await?;
             let c = Content::new(&f.name, &req.body);
-            files::check_version(&mut tx, ctx, &g, file, &c, check_in).await?;
+            files::check_version(&mut tx, ctx, &g, file, &c, check_in, expect).await?;
             tx.commit().await?;
             let object = files::store(k, ctx, &c).await?;
             let res = with_retry(|| async {
                 let mut tx = k.db.tenant_tx(ctx.tenant).await?;
                 let g = Grants::load(&mut tx, ctx).await?;
-                let out = files::commit_version(k, ctx, &mut tx, &g, file, &c, object, p.str("comment"), check_in).await?;
+                let out = files::commit_version(k, ctx, &mut tx, &g, file, &c, object, p.str("comment"), check_in, expect).await?;
                 tx.commit().await?;
                 Ok(out)
             })
