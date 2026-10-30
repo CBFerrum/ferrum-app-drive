@@ -160,6 +160,7 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "unstar" => star(ctx, tx, g, &p, false).await,
         "add_comment" => add_comment(k, ctx, tx, g, &p).await,
         "delete_comment" => delete_comment(k, ctx, tx, g, &p).await,
+        "request_access" => crate::collab::request_access(k, ctx, tx, g, p.req_uuid("item")?, p.str("message")).await,
         _ => Err(Error::NotFound(format!("action {name}"))),
     }
 }
@@ -365,7 +366,7 @@ async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
 }
 
 /// Keeps the visible, live items of `ids` in that order.
-async fn visible_in_order(tx: &mut Tx, tenant: Uuid, g: &Grants, ids: &[Uuid]) -> Result<Vec<Item>> {
+pub(crate) async fn visible_in_order(tx: &mut Tx, tenant: Uuid, g: &Grants, ids: &[Uuid]) -> Result<Vec<Item>> {
     let mut found = tree::load_many(tx, tenant, Kind::Folder, ids).await?;
     found.extend(tree::load_many(tx, tenant, Kind::File, ids).await?);
     let found = tree::keep_live(tx, tenant, found).await?;
@@ -1088,7 +1089,8 @@ async fn star(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>, on: bool) -> O
     Ok(json!({"item": item.id, "starred": on}))
 }
 
-/// `add_comment` (Comment access).
+/// `add_comment` (Comment access): `mentions` (emails, a list or comma-separated) tells those people,
+/// when they may see the file; the file's owner hears of comments by others.
 async fn add_comment(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
     let f = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::Comment, false).await?;
     let body = p.req("body")?;
@@ -1099,7 +1101,13 @@ async fn add_comment(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<
     let doc = entity_values(&[("id", json!(id)), ("file", json!(f.id)), ("author", json!(files::actor(ctx))), ("body", json!(body))]);
     k.insert_tx(&elevated(ctx), tx, "DriveComment", doc).await?;
     tree::log(tx, ctx, &f, "Comment", json!({"comment": id})).await?;
-    Ok(json!({"id": id, "file": f.id, "author": files::actor(ctx), "body": body}))
+    let mentions: Vec<String> = match p.0.get("mentions") {
+        Some(Value::Array(list)) => list.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        Some(Value::String(list)) => list.split(',').map(str::to_string).collect(),
+        _ => Vec::new(),
+    };
+    let mentioned = crate::collab::tell_about_comment(k, ctx, tx, &f, body, &mentions).await?;
+    Ok(json!({"id": id, "file": f.id, "author": files::actor(ctx), "body": body, "mentioned": mentioned}))
 }
 
 /// `delete_comment`: its author, or someone with Manage access to the file.

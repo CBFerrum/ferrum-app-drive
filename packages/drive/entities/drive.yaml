@@ -81,6 +81,7 @@
     - {name: unstar, label: Unstar, permission: read}
     - {name: add_comment, label: Comment, permission: read}
     - {name: delete_comment, label: Delete Comment, permission: read}
+    - {name: request_access, label: Request Access, permission: read}
   list: {columns: [owner, full_name, quota_mb, used_bytes], sort: owner asc}
 
 - name: DriveTeamMember

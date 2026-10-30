@@ -80,6 +80,11 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
         }
         ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view")).await?,
         ("GET", ["editors"]) => crate::office::available(),
+        ("POST", ["presence", file]) => crate::collab::heartbeat(k, ctx, id(file)?, p.str("mode").unwrap_or("view")).await?,
+        ("GET", ["presence"]) => {
+            let ids = p.str("files").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(id).collect::<Result<Vec<_>>>()?;
+            crate::collab::present(k, ctx, &ids).await?
+        }
         ("POST", ["editor", file, "lock"]) => crate::office::browser_lock(k, ctx, id(file)?, p.req("lock")?, p.req("op")?).await?,
         // A blank document, spreadsheet or presentation (the editor fills in an empty file).
         ("POST", [verb @ ("upload" | "new")]) => {

@@ -87,6 +87,19 @@ is never overwritten. The person saves a copy or replaces it.
 **More editors.** Other add-ons can offer editors on Drive's extension point `drive.editor`, with
 `title`, `kind: browser`, `program` (a directory of the editor server), `types` and `max_mb`.
 
+## Working together
+
+* **Comments** can mention people: `add_comment` with `mentions` (emails). Those who may see the
+  file are told in the bell and by mail, and the file's owner hears of comments by others.
+* **Presence.**
+  * Open pages report who has a file open: `POST /api/app/drive/presence/<file>?mode=view|edit|gone`,
+    every 30 seconds.
+  * Anyone who may see a file sees who reported in the last 90 seconds, in the answer or with
+    `GET /api/app/drive/presence?files=<id>,…`.
+* **Requests for access.** `request_access` with `item` and an optional `message` tells the item's
+  owner, or a team folder's managers. A request counts once a day per item and person. The answer
+  is the same whether or not the item exists, so it reveals nothing.
+
 ## File size
 
 A file travels in one request: an upload, a new version or an editor save. How large it may be
