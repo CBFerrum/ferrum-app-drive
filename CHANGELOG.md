@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.0
+
+- Documents for people and AI agents. `create_document` makes a live document from Markdown,
+  `read_document` reads one (as its editors left it, or a version) as Markdown, text or HTML, and
+  `append_to_document` adds Markdown at the end as a change everyone with it open sees at once.
+- Search finds live documents by what they say, with a one-line `snippet`; their words are kept
+  whenever a version is written or something is added (`005_documents.sql`), and upkeep keeps
+  those of older documents. `live` keeps search, recent, starred and shared-with-me to them.
+- Browser editors 0.1.1: the add-on accepts any Drive since 0.4 (0.1.0 asked for 0.4.x, so Drive
+  could not be upgraded where it was installed). Upgrade Browser editors first, then Drive.
+
+## 0.6.0
+
+- Live documents (Ferrum docs/plan/collaboration.md, C3): `.fdoc` files everyone with access edits
+  at once in the web app, over the platform's `/ws/docs/drive/{file}`. View and Comment read them,
+  Edit and Manage change them. What their editors typed becomes a new version when they leave or
+  every ten minutes. Uploads and check-out never replace one; restoring a version makes a copy.
+  Copies, downloads and exports (HTML, PDF, text) take the live content, and guests on a link see
+  it as a page. `POST /new?kind=fdoc` makes one.
+
 ## 0.5.0
 
 - Guests (Ferrum docs/plan/collaboration.md, C5). Sharing with someone outside the workspace makes a Download link for them alone and mails it to them, under the workspace's rules for public links. Sharing with them again replaces it; deactivated colleagues are refused. Links carry the `email` they were sent to, and the report Drive Public Links shows it.
