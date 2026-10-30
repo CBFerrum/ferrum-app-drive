@@ -1072,6 +1072,13 @@ async fn scenario() {
             t.site(Some(&ctx), "POST", &format!("/editor/{file}"), &q, &[], vec![]).await.map(|r| t.json(r))
         }
     };
+    let open_as = |u: &U, session: &'static str| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move {
+            let q = [("kind", "browser"), ("session", session)];
+            t.json(t.site(Some(&ctx), "POST", &format!("/editor/{budget}"), &q, &[], vec![]).await.unwrap())
+        }
+    };
     let save = |u: &U, lock: Option<&str>, base: Option<i64>, body: &'static [u8]| {
         let (t, ctx) = (&t, u.ctx.clone());
         let (lock, base) = (lock.map(str::to_string), base.map(|b| b.to_string()));
@@ -1151,6 +1158,16 @@ async fn scenario() {
     assert_eq!(lock_op(&bob, &lb, "release").await.unwrap()["released"], json!(true));
     assert_eq!(lock_op(&bob, &lb, "release").await.unwrap()["released"], json!(true), "releasing twice is fine");
     assert_eq!(t.scalar(live, Some(budget)).await, 0);
+
+    // The same page launching again (React mounts it twice in development) gets its own lock back;
+    // another page of the same person does not.
+    let first = open_as(&alice, "0123456789abcdef0123456789abcdef").await;
+    let again = open_as(&alice, "0123456789ABCDEF0123456789ABCDEF").await;
+    assert_eq!((first["action"].clone(), again["action"].clone()), (json!("edit"), json!("edit")));
+    assert_eq!(again["lock"], first["lock"]);
+    assert_eq!(open_as(&alice, "fedcba9876543210fedcba9876543210").await["action"], json!("view"));
+    assert_eq!(open_as(&alice, "not-hex").await["action"], json!("view"), "a malformed key is a page of its own");
+    assert_eq!(lock_op(&alice, first["lock"].as_str().unwrap(), "release").await.unwrap()["released"], json!(true));
 
     // An online editor session holds the file the same way and says who took it.
     let alice_wopi =
