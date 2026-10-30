@@ -770,7 +770,7 @@ async fn scenario() {
     let link = t.ok(&alice, "create_link", json!({"item": report_id})).await;
     let token = link["token"].as_str().unwrap().to_string();
     assert_eq!(link["url"], json!(format!("/api/site/acme/drive/links/{token}")));
-    assert_eq!(link["page"], json!(format!("/app/s/acme/{token}")), "the page people open");
+    assert_eq!(link["page"], json!(format!("/drive/s/acme/{token}")), "the page people open");
     let stored: (String, i64) = {
         let mut tx = k.db.tenant_tx(tenant).await.unwrap();
         let row = sqlx::query_as(
@@ -816,7 +816,7 @@ async fn scenario() {
     };
     let mail = pats_mail().await;
     let page =
-        |mail: &str| mail.split("https://erp.acme.test/app/s/acme/").nth(1).map(|rest| rest[..43].to_string()).unwrap_or_else(|| panic!("a link in {mail}"));
+        |mail: &str| mail.split("https://erp.acme.test/drive/s/acme/").nth(1).map(|rest| rest[..43].to_string()).unwrap_or_else(|| panic!("a link in {mail}"));
     let pats = page(&mail);
     assert!(mail.contains("shared &quot;report.pdf&quot; with you"), "{mail}");
     let seen = t.json(t.site(None, "GET", &tok(&pats), &[], &[], vec![]).await.unwrap());
@@ -1489,6 +1489,22 @@ async fn scenario() {
     t.ok(&alice, "delete_forever", json!({"item": brief})).await;
     assert_eq!(t.scalar("select count(*) from coedit_doc where tenant_id = $1 and id = $2", Some(brief)).await, 0);
     assert_eq!(t.scalar("select count(*) from drive_doc_words where tenant_id = $1 and file = $2", Some(brief)).await, 0, "its words go too");
+
+    // An upload sent again with its Idempotency-Key (its page went away before it heard back) gets
+    // the file the first made: one file, its bytes stored once; the same key for other bytes is refused.
+    let key = [("idempotency-key", "upload-0b4f8a5e-9d1c-4c7e-8f00-1234567890ab")];
+    let stored_before = store.0.lock().unwrap().len();
+    let first = t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "again.txt")], &key, b"same bytes".to_vec()).await.unwrap();
+    let again = t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "again.txt")], &key, b"same bytes".to_vec()).await.unwrap();
+    assert_eq!((first.status, again.status), (201, 200));
+    assert_eq!(uid(&t.json(first)), uid(&t.json(again)), "the second request returns the first's file");
+    assert_eq!(store.0.lock().unwrap().len(), stored_before + 1, "the bytes are stored once");
+    let n: i64 = t.scalar("select count(*) from e_drive_file where tenant_id = $1 and name like 'again%' and $2::uuid is null", None).await;
+    assert_eq!(n, 1, "one file");
+    let e = t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "again.txt")], &key, b"other bytes".to_vec()).await.expect_err("a key reused");
+    assert_eq!(code(&e), "invalid");
+    // Without a key, the same upload is a second file (people upload twice on purpose).
+    t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "again.txt")], &[], b"same bytes".to_vec()).await.unwrap();
     t.consistent().await;
 }
 

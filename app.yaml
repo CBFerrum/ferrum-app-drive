@@ -1,6 +1,6 @@
 id: drive
 name: Drive
-version: 0.7.1
+version: 0.8.0
 publisher: cbferrum
 summary: "Team and personal file storage: folders, versions, documents edited together live, sharing with people and teams, expiring public links, trash, quotas and search"
 description: README.md
@@ -9,9 +9,38 @@ license: AGPL-3.0-only
 homepage: https://github.com/CBFerrum/ferrum-app-drive
 support: https://github.com/CBFerrum/ferrum-app-drive/issues
 runtime: native
-platform: ">=0.3, <0.4"
+platform: ">=0.3.2, <0.4"
 packages: [drive]
 uninstall: ask
+# Drive's own interface (Ferrum docs/plan/apps-ui.md): files, and Sheets, Slides and PDF as entries
+# of their own, all from ui/dist; it heads the Workspace family (Docs is in it).
+ui:
+  dist: ui/dist
+  family: Workspace
+  # The editor servers the operator runs, framed and posted to: the online editor as browsers reach
+  # it (FERRUM_OFFICE_ORIGIN, else FERRUM_OFFICE_URL), browser editors (FERRUM_EDITORS_URL).
+  csp:
+    frame: ["env:FERRUM_OFFICE_ORIGIN", "env:FERRUM_OFFICE_URL", "env:FERRUM_EDITORS_URL"]
+    form: ["env:FERRUM_OFFICE_ORIGIN", "env:FERRUM_OFFICE_URL"]
+contributes:
+  shell.app:
+    - {id: drive, route: drive, title: Drive, description: Your files and what others share with you, icon: hard-drive, color: "#ca8a04", roles: [Drive User, Drive Administrator]}
+    - {id: sheets, route: sheets, title: Sheets, description: Spreadsheets in Drive, icon: sheet, color: "#16a34a", roles: [Drive User, Drive Administrator]}
+    - {id: slides, route: slides, title: Slides, description: Presentations in Drive, icon: presentation, color: "#ea580c", roles: [Drive User, Drive Administrator]}
+    - {id: pdf, route: pdf, title: PDF, description: PDFs in Drive, icon: file-text, color: "#dc2626", roles: [Drive User, Drive Administrator]}
+  shell.open:
+    - {id: file, entity: DriveFile, path: "drive/item/{id}"}
+    - {id: folder, entity: DriveFolder, path: "drive/{id}"}
+  # What Drive does for other apps (Ferrum docs/plan/apps-ui.md §11.3): `pick` answers
+  # {files: [{id, name, size, url}]}; `preview` and `share` take {id}.
+  shell.intent:
+    - {id: pick, action: pick, type: file, path: drive/_intent/pick, title: Choose from Drive}
+    - {id: preview, action: preview, type: file, path: drive/_intent/preview, title: Preview}
+    - {id: share, action: share, type: file, path: drive/_intent/share, title: Share}
+  shell.sidepanel:
+    - {id: details, title: Comments and history, path: drive/_panel/details, contextual: true}
+  shell.public:
+    - {id: link, path: drive/s, title: Shared file}
 # Editors for file types, opened from Drive in the person's browser (Ferrum
 # docs/plan/browser-editors.md). `program` is a directory of the operator's editor server
 # (FERRUM_EDITORS_URL) holding a web app that speaks the host bridge; `types` are lower-case

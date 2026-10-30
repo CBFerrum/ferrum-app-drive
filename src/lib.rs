@@ -34,6 +34,7 @@ use ferrum_kernel::{HookRegistry, Kernel, Result};
 use std::sync::Arc;
 
 include!(concat!(env!("OUT_DIR"), "/packages.rs"));
+include!(concat!(env!("OUT_DIR"), "/ui.rs"));
 
 /// This app's manifest (`app.yaml`).
 pub const MANIFEST: &str = include_str!("../app.yaml");
@@ -97,6 +98,18 @@ mod tests {
         let catalog = ferrum_meta::Catalog::from_packages(all).expect("catalog");
         assert!(catalog.package("drive").is_some());
         assert!(MANIFEST.contains("packages: [drive]"));
+    }
+
+    #[test]
+    fn the_interface_is_a_release_the_platform_takes() {
+        let m = ferrum_apps::AppManifest::parse(MANIFEST).expect("app.yaml");
+        let routes: Vec<String> = m.routes().into_iter().map(|(r, _)| r).collect();
+        assert_eq!(routes, ["drive", "sheets", "slides", "pdf"]);
+        assert_eq!(m.public_paths(), ["drive/s"]);
+        let files = UI.iter().map(|(p, b)| (p.to_string(), b.to_vec())).collect();
+        let ui = ferrum_apps::ui::prepare("drive", files).expect("ui/dist is an interface release");
+        assert!(UI.iter().any(|(p, _)| *p == "index.html") && !UI.iter().any(|(p, _)| p.starts_with('.')), "{}", ui.digest);
+        ferrum_apps::AppManifest::parse(EDITORS_MANIFEST).expect("the add-on's app.yaml");
     }
 
     #[test]

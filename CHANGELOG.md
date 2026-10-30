@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.0
+
+- Drive's own interface (Ferrum docs/plan/apps-ui.md, U4a), out of the web app: `ui/`, at `/drive/`
+  with Sheets, Slides and PDF (Drive's files of one kind, each with its New button) as launcher
+  entries of their own, served by the platform under its bar and embedded in the crate (`UI`, from
+  `ui/dist`). It heads the Workspace family (`ui.family`), whose navigation Docs draws too.
+- Pages: the online editor at `/drive/edit/{file}`, browser editors at `/drive/edit/{file}/{editor}`,
+  a viewer at `/drive/view/{file}` (images and documents in the page, PDFs in the browser's viewer),
+  `/drive/item/{id}` for `/open/DriveFile/{id}` and `/open/DriveFolder/{id}`. Documents edited live
+  open in Docs' editor (`/docs/d/{file}`), or in the viewer where Docs is not installed.
+- For other apps: the intents `pick file` (`{files: [{id, name, size, url}]}`), `preview file` and
+  `share file` (`{id}`), and the contextual side panel `details` (comments, versions, activity of
+  `{file}`).
+- Shared links' page is Drive's public page `/drive/s/{workspace}/{link}` (`shell.public`); guest
+  invitations and new links name it. Links mailed before keep working (the web app sends
+  `/app/s/…` there).
+- Uploads go through the shell, which carries on with them in other pages; an upload sent with an
+  `Idempotency-Key` is stored once, so one sent again after its page went away returns the file it
+  made.
+- Needs Ferrum platform 0.3.2.
+
 ## 0.7.1
 
 - The online editor talks to the web app (Ferrum docs/plan/collaboration.md, C2). CheckFileInfo

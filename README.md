@@ -131,6 +131,26 @@ Behind the web app's proxy, also raise its `FERRUM_MAX_UPLOAD` (e.g. `200m`). A 
 arrive within the server's `FERRUM_REQUEST_TIMEOUT_MS` (2 minutes unless raised), so for large
 files over slow links raise that too. Other Drive routes take at most 1 MB.
 
+## Its interface
+
+Drive's interface (`ui/`) is served by Ferrum under its bar at `/drive/`, with Sheets, Slides and PDF
+(Drive's files of one kind) at `/sheets/`, `/slides/` and `/pdf/`, and it heads the Workspace family
+that Docs joins (Ferrum docs/plan/apps-ui.md). Shared links open on its public page
+`/drive/s/{workspace}/{link}`. For other apps it picks files (`pick file`), shows them (`preview
+file`), shares them (`share file`) and shows a file's comments and history beside their page (the
+`details` panel). Uploads go through the shell, which carries on with them in other pages; an upload
+sent with an `Idempotency-Key` is stored once.
+
+`ui/dist` is committed: the crate embeds it, so the server carries the interface of the version it was
+built with. With Ferrum-Frontend checked out at `../ferrum/web`:
+
+```
+cd ui
+npm run build       # into dist/, stamped with its sources (commit dist/)
+npm run check       # CI: dist/ was built from ui/ as it is
+npm run typecheck && npm test
+```
+
 ## Develop
 
 Clone it next to the platform and point the platform dependencies at your checkout (this file

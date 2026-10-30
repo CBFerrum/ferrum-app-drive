@@ -175,7 +175,8 @@ async fn share_with_guest(k: &Kernel, ctx: &Ctx, tx: &mut Tx, item: &Item, email
     let id = Uuid::now_v7();
     insert_link(tx, ctx, id, file, folder, "Download", &hash, None, expires, None, Some(email)).await?;
     tree::log(tx, ctx, item, "Shared With Guest", json!({"link": id, "email": email, "expires_at": expires})).await?;
-    let page = format!("{page}/app/s/{}/{token}", tenant_slug(tx, ctx.tenant).await?);
+    // Drive's public page (its interface's `drive/s`, Ferrum docs/plan/apps-ui.md §7.3).
+    let page = format!("{page}/drive/s/{}/{token}", tenant_slug(tx, ctx.tenant).await?);
     let by = if ctx.full_name.trim().is_empty() { ctx.email.clone() } else { ctx.full_name.clone() };
     let until = expires.map(|t| format!(" The link works until {}.", t.format("%-d %B %Y"))).unwrap_or_default();
     let mailed = guest_mail(k, ctx, tx, email, &format!("{by} shared \"{}\" with you", item.name), &page, &until).await?;
@@ -412,7 +413,7 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     .await?;
     let slug = tenant_slug(tx, ctx.tenant).await?;
     Ok(
-        json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "page": format!("/app/s/{slug}/{token}"), "access": access,
+        json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "page": format!("/drive/s/{slug}/{token}"), "access": access,
               "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads}),
     )
 }

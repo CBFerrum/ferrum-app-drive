@@ -1,0 +1,328 @@
+/* Drive's own styles. ── online editing (Drive.tsx) ── */
+.editor-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100dvh - 96px);
+  min-height: 480px;
+}
+.editor-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.editor-frame {
+  flex: 1;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* ── views, details beside the list, sharing ── */
+.drive-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.drive-layout-details {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+@media (max-width: 1000px) {
+  .drive-layout-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.drive-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.drive-bar .tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.drive-search {
+  flex: 0 1 280px;
+}
+.drive-search .input {
+  width: 100%;
+}
+.drive-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.drive-actions > .menu,
+.drive-actions > .btn {
+  display: inline-block;
+  vertical-align: middle;
+}
+.drive-star {
+  color: var(--warning);
+  margin-left: 6px;
+}
+.row-selected td {
+  background: var(--primary-soft);
+}
+.drive-details {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  max-height: calc(100dvh - 120px);
+  overflow: auto;
+}
+.drive-details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.drive-details-name {
+  overflow-wrap: anywhere;
+}
+.drive-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.drive-facts dt {
+  color: var(--faint);
+}
+.drive-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.drive-present {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.drive-comment-list,
+.drive-versions,
+.drive-activity,
+.share-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.drive-comments {
+  display: grid;
+  gap: 10px;
+}
+.drive-comment {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+.drive-comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.drive-comment-head .btn {
+  margin-left: auto;
+}
+.drive-versions li,
+.share-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.share-list li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.drive-activity li {
+  font-size: 13px;
+}
+.share-add {
+  display: grid;
+  grid-template-columns: 1fr 170px 150px auto;
+  gap: 8px;
+  align-items: end;
+}
+@media (max-width: 720px) {
+  .share-add {
+    grid-template-columns: 1fr;
+  }
+}
+.share-head {
+  font-size: 14px;
+  margin: 16px 0 6px;
+}
+.drive-request {
+  display: grid;
+  gap: 8px;
+}
+
+/* Who else is in the online editor (app/drive/Drive.tsx, C2), and its panel beside the editor. */
+.editor-bar-end {
+  margin-left: auto;
+}
+.editor-people {
+  display: inline-flex;
+  padding-left: 6px;
+}
+.editor-person {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.editor-person-more {
+  color: #fff;
+  background: var(--faint);
+}
+.editor-main {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+.editor-main-details {
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+.editor-main .editor-frame {
+  height: 100%;
+  min-height: 480px;
+}
+@media (max-width: 1000px) {
+  .editor-main-details {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── the viewer, intents and the details panel (Pages.tsx) ── */
+.drive-app {
+  box-sizing: border-box;
+  padding: 16px clamp(12px, 3vw, 32px) 32px;
+}
+.drive-view-page {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: calc(100dvh - var(--ferrum-bar-height, 48px) - 48px);
+}
+.drive-viewer {
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.drive-viewer-image {
+  max-width: 100%;
+  max-height: calc(100dvh - 180px);
+  object-fit: contain;
+  align-self: center;
+  border-radius: var(--radius);
+}
+.drive-viewer-none {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 24px 0;
+}
+.drive-intent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100dvh;
+  box-sizing: border-box;
+  padding: 16px;
+}
+.drive-intent .drive-viewer {
+  min-height: 0;
+}
+.drive-intent-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+}
+.drive-pick {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+}
+.drive-pick-item {
+  display: grid;
+  width: 100%;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.drive-pick-on {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.drive-pick-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drive-panel {
+  height: 100dvh;
+  overflow: auto;
+}
+.drive-panel .drive-details {
+  position: static;
+  max-height: none;
+  border: 0;
+}
+.family-nav {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+.family-nav a {
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  font-size: 13px;
+}
+.family-nav a:hover {
+  background: var(--surface-2);
+}
+.family-nav a[aria-current="page"] {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
