@@ -6,14 +6,26 @@
 //! Everything else about the file is Drive's: sharing, trash, comments, presence, versions. A
 //! version of a live document is not restored over it (its editors hold the current state); it is
 //! restored as a copy. Uploads never replace a live document's content.
+//!
+//! Each document's words are kept for search (`drive_doc_words`) whenever a version is written.
+//! People and AI agents also reach documents through actions: `create_document` (from Markdown),
+//! `read_document` (as Markdown, text or HTML) and `append_to_document`, which adds Markdown as a
+//! change everyone with the document open sees at once.
 
 use crate::acl::{Grants, Level};
 use crate::content::FDOC;
-use crate::files::{self, Content, Expect};
-use crate::tree::{self, Item, Kind};
+use crate::files::{self, Content, Expect, OnConflict};
+use crate::ops::{Out, Params};
+use crate::tree::{self, Item, Kind, Space};
 use async_trait::async_trait;
 use ferrum_kernel::{Ctx, DocAccess, DocHost, Error, Kernel, Result, Tx, coedit, with_retry};
+use serde_json::{Value, json};
 use uuid::Uuid;
+
+/// Most of a document's words kept for search.
+const WORDS: usize = 200_000;
+/// The most Markdown one action takes.
+const MAX_MARKDOWN: usize = 1 << 20;
 
 /// This package's name, the one live documents are filed under.
 pub const PACKAGE: &str = "drive";
@@ -139,4 +151,134 @@ pub async fn restore_as_copy(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, fil
     };
     tree::log(tx, ctx, file, "Restore Version", serde_json::json!({"from": no, "copy": item.id})).await?;
     Ok(item.json(item.level(g), false))
+}
+
+/// Keeps a live document's words for search, from its content (`state`).
+pub async fn index(tx: &mut Tx, tenant: Uuid, file: Uuid, state: &[u8]) -> Result<()> {
+    let words: String = coedit::plain_text(&coedit::decode(state)).chars().take(WORDS).collect();
+    sqlx::query(
+        "insert into drive_doc_words (tenant_id, file, words) values ($1, $2, $3) \
+         on conflict (tenant_id, file) do update set words = excluded.words",
+    )
+    .bind(tenant)
+    .bind(file)
+    .bind(words)
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
+}
+
+/// Keeps the words of live documents that have none yet (made before Drive kept them), a few per
+/// run of upkeep.
+pub async fn backfill(k: &Kernel, ctx: &Ctx) -> Result<usize> {
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "select f.id from e_drive_file f where f.tenant_id = $1 and f.content_type = $2 \
+         and not exists (select 1 from drive_doc_words w where w.tenant_id = f.tenant_id and w.file = f.id) order by f.id limit 20",
+    )
+    .bind(ctx.tenant)
+    .bind(FDOC)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    for id in &ids {
+        let indexed: Result<()> = async {
+            let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+            let Some(file) = tree::load_kind(&mut tx, ctx.tenant, Kind::File, *id, false).await? else { return Ok(()) };
+            let state = current(k, ctx, &mut tx, &file).await?;
+            index(&mut tx, ctx.tenant, file.id, &state).await?;
+            tx.commit().await?;
+            Ok(())
+        }
+        .await;
+        if let Err(e) = indexed {
+            tracing::warn!(file = %id, "drive: keeping a document's words failed: {e}");
+        }
+    }
+    Ok(ids.len())
+}
+
+/// Markdown as sent: whitespace matters in it, so it is not trimmed like other parameters.
+fn markdown<'a>(p: &Params<'a>) -> Result<&'a str> {
+    let md = p.0.get("markdown").and_then(Value::as_str).unwrap_or("");
+    if md.len() > MAX_MARKDOWN {
+        return Err(Error::field("markdown", "at most 1 MB"));
+    }
+    Ok(md)
+}
+
+/// `create_document`: a new live document, `title` (Untitled), from `markdown` (empty), in
+/// `folder` (your top folder); a taken name gets a number.
+pub async fn create(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, space: &Space, p: &Params<'_>) -> Out {
+    let md = markdown(p)?;
+    let title = p.str("title").unwrap_or("Untitled");
+    let title = if title.to_ascii_lowercase().ends_with(".fdoc") { title[..title.len() - 5].trim() } else { title };
+    let state = coedit::encode(&coedit::from_markdown(md));
+    let c = Content::new(&format!("{title}.fdoc"), &state);
+    let folder = p.uuid("folder")?.unwrap_or(space.root);
+    files::upload(k, ctx, tx, g, folder, &c, OnConflict::KeepBoth, None).await
+}
+
+fn live_file(file: &Item) -> Result<()> {
+    if is_live(file) {
+        return Ok(());
+    }
+    Err(Error::invalid(format!("'{}' is not a document edited live: use download for its content", file.name)))
+}
+
+/// `read_document`: a live document as its editors left it (or one of its `version`s), as
+/// `markdown` (the default), `text` or `html`.
+pub async fn read(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
+    let file = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::View, false).await?;
+    live_file(&file)?;
+    let format = p.str("format").unwrap_or("markdown");
+    if !["markdown", "text", "html"].contains(&format) {
+        return Err(Error::field("format", format!("must be markdown, text or html, not {format}")));
+    }
+    let (state, version) = match p.int("version")? {
+        Some(no) => {
+            let (object, no, ..) = files::version(tx, ctx.tenant, &file, Some(no)).await?;
+            (files::read(k, ctx, object).await?, no)
+        }
+        None => (current(k, ctx, tx, &file).await?, file.version_no),
+    };
+    let doc = coedit::decode(&state);
+    let content = match format {
+        "text" => coedit::plain_text(&doc),
+        "html" => coedit::html(&doc),
+        _ => coedit::markdown(&doc),
+    };
+    tree::log(tx, ctx, &file, "Download", json!({"version": version, "format": format})).await?;
+    Ok(json!({"file": file.id, "name": file.name, "version": version, "format": format, "content": content}))
+}
+
+/// `append_to_document`: `markdown` added at the end of a live document (Edit), as a change
+/// everyone who has it open sees at once; its next version includes it.
+pub async fn append(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
+    let file = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::Edit, false).await?;
+    live_file(&file)?;
+    let md = markdown(p)?;
+    if md.trim().is_empty() {
+        return Err(Error::field("markdown", "is required"));
+    }
+    // A document nobody has opened live yet starts from its current version.
+    let opened: bool = sqlx::query_scalar("select exists (select 1 from coedit_doc where tenant_id = $1 and package = $2 and id = $3)")
+        .bind(ctx.tenant)
+        .bind(PACKAGE)
+        .bind(file.id)
+        .fetch_one(&mut **tx)
+        .await?;
+    let initial = if opened {
+        None
+    } else {
+        let (object, ..) = files::version(tx, ctx.tenant, &file, None).await?;
+        Some(files::read(k, ctx, object).await?)
+    };
+    let change = coedit::append(tx, ctx.tenant, PACKAGE, file.id, initial.as_deref(), md, ctx.user).await?;
+    // Found by its new words at once, not at its next version.
+    if let Some(state) = coedit::state(tx, ctx.tenant, PACKAGE, file.id).await? {
+        index(tx, ctx.tenant, file.id, &state).await?;
+    }
+    tree::log(tx, ctx, &file, "Edit", json!({"appended": md.chars().count()})).await?;
+    Ok(json!({"file": file.id, "name": file.name, "appended": true, "change": change}))
 }
