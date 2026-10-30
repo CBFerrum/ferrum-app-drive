@@ -1394,6 +1394,63 @@ async fn scenario() {
     assert_eq!(header(&shown, "cache-control"), Some("no-store"));
     assert!(t.site(None, "GET", &format!("/links/{token}/content"), &[("format", "txt")], &[], vec![]).await.is_err(), "a View link only shows it");
 
+    // Documents for people and AI agents: made from Markdown, read back, added to while live.
+    let made = t
+        .ok(
+            &alice,
+            "create_document",
+            json!({"title": "Launch notes", "markdown": "# Launch\n\n- [ ] book the hall\n- [x] invite press\n\n| Owner | Due |\n|---|---|\n| Ana | Friday |"}),
+        )
+        .await;
+    let launch = uid(&made);
+    assert_eq!((made["name"].as_str(), made["content_type"].as_str()), (Some("Launch notes.fdoc"), Some("application/vnd.ferrum.doc")));
+    let md = t.ok(&alice, "read_document", json!({"file": launch})).await;
+    let content = md["content"].as_str().unwrap();
+    assert!(content.starts_with("# Launch\n\n- [ ] book the hall\n- [x] invite press\n\n| Owner | Due |\n|---|---|\n| Ana | Friday |"), "{content}");
+    let added = t.ok(&alice, "append_to_document", json!({"file": launch, "markdown": "## Risks\n\nThe *venue* may move."})).await;
+    assert_eq!(added["appended"], json!(true));
+    let as_text = t.ok(&alice, "read_document", json!({"file": launch, "format": "text"})).await;
+    assert!(as_text["content"].as_str().unwrap().ends_with("Risks\nThe venue may move."), "{as_text}");
+    let html = t.ok(&alice, "read_document", json!({"file": launch, "format": "html", "version": 1})).await;
+    assert!(html["content"].as_str().unwrap().contains("<h1>Launch</h1>") && !html["content"].as_str().unwrap().contains("Risks"), "a version reads as it was");
+    assert_eq!(t.scalar("select seq from coedit_doc where tenant_id = $1 and id = $2", Some(launch)).await, 1, "added as a change of the live document");
+    t.hidden(&bob, "append_to_document", json!({"file": launch, "markdown": "sneaky"})).await;
+    t.ok(&alice, "share", json!({"item": launch, "email": "bob@acme.test", "permission": "Comment"})).await;
+    assert_eq!(code(&t.no(&bob, "append_to_document", json!({"file": launch, "markdown": "sneaky"})).await), "forbidden", "commenters only read");
+    assert!(t.ok(&bob, "read_document", json!({"file": launch})).await["content"].as_str().unwrap().contains("## Risks"));
+    let e = t.no(&alice, "read_document", json!({"file": notes})).await;
+    assert!(e.to_string().contains("is not a document edited live"), "{e}");
+    let e = t.no(&alice, "append_to_document", json!({"file": launch, "markdown": "   "})).await;
+    assert_eq!(code(&e), "validation_failed");
+
+    // Search finds documents by what they say, showing where; `live` keeps to documents.
+    let found = t.ok(&alice, "search", json!({"query": "venue"})).await;
+    let hit = found["items"].as_array().unwrap().iter().find(|i| uid(i) == launch).expect("found by its words");
+    let snippet = hit["snippet"].as_str().unwrap();
+    assert!(snippet.contains("Risks · The «venue» may move") && !snippet.contains('\n'), "{snippet}");
+    let named = t.ok(&alice, "search", json!({"query": "Launch", "live": true})).await;
+    assert!(named["items"].as_array().unwrap().iter().all(|i| i["content_type"] == "application/vnd.ferrum.doc"));
+    let every = t.ok(&alice, "search", json!({"live": true})).await;
+    let doc_names: Vec<String> = names(&every["items"]);
+    assert!(doc_names.contains(&"Launch notes.fdoc".to_string()) && doc_names.iter().all(|n| n.ends_with(".fdoc")), "{doc_names:?}");
+    assert!(t.ok(&bob, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "shared with bob");
+    assert!(!t.ok(&frank, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "not frank's");
+    t.ok(&alice, "star", json!({"item": launch})).await;
+    t.ok(&alice, "star", json!({"item": notes})).await;
+    for view in ["recent", "starred"] {
+        let all = t.ok(&alice, view, json!({})).await;
+        let docs = t.ok(&alice, view, json!({"live": true})).await;
+        assert!(all["items"].as_array().unwrap().len() > docs["items"].as_array().unwrap().len(), "{view}");
+        assert!(docs["items"].as_array().unwrap().iter().all(|i| i["content_type"] == "application/vnd.ferrum.doc"), "{view}");
+    }
+    assert_eq!(names(&t.ok(&bob, "shared_with_me", json!({"live": true})).await["items"]), ["Launch notes.fdoc", "Brief.fdoc"], "newest share first");
+
+    // Documents from before Drive kept their words get them from upkeep.
+    t.exec("delete from drive_doc_words where tenant_id = $1 and file = $2", launch).await;
+    assert!(!t.ok(&alice, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch));
+    ferrum_app_drive::maintenance(&k).await.unwrap();
+    assert!(t.ok(&alice, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "kept again");
+
     // In the trash nobody opens it; deleted for good, its live content goes too.
     t.ok(&alice, "trash", json!({"item": brief})).await;
     assert_eq!(host.access(&k, &alice.ctx, brief).await.unwrap(), DocAccess::None);
@@ -1408,6 +1465,7 @@ async fn scenario() {
     t.ok(&alice, "trash", json!({"item": brief})).await;
     t.ok(&alice, "delete_forever", json!({"item": brief})).await;
     assert_eq!(t.scalar("select count(*) from coedit_doc where tenant_id = $1 and id = $2", Some(brief)).await, 0);
+    assert_eq!(t.scalar("select count(*) from drive_doc_words where tenant_id = $1 and file = $2", Some(brief)).await, 0, "its words go too");
     t.consistent().await;
 }
 

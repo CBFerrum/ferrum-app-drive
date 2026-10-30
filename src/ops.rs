@@ -43,6 +43,7 @@ pub const READS: &[&str] = &[
     "list_links",
     "activity",
     "list_comments",
+    "read_document",
 ];
 
 const B64: GeneralPurpose =
@@ -123,8 +124,11 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "list_folder" => list_folder(tx, ctx, g, space, &p).await,
         "search" => search(tx, ctx, g, &p).await,
         "recent" => recent(tx, ctx, g, &p).await,
-        "starred" => starred(tx, ctx, g).await,
-        "shared_with_me" => shared_with_me(tx, ctx, g).await,
+        "starred" => starred(tx, ctx, g, &p).await,
+        "shared_with_me" => shared_with_me(tx, ctx, g, &p).await,
+        "create_document" => crate::docs::create(k, ctx, tx, g, space, &p).await,
+        "read_document" => crate::docs::read(k, ctx, tx, g, &p).await,
+        "append_to_document" => crate::docs::append(k, ctx, tx, g, &p).await,
         "list_trash" => list_trash(tx, ctx, g, &p).await,
         "usage" => usage(tx, ctx, g, space).await,
         "item_info" => item_info(tx, ctx, g, &p).await,
@@ -265,6 +269,8 @@ async fn list_folder(tx: &mut Tx, ctx: &Ctx, g: &Grants, space: &Space, p: &Para
 /// One branch of a search: `(select <cols> from <table> a where <tenant, access and filters>)`.
 struct SearchFilter<'a> {
     query: Option<&'a str>,
+    /// Only documents edited live.
+    live: bool,
     file_type: Option<&'a str>,
     owner: Option<String>,
     from: Option<DateTime<Utc>>,
@@ -285,7 +291,19 @@ fn search_branch(qb: &mut QueryBuilder<Postgres>, ctx: &Ctx, g: &Grants, kind: K
     g.push_visible(qb, "a");
     if let Some(q) = f.query {
         let pattern = format!("%{}%", q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_"));
-        qb.push(" and a.name ilike ").push_bind(pattern);
+        qb.push(" and (a.name ilike ").push_bind(pattern);
+        if kind == Kind::File {
+            // Documents edited live are found by what they say too.
+            qb.push(
+                " or exists (select 1 from drive_doc_words w where w.tenant_id = a.tenant_id and w.file = a.id and w.search @@ websearch_to_tsquery('simple', ",
+            )
+            .push_bind(q.to_string())
+            .push("))");
+        }
+        qb.push(")");
+    }
+    if let (Kind::File, true) = (kind, f.live) {
+        qb.push(" and a.content_type = ").push_bind(crate::content::FDOC);
     }
     if let (Kind::File, Some(t)) = (kind, f.file_type) {
         qb.push(" and a.file_type = ").push_bind(t.to_string());
@@ -306,7 +324,9 @@ fn search_branch(qb: &mut QueryBuilder<Postgres>, ctx: &Ctx, g: &Grants, kind: K
 }
 
 /// `search`: by name (substring, any case) and/or type, owner, modification dates (workspace
-/// time zone) and folder, across everything the caller can see and nothing in the trash.
+/// time zone) and folder, across everything the caller can see and nothing in the trash. Live
+/// documents are also found by their words (`snippet` shows where, the words found between « and
+/// »); `live` keeps to them.
 async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let query = p.str("query");
     if query.is_some_and(|q| q.chars().count() > 100) {
@@ -322,15 +342,17 @@ async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
         Some(id) => Some(tree::open_kind(tx, ctx, g, Kind::Folder, id, Level::View, false).await?.id),
         None => None,
     };
+    let live = p.flag("live");
     let f = SearchFilter {
         query,
+        live,
         file_type: file_type.filter(|t| *t != "folder"),
         owner: p.str("owner").map(str::to_lowercase),
         from: p.date("modified_from")?.map(|d| day_start(&tz, d)),
         to: p.date("modified_to")?.and_then(|d| d.succ_opt()).map(|d| day_start(&tz, d)),
         within,
     };
-    if f.query.is_none() && file_type.is_none() && f.owner.is_none() && f.from.is_none() && f.to.is_none() && f.within.is_none() {
+    if f.query.is_none() && !live && file_type.is_none() && f.owner.is_none() && f.from.is_none() && f.to.is_none() && f.within.is_none() {
         return Err(Error::field("query", "give a name to search for, or a type, owner, date or folder filter"));
     }
     let (limit, offset) = p.page(50, 200)?;
@@ -341,7 +363,7 @@ async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
         _ => return Err(Error::field("sort", "must be modified, name or size")),
     };
     let mut qb = QueryBuilder::new("select x.* from (");
-    let folders = file_type.is_none() || file_type == Some("folder");
+    let folders = !live && (file_type.is_none() || file_type == Some("folder"));
     let files = file_type != Some("folder");
     if folders {
         search_branch(&mut qb, ctx, g, Kind::Folder, &f);
@@ -361,6 +383,26 @@ async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let mut out = tree::items_json(tx, ctx.tenant, g, &items).await?;
     for (v, path) in out.iter_mut().zip(paths) {
         v["path"] = json!(path);
+    }
+    if let Some(q) = query {
+        let ids: Vec<Uuid> = items.iter().filter(|i| crate::docs::is_live(i)).map(|i| i.id).collect();
+        let found: HashMap<Uuid, String> = sqlx::query_as::<_, (Uuid, String)>(
+            "select file, ts_headline('simple', replace(words, E'\\n', ' · '), websearch_to_tsquery('simple', $3), \
+             'MaxFragments=1, MaxWords=20, MinWords=8, ShortWord=2, StartSel=«, StopSel=»') \
+             from drive_doc_words where tenant_id = $1 and file = any($2) and search @@ websearch_to_tsquery('simple', $3)",
+        )
+        .bind(ctx.tenant)
+        .bind(&ids)
+        .bind(q)
+        .fetch_all(&mut **tx)
+        .await?
+        .into_iter()
+        .collect();
+        for (v, item) in out.iter_mut().zip(&items) {
+            if let Some(snippet) = found.get(&item.id) {
+                v["snippet"] = json!(snippet);
+            }
+        }
     }
     Ok(json!({"items": out, "has_more": more, "limit": limit, "offset": offset}))
 }
@@ -386,24 +428,33 @@ async fn recent(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     .fetch_all(&mut **tx)
     .await?;
     let mut items = visible_in_order(tx, ctx.tenant, g, &ids).await?;
+    keep_live(&mut items, p);
     items.truncate(limit);
     Ok(json!({"items": tree::items_json(tx, ctx.tenant, g, &items).await?}))
 }
 
+/// With `live`, only documents edited live.
+fn keep_live(items: &mut Vec<Item>, p: &Params<'_>) {
+    if p.flag("live") {
+        items.retain(crate::docs::is_live);
+    }
+}
+
 /// `starred`: the caller's starred items they can still see, newest star first.
-async fn starred(tx: &mut Tx, ctx: &Ctx, g: &Grants) -> Out {
+async fn starred(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let ids: Vec<Uuid> =
         sqlx::query_scalar("select coalesce(file, folder) from e_drive_star where tenant_id = $1 and email = $2 order by created_at desc limit 1000")
             .bind(ctx.tenant)
             .bind(&g.email)
             .fetch_all(&mut **tx)
             .await?;
-    let items = visible_in_order(tx, ctx.tenant, g, &ids).await?;
+    let mut items = visible_in_order(tx, ctx.tenant, g, &ids).await?;
+    keep_live(&mut items, p);
     Ok(json!({"items": tree::items_json(tx, ctx.tenant, g, &items).await?}))
 }
 
 /// `shared_with_me`: items shared with the caller or their roles (not their own), newest first.
-async fn shared_with_me(tx: &mut Tx, ctx: &Ctx, g: &Grants) -> Out {
+async fn shared_with_me(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let rows: Vec<(Uuid, Option<String>, Option<DateTime<Utc>>)> = sqlx::query_as(
         "select coalesce(file, folder), shared_by, expires_at from e_drive_share where tenant_id = $1 and (email = $2 or role = any($3)) \
          and (expires_at is null or expires_at > now()) order by created_at desc limit 1000",
@@ -415,7 +466,8 @@ async fn shared_with_me(tx: &mut Tx, ctx: &Ctx, g: &Grants) -> Out {
     .await?;
     let mut seen = HashSet::new();
     let ids: Vec<Uuid> = rows.iter().map(|r| r.0).filter(|id| seen.insert(*id)).collect();
-    let items: Vec<Item> = visible_in_order(tx, ctx.tenant, g, &ids).await?.into_iter().filter(|i| i.owner.as_deref() != Some(g.email.as_str())).collect();
+    let mut items: Vec<Item> = visible_in_order(tx, ctx.tenant, g, &ids).await?.into_iter().filter(|i| i.owner.as_deref() != Some(g.email.as_str())).collect();
+    keep_live(&mut items, p);
     let mut out = tree::items_json(tx, ctx.tenant, g, &items).await?;
     for (v, item) in out.iter_mut().zip(&items) {
         if let Some(r) = rows.iter().find(|r| r.0 == item.id) {
@@ -1024,6 +1076,7 @@ pub async fn purge(ctx: &Ctx, tx: &mut Tx, item: &Item) -> Result<i64> {
     tree::log(tx, ctx, item, "Delete", json!({"files": files.len(), "folders": folders.len(), "bytes": bytes})).await?;
     files::drop_objects(tx, ctx.tenant, &files, &[]).await?;
     ferrum_kernel::coedit::forget(tx, ctx.tenant, crate::docs::PACKAGE, &files).await?;
+    sqlx::query("delete from drive_doc_words where tenant_id = $1 and file = any($2)").bind(ctx.tenant).bind(&files).execute(&mut **tx).await?;
     sqlx::query("delete from e_drive_file where tenant_id = $1 and id = any($2)").bind(ctx.tenant).bind(&files).execute(&mut **tx).await?;
     // Deepest first: a folder goes after everything inside it.
     folders.sort_by_key(|f| std::cmp::Reverse(f.1));

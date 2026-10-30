@@ -42,6 +42,7 @@ async fn for_tenant(k: &Kernel, tenant: Uuid) -> Result<()> {
     ctx.request_id = format!("drive-upkeep-{}", Uuid::now_v7());
     let purged = purge_trash(k, &ctx).await?;
     let expired = expire_shares(k, &ctx).await?;
+    crate::docs::backfill(k, &ctx).await?;
     let mut tx = k.db.tenant_tx(tenant).await?;
     crate::collab::forget(&mut tx, tenant).await?;
     tx.commit().await?;

@@ -80,10 +80,11 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | Action | Parameters → result |
 |---|---|
 | `list_folder` | `folder?` (default: your top folder), `sort?` name/modified/size/type, `order?` asc/desc, `limit?` (≤ 200, 50), `offset?` → `{folder, breadcrumbs: [{id, name}], items, total, folders, files}`; sub-folders first |
-| `search` | `query?` (name contains, ≤ 100 characters), `type?` (`folder` or a file type), `owner?`, `modified_from?`, `modified_to?`, `folder?` (within), `sort?` modified/name/size, `limit?`, `offset?` → `{items (each with path), has_more}`; nothing in the trash; at least one criterion |
-| `recent` | `limit?` (≤ 100, 20) → files you uploaded, changed or opened in the last 90 days that you can still see |
-| `starred` | → your starred items you can still see |
-| `shared_with_me` | → items shared with you or your roles (not your own), with `shared_by`, `share_expires_at` |
+| `search` | `query?` (name contains, ≤ 100 characters; live documents also by their words), `live?` (only live documents), `type?` (`folder` or a file type), `owner?`, `modified_from?`, `modified_to?`, `folder?` (within), `sort?` modified/name/size, `limit?`, `offset?` → `{items (each with path; a document found by its words with a one-line `snippet`, the words between « and »), has_more}`; nothing in the trash; at least one criterion |
+| `recent` | `limit?` (≤ 100, 20), `live?` → files you uploaded, changed or opened in the last 90 days that you can still see |
+| `starred` | `live?` → your starred items you can still see |
+| `shared_with_me` | `live?` → items shared with you or your roles (not your own), with `shared_by`, `share_expires_at` |
+| `read_document` | `file` (a live document), `format?` markdown (default)/text/html, `version?` → `{file, name, version, format, content}`: as its editors left it, or that version |
 | `list_trash` | `root?` (a top folder) → `{items, total}`: what was trashed itself and you may restore (Edit) |
 | `usage` | → `{space: {id, owner, root, quota_bytes, used_bytes}, teams: [{id, name, quota_bytes, used_bytes, permission}]}` (quota null = unlimited) |
 | `item_info` | `item` → Item with `breadcrumbs`, `path`; files: `versions`, `comments`; folders: `folders`, `files` |
@@ -100,6 +101,8 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 |---|---|
 | `upload` | `name`, `content_base64` (standard or URL-safe, padding optional) or `text`, `folder?`, `on_conflict?` keep_both (default: `name (2)`) / replace (new version of the same-named file) / fail, `comment?` → Item (Edit on the folder) |
 | `upload_version` | `file`, `content_base64` or `text`, `comment?` → Item (Edit; refused while someone else has it checked out, and for live documents) |
+| `create_document` | `title?` (Untitled), `markdown?`, `folder?` → Item: a new live document from Markdown (Edit on the folder; a taken name gets a number) |
+| `append_to_document` | `file`, `markdown` → `{file, name, appended, change}` (Edit): added at the end of a live document as a change everyone with it open sees at once; its next version includes it |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
 | `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators) |
 | `add_team_member` / `remove_team_member` | `folder`, `member`, `role?` → `{folder, members}` (Manage on the team folder) |
@@ -153,7 +156,14 @@ type (author: the first of them; comment `Edited live` or `Edited live by N peop
 did not change adds no version. Its content is never replaced around the editor: new versions,
 uploads that replace it and check-out are refused, and restoring a version makes a new document
 beside it. Copies, downloads and the `download` action take the content as its editors left it,
-not the last version. `GET /files/{id}/content?format=html|pdf|txt` exports it (a page that runs
+not the last version.
+
+People and AI agents also write and read documents in Markdown: `create_document`,
+`read_document` and `append_to_document` (headings, paragraphs, bullet, numbered and task lists,
+quotes, fenced code, rules and pipe tables; bold, italic, strikethrough, code and links to the web
+or mail). Each document's words are kept for search whenever a version is written or something is
+added, so `search` finds documents by what they say; upkeep keeps the words of documents made
+before this, 20 a minute. `GET /files/{id}/content?format=html|pdf|txt` exports it (a page that runs
 nothing; a PDF through the server's PDF renderer; its words), also of a `version`; the `download`
 action answers its words as `text`. Deleting one for good also deletes its live content.
 

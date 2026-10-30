@@ -82,6 +82,27 @@
     - {name: add_comment, label: Comment, permission: read}
     - {name: delete_comment, label: Delete Comment, permission: read}
     - {name: request_access, label: Request Access, permission: read}
+    - name: create_document
+      label: New Document
+      permission: read
+      params:
+        - {name: title, label: Title, description: "Untitled when empty; a taken name gets a number"}
+        - {name: markdown, label: Content, type: text,
+           description: "Markdown: headings, paragraphs, bullet, numbered and task lists, quotes, fenced code, rules, pipe tables; bold, italic, strikethrough, code and links to the web or mail"}
+        - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+    - name: read_document
+      label: Read Document
+      permission: read
+      params:
+        - {name: file, label: Document, required: true, description: "A document edited live (a .fdoc file)"}
+        - {name: format, label: Format, type: select, options: [markdown, text, html], description: "markdown unless asked"}
+        - {name: version, label: Version, type: int, description: "One of its saved versions; as its editors left it by default"}
+    - name: append_to_document
+      label: Add to Document
+      permission: read
+      params:
+        - {name: file, label: Document, required: true, description: "A document edited live (Edit access)"}
+        - {name: markdown, label: Content, type: text, required: true, description: "Markdown, added at the end; everyone with the document open sees it at once"}
   list: {columns: [owner, full_name, quota_mb, used_bytes], sort: owner asc}
 
 - name: DriveTeamMember

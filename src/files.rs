@@ -226,6 +226,9 @@ pub(crate) async fn create_file(
     }
     k.insert_tx(&elevated(ctx), tx, "DriveFile", doc).await?;
     let version = insert_version(k, ctx, tx, id, 1, object, c, comment).await?;
+    if c.content_type == content::FDOC {
+        crate::docs::index(tx, ctx.tenant, id, c.data).await?;
+    }
     let mut v = Doc::new();
     v.insert("current_version".into(), json!(version));
     k.set_values_tx(ctx, tx, "DriveFile", id, v).await?;
@@ -298,6 +301,9 @@ pub(crate) async fn add_version(
     tree::charge(tx, ctx.tenant, payer, c.size()).await?;
     let no = file.version_no + 1;
     let version = insert_version(k, ctx, tx, file.id, no, object, c, comment).await?;
+    if c.content_type == content::FDOC {
+        crate::docs::index(tx, ctx.tenant, file.id, c.data).await?;
+    }
     let mut doc = Doc::new();
     for (key, v) in [
         ("file_type", json!(content::file_type(c.content_type))),
