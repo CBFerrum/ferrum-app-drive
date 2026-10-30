@@ -295,12 +295,14 @@ fn editors_url() -> Option<String> {
 }
 
 /// `POST /api/app/drive/editor/{file}?kind=browser` (`action=view` to only read; `take_over` to
-/// move the caller's own browser editor session here): a session in a browser editor, as
+/// move the caller's own browser editor session here; `session`, the page's own random key, so
+/// that the same page launching again gets its own lock back): a session in a browser editor, as
 /// `{kind, url, name, folder, size, version, action, lock, lock_seconds, held_by, held_in, author}`.
 /// Editing takes the file's editor lock; without Edit access, with the file checked out by
 /// someone else, or with another session holding the lock, it opens read-only (`action: view`)
 /// and says who holds it (`held_in`: `browser`, `online` or `checkout`).
-pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, take_over: bool) -> Result<Value> {
+pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, take_over: bool, session: Option<&str>) -> Result<Value> {
+    let session = session.filter(|s| (16..=64).contains(&s.len()) && s.bytes().all(|b| b.is_ascii_hexdigit()));
     let url = editors_url().ok_or_else(|| Error::Unavailable("browser editors are not set up on this server (FERRUM_EDITORS_URL)".into()))?;
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
@@ -310,7 +312,10 @@ pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, 
         if files::check_lock(ctx, &item).is_err() {
             (held_by, held_in) = (item.locked_by.clone(), Some("checkout"));
         } else {
-            let mine = format!("{BROWSER}{}", Uuid::new_v4().simple());
+            let mine = match session {
+                Some(key) => format!("{BROWSER}{}", key.to_ascii_lowercase()),
+                None => format!("{BROWSER}{}", Uuid::new_v4().simple()),
+            };
             if take(&mut tx, ctx, file, &mine, take_over).await? {
                 lock = Some(mine);
             } else if let Some(h) = held(&mut tx, ctx.tenant, file).await? {
