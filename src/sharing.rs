@@ -711,7 +711,10 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
     let (object, ctype) = row.ok_or_else(gone)?;
     let object: Uuid = object.and_then(|o| o.parse().ok()).ok_or_else(gone)?;
     let ctype = ctype.unwrap_or_else(|| "application/octet-stream".into());
-    let preview = inline && content::inline_ok(&ctype);
+    // A live document reaches guests as a page (any link), or as a PDF or its words (Download links).
+    let live = crate::docs::is_live(&file);
+    let format = if live { Some(q.str("format").unwrap_or("html")) } else { None };
+    let preview = inline && (live || content::inline_ok(&ctype));
     if link.access != "Download" && !preview {
         return Err(gone());
     }
@@ -728,7 +731,17 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
     counted.ok_or_else(gone)?;
     let guest = Ctx::system(req.tenant, k.registry.schema(req.tenant).await?);
     tree::log(&mut tx, &guest, &file, if preview { "Public View" } else { "Public Download" }, json!({"link": link.id, "version": file.version_no})).await?;
+    let data = match format {
+        Some(_) => crate::docs::current(k, &guest, &mut tx, &file).await?,
+        None => Vec::new(),
+    };
     tx.commit().await?;
+    if let Some(format) = format {
+        let mut resp = crate::site::export(k, &file.name, &data, if preview { "html" } else { format }, preview).await?;
+        resp.headers.retain(|(h, _)| h != "cache-control");
+        resp.headers.extend(guest_headers());
+        return Ok(resp);
+    }
     let data = files::read(k, &guest, object).await?;
     let mut headers = guest_headers();
     headers.push(("content-disposition".into(), content::disposition(preview, &file.name)));

@@ -4,6 +4,9 @@
 /// Types a browser could execute or render as a page: always served as downloads of unknown type.
 const ACTIVE: &[&str] = &["text/html", "application/xhtml+xml", "image/svg+xml", "application/javascript", "text/javascript", "text/xml", "application/xml"];
 
+/// A document people edit together live (`.fdoc`, see `docs`): its bytes are a Yjs state.
+pub const FDOC: &str = "application/vnd.ferrum.doc";
+
 /// Types shown inline (previews); everything else is an attachment.
 const INLINE: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "application/pdf"];
 
@@ -22,6 +25,10 @@ fn starts(data: &[u8], magic: &[u8]) -> bool {
 /// which can only choose among types of the same family.
 pub fn sniff(data: &[u8], name: &str) -> &'static str {
     let ext = extension(name);
+    // A Yjs state has no signature; the platform checks the bytes before taking them as a document.
+    if ext == "fdoc" {
+        return FDOC;
+    }
     let at = |off: usize, magic: &[u8]| data.len() >= off + magic.len() && &data[off..off + magic.len()] == magic;
     if starts(data, b"\x89PNG\r\n\x1a\n") {
         return "image/png";
@@ -202,7 +209,8 @@ pub fn file_type(ctype: &str) -> &'static str {
         | "application/vnd.oasis.opendocument.text"
         | "application/msword"
         | "application/rtf"
-        | "application/epub+zip" => "Document",
+        | "application/epub+zip"
+        | FDOC => "Document",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         | "application/vnd.oasis.opendocument.spreadsheet"
         | "application/vnd.ms-excel"

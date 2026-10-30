@@ -17,6 +17,7 @@
 mod acl;
 mod collab;
 mod content;
+mod docs;
 mod files;
 mod hooks;
 mod office;
@@ -53,6 +54,7 @@ pub fn register(hooks: &mut HookRegistry) {
         hooks.register(entity, Arc::new(hooks::Guard));
     }
     hooks.add_site("drive", Arc::new(site::DriveSite));
+    hooks.add_doc_host(docs::PACKAGE, Arc::new(docs::LiveDocs));
 }
 
 /// This app's reports.

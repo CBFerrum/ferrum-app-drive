@@ -99,7 +99,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | Action | Parameters → result (level needed) |
 |---|---|
 | `upload` | `name`, `content_base64` (standard or URL-safe, padding optional) or `text`, `folder?`, `on_conflict?` keep_both (default: `name (2)`) / replace (new version of the same-named file) / fail, `comment?` → Item (Edit on the folder) |
-| `upload_version` | `file`, `content_base64` or `text`, `comment?` → Item (Edit; refused while someone else has it checked out) |
+| `upload_version` | `file`, `content_base64` or `text`, `comment?` → Item (Edit; refused while someone else has it checked out, and for live documents) |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
 | `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators) |
 | `add_team_member` / `remove_team_member` | `folder`, `member`, `role?` → `{folder, members}` (Manage on the team folder) |
@@ -107,14 +107,14 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `rename` | `item`, `name` → Item (Edit; team folders Manage); a taken name is **409** |
 | `set_colour` | `folder`, `colour?` (`#abc` / `#aabbcc`; empty clears) → Item (Edit) |
 | `move` | `item`, `to` (a folder) → Item (Edit on both; Manage on the item when `to` is in another space or team folder). Cycles, top folders and depth beyond 64 are **422**, a taken name **409** |
-| `copy` | `item`, `to`, `name?` → the copy (View on the item, Edit on `to`): current versions, nothing in the trash, at most 1000 items and 1 GB; names avoid clashes |
+| `copy` | `item`, `to`, `name?` → the copy (View on the item, Edit on `to`): current versions (live documents as their editors left them), nothing in the trash, at most 1000 items and 1 GB; names avoid clashes |
 | `trash` | `item` → Item (Edit; team folders: administrators; never your top folder) |
 | `restore` | `item` → Item (Edit): back in place, renamed `name (2)` on a clash; items inside a trashed folder come back with it |
 | `delete_forever` | `item` (in the trash) → `{deleted, freed_bytes}` (Manage): everything inside, every version, its stored files, shares, links, stars and comments |
 | `empty_trash` | `root?` → `{deleted, freed_bytes, more}` (Manage; 200 items per call) |
-| `check_out` | `file` → Item (Edit) |
+| `check_out` | `file` → Item (Edit; not live documents) |
 | `check_in` | `file`, `content_base64`/`text?` (a last version), `comment?`, `force?` → Item (the holder; Manage with `force` breaks someone else's check-out) |
-| `restore_version` | `file`, `version` → Item (Edit): the old content becomes the newest version |
+| `restore_version` | `file`, `version` → Item (Edit): the old content becomes the newest version; for a live document, a new document beside it, `Name (version N).fdoc` |
 | `share` | `item`, `email` or `role`, `permission?` (View), `expires_at?` → `{id, item, email, role, permission, expires_at}` (Manage); sharing again replaces the grant; the person is notified in the app and, with the Mail app, by email (the email names no item). An email outside the workspace (a guest): see below |
 | `unshare` | `item`, `share?` / `email?` / `role?` → `{removed}` (Manage; anyone may remove their own share) |
 | `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?` → `{id, item, token, url, page, access, expires_at, has_password, max_downloads}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
@@ -138,10 +138,24 @@ parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, an
 | `GET /{action}` | a read action above, parameters as query → its JSON |
 | `POST /upload` | query `name`, `folder?`, `on_conflict?`, `comment?`; body: the raw bytes (≤ the workspace limit, within the server's `FERRUM_DRIVE_MAX_FILE_MB`) → `201` Item |
 | `POST /files/{id}/versions` | query `comment?`, `check_in=1?`; body: raw bytes → `201` Item |
+| `POST /new` | query `kind` (`fdoc`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`), `name?` (Untitled), `folder?` → `201` Item: an empty file for its editor |
 | `GET /files/{id}/content` | query `version?`, `inline=1?` → the bytes. `inline` applies to PNG, JPEG, GIF, WebP, BMP, AVIF and PDF; everything else is `attachment`, and HTML, SVG, XML and JavaScript are sent as `application/octet-stream`. Headers: `Content-Disposition` (UTF-8 name), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: … sandbox`, `Cache-Control: private, no-store`, `ETag` (SHA-256), `X-Drive-Version` |
 
 Uploads are checked (name, access, size, quota) before any bytes are stored, stored holding no
 database transaction, then committed under the folder's lock; a refused commit discards the bytes.
+
+**Live documents** (`.fdoc`, type `application/vnd.ferrum.doc`, file type Document) are edited by
+everyone who has them open at once, in the web app's editor (`/app/doc/{id}`), over the platform's
+`/ws/docs/drive/{id}` (Ferrum's docs/plan/collaboration.md, C3). View and Comment access read one,
+Edit and Manage change it; in the trash nobody opens it. The platform keeps the content while it is
+edited and hands it back as a new version when its editors leave, or every ten minutes while they
+type (author: the first of them; comment `Edited live` or `Edited live by N people`); content that
+did not change adds no version. Its content is never replaced around the editor: new versions,
+uploads that replace it and check-out are refused, and restoring a version makes a new document
+beside it. Copies, downloads and the `download` action take the content as its editors left it,
+not the last version. `GET /files/{id}/content?format=html|pdf|txt` exports it (a page that runs
+nothing; a PDF through the server's PDF renderer; its words), also of a `version`; the `download`
+action answers its words as `text`. Deleting one for good also deletes its live content.
 
 **Guests.** Sharing with an email that is no user of the workspace makes a Download link for that
 person alone (`email` on the link) and mails it to them: `{id, item, email, guest: true, permission:
@@ -158,7 +172,7 @@ made a guest. `list_links` shows each link's `email`; `revoke_link` removes a gu
 |---|---|
 | `GET /links/{token}` | query `folder?` (a folder inside a shared folder), `limit?` (≤ 200, 100), `offset?`; password-protected links need a grant (`X-Drive-Grant` header or `grant` query) → `{link: {access, expires_at, downloads_left, has_password}, item, folder?, breadcrumbs?, items?}` (names, sizes, types and dates only) |
 | `POST /links/{token}/unlock` | `{password}` → `{grant, expires_at}` (one hour). Ten wrong passwords lock the link for 15 minutes (`429`) |
-| `GET /links/{token}/content` | query `file?` (a file inside a shared folder), `inline=1?`, grant → the current version's bytes. View links serve only inline previews of images and PDFs; each delivery counts against `max_downloads`, claimed atomically |
+| `GET /links/{token}/content` | query `file?` (a file inside a shared folder), `inline=1?`, grant → the current version's bytes. View links serve only inline previews of images and PDFs; each delivery counts against `max_downloads`, claimed atomically. A live document is shown as a page (`inline=1`, any link) and downloads as `format=html`, `pdf` or `txt` (Download links; html unless asked) |
 
 Unknown, malformed, revoked, expired and used-up tokens, trashed or deleted items, items outside the
 shared folder, View links asked for a download and links while the workspace turned them off all

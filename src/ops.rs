@@ -1023,6 +1023,7 @@ pub async fn purge(ctx: &Ctx, tx: &mut Tx, item: &Item) -> Result<i64> {
         .await?;
     tree::log(tx, ctx, item, "Delete", json!({"files": files.len(), "folders": folders.len(), "bytes": bytes})).await?;
     files::drop_objects(tx, ctx.tenant, &files, &[]).await?;
+    ferrum_kernel::coedit::forget(tx, ctx.tenant, crate::docs::PACKAGE, &files).await?;
     sqlx::query("delete from e_drive_file where tenant_id = $1 and id = any($2)").bind(ctx.tenant).bind(&files).execute(&mut **tx).await?;
     // Deepest first: a folder goes after everything inside it.
     folders.sort_by_key(|f| std::cmp::Reverse(f.1));
