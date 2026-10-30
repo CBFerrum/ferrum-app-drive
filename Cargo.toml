@@ -29,6 +29,7 @@ ring = "0.17"
 sha2 = "0.10"
 
 [dev-dependencies]
+ferrum-apps = { git = "https://github.com/CBFerrum/Ferrum", branch = "main" }
 tokio = { version = "1.45", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "net", "io-util"] }
 # Live documents written as the editor writes them (Yjs), as the platform does.
 yrs = "=0.28.0"

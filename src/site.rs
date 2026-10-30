@@ -53,6 +53,60 @@ fn file_limit(mb: Option<&str>) -> usize {
     mb.and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(32).clamp(1, 1024) << 20
 }
 
+/// The key an upload is stored under (`Idempotency-Key`, namespaced), and what it carried.
+fn upload_key(key: &str, folder: Uuid, name: &str, body: &[u8]) -> Result<(String, String)> {
+    let ok = (8..=120).contains(&key.len()) && key.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.:".contains(&b));
+    if !ok {
+        return Err(Error::invalid("Idempotency-Key must be 8 to 120 letters, digits or -_.:"));
+    }
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    h.update(format!("{folder}\0{name}\0").as_bytes());
+    h.update(body);
+    Ok((format!("drive.upload:{key}"), hex::encode(h.finalize())))
+}
+
+/// The file an earlier upload with this key made (it finished), if any.
+async fn made_before(k: &Kernel, ctx: &Ctx, key: &str, hash: &str) -> Result<Option<Value>> {
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let row: Option<(String, Option<Value>)> = sqlx::query_as("select request_hash, response from idempotency_key where tenant_id = $1 and key = $2")
+        .bind(ctx.tenant)
+        .bind(key)
+        .fetch_optional(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    match row {
+        Some((stored, _)) if stored != *hash => Err(Error::invalid("this Idempotency-Key was used for another upload")),
+        Some((_, made)) => Ok(made),
+        None => Ok(None),
+    }
+}
+
+/// Takes an upload's key in `tx`; when another request took it (and finished, since its
+/// transaction held the row until then), the file that one made.
+async fn take_key(tx: &mut ferrum_kernel::Tx, ctx: &Ctx, key: &str, hash: &str) -> Result<Option<Value>> {
+    let fresh = sqlx::query("insert into idempotency_key (tenant_id, key, request_hash) values ($1, $2, $3) on conflict do nothing")
+        .bind(ctx.tenant)
+        .bind(key)
+        .bind(hash)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected()
+        == 1;
+    if fresh {
+        return Ok(None);
+    }
+    let (stored, made): (String, Option<Value>) = sqlx::query_as("select request_hash, response from idempotency_key where tenant_id = $1 and key = $2")
+        .bind(ctx.tenant)
+        .bind(key)
+        .fetch_one(&mut **tx)
+        .await?;
+    if stored != *hash {
+        return Err(Error::invalid("this Idempotency-Key was used for another upload"));
+    }
+    Ok(Some(made.unwrap_or(Value::Null)))
+}
+
 fn id(seg: &str) -> Result<Uuid> {
     seg.parse().map_err(|_| tree::missing())
 }
@@ -102,6 +156,17 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             };
             let body: &[u8] = if *verb == "new" { &[] } else { &req.body };
             let c = Content::new(&name, body);
+            // An upload sent again (the page went away before it heard back, and the next page
+            // sent the file once more) gets the file the first one made.
+            let key = match req.headers.get("idempotency-key").and_then(Value::as_str) {
+                Some(key) if *verb == "upload" => Some(upload_key(key, folder, &name, body)?),
+                _ => None,
+            };
+            if let Some((key, hash)) = &key
+                && let Some(made) = made_before(k, ctx, key, hash).await?
+            {
+                return Ok(SiteResponse::json(200, &made));
+            }
             let mut tx = k.db.tenant_tx(ctx.tenant).await?;
             let g = Grants::load(&mut tx, ctx).await?;
             files::check_upload(&mut tx, ctx, &g, folder, &c, on).await?;
@@ -109,16 +174,38 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             let object = files::store(k, ctx, &c).await?;
             let res = with_retry(|| async {
                 let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+                // The key is taken in the transaction that makes the file: a request that never
+                // finishes leaves nothing behind, and one sent meanwhile waits here for the first.
+                if let Some((key, hash)) = &key
+                    && let Some(made) = take_key(&mut tx, ctx, key, hash).await?
+                {
+                    return Ok((made, false));
+                }
                 let g = Grants::load(&mut tx, ctx).await?;
                 let out = files::commit_upload(k, ctx, &mut tx, &g, folder, &c, object, on, p.str("comment")).await?;
+                if let Some((key, _)) = &key {
+                    sqlx::query("update idempotency_key set status_code = 201, response = $3 where tenant_id = $1 and key = $2")
+                        .bind(ctx.tenant)
+                        .bind(key)
+                        .bind(&out)
+                        .execute(&mut *tx)
+                        .await?;
+                }
                 tx.commit().await?;
-                Ok(out)
+                Ok((out, true))
             })
             .await;
-            if res.is_err() {
-                files::discard(k, ctx, object).await;
+            match res {
+                Ok((out, true)) => return Ok(SiteResponse::json(201, &out)),
+                Ok((made, false)) => {
+                    files::discard(k, ctx, object).await;
+                    return Ok(SiteResponse::json(200, &made));
+                }
+                Err(e) => {
+                    files::discard(k, ctx, object).await;
+                    return Err(e);
+                }
             }
-            return Ok(SiteResponse::json(201, &res?));
         }
         ("POST", ["files", file, "versions"]) => {
             let file = id(file)?;
