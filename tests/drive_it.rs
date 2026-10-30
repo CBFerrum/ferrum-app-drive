@@ -1191,6 +1191,62 @@ async fn scenario() {
     assert_eq!(open(&frank, budget, &[]).await.unwrap_err().to_string(), "Drive item not found");
     unsafe { std::env::remove_var("FERRUM_EDITORS_URL") };
     t.consistent().await;
+
+    // ── working together (src/collab.rs; Ferrum docs/plan/collaboration.md, C1) ──
+    let told = |u: &U, like: &'static str| {
+        let (t, id) = (&t, u.id);
+        async move { t.scalar(&format!("select count(*) from notification where tenant_id = $1 and user_id = $2 and title like '{like}'"), Some(id)).await }
+    };
+    let notes = uid(&t.upload(&alice, alice.root, "notes.txt", b"plans").await);
+    t.ok(&alice, "share", json!({"item": notes, "email": "bob@acme.test", "permission": "Comment"})).await;
+
+    // A mention tells those who may see the file; the owner hears of comments by others.
+    let said =
+        t.ok(&bob, "add_comment", json!({"file": notes, "body": "@alice see this, @frank too", "mentions": ["alice@acme.test", "FRANK@acme.test"]})).await;
+    assert_eq!(said["mentioned"], json!(["alice@acme.test"]), "frank may not see the file");
+    assert_eq!(told(&alice, "% mentioned you on \"notes.txt\"").await, 1);
+    assert_eq!(told(&alice, "% commented on \"notes.txt\"").await, 0, "a mention is enough");
+    assert_eq!(told(&frank, "% mentioned you on%").await, 0);
+    t.ok(&bob, "add_comment", json!({"file": notes, "body": "and one more thing"})).await;
+    assert_eq!(told(&alice, "% commented on \"notes.txt\"").await, 1);
+    let reply = t.ok(&alice, "add_comment", json!({"file": notes, "body": "thanks @bob", "mentions": "bob@acme.test, alice@acme.test"})).await;
+    assert_eq!(reply["mentioned"], json!(["bob@acme.test"]), "nobody is told of their own comment");
+    assert_eq!(told(&bob, "% mentioned you on \"notes.txt\"").await, 1);
+
+    // Presence: who has the file open now, for those who may see it.
+    let beat = |u: &U, file: Uuid, mode: &'static str| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move { t.site(Some(&ctx), "POST", &format!("/presence/{file}"), &[("mode", mode)], &[], vec![]).await.map(|r| t.json(r)) }
+    };
+    let who = |u: &U, files: String| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move { t.json(t.site(Some(&ctx), "GET", "/presence", &[("files", files.as_str())], &[], vec![]).await.unwrap()) }
+    };
+    assert_eq!(beat(&alice, notes, "edit").await.unwrap()["present"], json!([]));
+    assert_eq!(beat(&bob, notes, "view").await.unwrap()["present"], json!([{"name": "alice", "mode": "edit"}]));
+    assert_eq!(beat(&alice, notes, "edit").await.unwrap()["present"], json!([{"name": "bob", "mode": "view"}]));
+    assert_eq!(who(&bob, format!("{notes},{doc}")).await["present"], json!({notes.to_string(): [{"name": "alice", "mode": "edit"}]}));
+    assert_eq!(who(&frank, notes.to_string()).await["present"], json!({}), "a file frank may not see");
+    assert_eq!(beat(&frank, notes, "view").await.unwrap_err().to_string(), "Drive item not found");
+    assert!(beat(&alice, notes, "dance").await.is_err());
+    beat(&alice, notes, "gone").await.unwrap();
+    assert_eq!(beat(&bob, notes, "view").await.unwrap()["present"], json!([]), "alice left");
+    t.exec("update drive_presence set seen_at = now() - interval '2 minutes' where tenant_id = $1 and file = $2", notes).await;
+    assert_eq!(who(&alice, notes.to_string()).await["present"], json!({}), "a page that stopped reporting is gone");
+
+    // Asking for access: the owner (or a team folder's managers) is told once a day; the answer
+    // never says whether the item exists.
+    let asked = t.ok(&gina, "request_access", json!({"item": notes, "message": "for the review"})).await;
+    assert_eq!(asked, json!({"requested": true}));
+    assert_eq!(told(&alice, "gina (gina@acme.test) asks for access to \"notes.txt\"").await, 1);
+    assert_eq!(t.ok(&gina, "request_access", json!({"item": notes})).await, json!({"requested": true}));
+    assert_eq!(told(&alice, "% asks for access to \"notes.txt\"").await, 1, "once a day");
+    assert_eq!(t.ok(&gina, "request_access", json!({"item": Uuid::now_v7()})).await, json!({"requested": true}), "no such item: the same answer");
+    assert_eq!(t.ok(&bob, "request_access", json!({"item": notes})).await, json!({"has_access": true}));
+    t.ok(&gina, "request_access", json!({"item": eng})).await;
+    assert_eq!(told(&alice, "% asks for access to \"Engineering\"").await, 1, "a team folder's manager is told");
+    assert_eq!(told(&bob, "% asks for access to \"Engineering\"").await, 0, "an editor is not");
+    t.consistent().await;
 }
 
 /// An editor server that only answers discovery: Writer for docx, Calc for xlsx.

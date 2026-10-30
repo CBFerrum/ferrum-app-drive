@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+- Working together (Ferrum docs/plan/collaboration.md, C1).
+  * Comments can mention people (`mentions`, emails). Those who may see the file are told in the
+    bell and by mail, and the file's owner hears of comments by others.
+  * Open pages report who has a file open, viewing or editing (`POST presence/<file>`). Anyone who
+    may see the file sees who did so in the last 90 seconds (`GET presence?files=`).
+  * `request_access` asks an item's owner, or a team folder's managers, to share it. A request
+    counts once a day, and the answer never says whether the item exists.
+
 ## 0.4.0
 
 - Browser editors (Ferrum docs/plan/browser-editors.md). Drive offers the extension point

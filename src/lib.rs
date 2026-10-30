@@ -15,6 +15,7 @@
 //!   (`site`), reports (`reports`) and upkeep (`upkeep`). See `packages/drive/README.md`.
 
 mod acl;
+mod collab;
 mod content;
 mod files;
 mod hooks;
