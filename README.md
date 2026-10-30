@@ -81,6 +81,7 @@ is never overwritten. The person saves a copy or replaces it.
 * `POST /api/app/drive/editor/<file>?kind=browser` (`action=view`, `take_over`) starts a session:
   `{url, lock, version, action, held_by, held_in, …}`.
 * `POST /api/app/drive/editor/<file>/lock?lock=…&op=refresh|release` keeps or ends it.
+* `GET /api/app/drive/editors` says which kinds of editor the server runs: `{online, browser}`.
 * A save is `POST /api/app/drive/files/<file>/versions?lock=…&base=<version>`.
 
 **More editors.** Other add-ons can offer editors on Drive's extension point `drive.editor`, with
