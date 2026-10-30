@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.1
+
+- The online editor talks to the web app (Ferrum docs/plan/collaboration.md, C2). CheckFileInfo
+  names the web app's origin (`PostMessageOrigin`, from `PUBLIC_URL`). It asks the editor to hand
+  its Share button (Manage access only), version history and close button to the page, which opens
+  Drive's own panels, and gives the person's email (`UserExtraInfo`). Collabora's page is opened
+  with `closebutton=1` and `revisionhistory=1`, which show those two buttons.
+- Presence marks someone editing a file a browser editor holds (`"editor": "browser"`), so the web
+  app offers to join only people editing together.
+
 ## 0.7.0
 
 - Documents for people and AI agents. `create_document` makes a live document from Markdown,

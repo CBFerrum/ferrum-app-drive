@@ -1019,7 +1019,11 @@ async fn scenario() {
     let opened = t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.unwrap());
     assert_eq!(opened["action"], json!("edit"));
     let url = opened["url"].as_str().unwrap();
-    assert!(url.starts_with("http://office.test/browser/x/cool.html?WOPISrc=http%3A%2F%2Fferrum.test%2Fapi%2Fsite%2Facme%2Fdrive%2Fwopi%2Ffiles%2F"), "{url}");
+    // Collabora's close and version history buttons, which post to the web app (C2).
+    assert!(
+        url.starts_with("http://office.test/browser/x/cool.html?closebutton=1&revisionhistory=1&WOPISrc=http%3A%2F%2Fferrum.test%2Fapi%2Fsite%2Facme%2Fdrive%2Fwopi%2Ffiles%2F"),
+        "{url}"
+    );
     assert!(url.ends_with(&doc.to_string()), "{url}");
     let token = opened["access_token"].as_str().unwrap().to_string();
     assert!(opened["access_token_ttl"].as_i64().unwrap() > chrono::Utc::now().timestamp_millis());
@@ -1036,6 +1040,12 @@ async fn scenario() {
     let info = t.json(info);
     assert_eq!((info["BaseFileName"].clone(), info["Size"].clone(), info["UserCanWrite"].clone()), (json!("plan.docx"), json!(16), json!(true)));
     assert_eq!(info["SupportsLocks"], json!(true));
+    // The editor talks to the web app (C2): who is in it, and its buttons that open Drive's panels.
+    assert_eq!(
+        (info["PostMessageOrigin"].clone(), info["EnableShare"].clone(), info["FileVersionPostMessage"].clone(), info["ClosePostMessage"].clone()),
+        (json!("https://erp.acme.test"), json!(true), json!(true), json!(true))
+    );
+    assert_eq!(info["UserExtraInfo"]["mail"], json!("alice@acme.test"));
     let got = wopi(doc, "/contents", "GET", token.clone(), vec![], vec![]).await;
     assert_eq!((got.status, got.body.as_slice()), (200, &b"PK first version"[..]));
     assert_eq!(header(&got, "X-WOPI-ItemVersion"), Some("1"));
@@ -1079,7 +1089,9 @@ async fn scenario() {
     t.ok(&alice, "share", json!({"item": doc, "email": "bob@acme.test", "permission": "View"})).await;
     let bobs = t.json(t.site(Some(&bob.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.unwrap());
     let bob_token = bobs["access_token"].as_str().unwrap().to_string();
-    assert_eq!(t.json(wopi(doc, "", "GET", bob_token.clone(), vec![], vec![]).await)["UserCanWrite"], json!(false));
+    let bob_info = t.json(wopi(doc, "", "GET", bob_token.clone(), vec![], vec![]).await);
+    assert_eq!(bob_info["UserCanWrite"], json!(false));
+    assert_eq!((bob_info["EnableShare"].clone(), bob_info["FileSharingPostMessage"].clone()), (json!(false), json!(false)), "only managers share");
     let bob_lock = wopi(doc, "", "POST", bob_token.clone(), vec![("x-wopi-override", "LOCK".into()), ("x-wopi-lock", "B".into())], vec![]).await;
     assert_eq!(bob_lock.status, 404, "no edit right: answered like a missing file");
 
@@ -1267,6 +1279,17 @@ async fn scenario() {
     assert_eq!(who(&frank, notes.to_string()).await["present"], json!({}), "a file frank may not see");
     assert_eq!(beat(&frank, notes, "view").await.unwrap_err().to_string(), "Drive item not found");
     assert!(beat(&alice, notes, "dance").await.is_err());
+    // Editing a file a browser editor holds: in that editor, which nobody can join (C2).
+    t.exec(
+        "insert into drive_wopi_lock (tenant_id, file, lock, holder, expires_at) values ($1, $2, 'browser:s1', 'alice', now() + interval '1 minute')",
+        notes,
+    )
+    .await;
+    assert_eq!(beat(&bob, notes, "view").await.unwrap()["present"], json!([{"name": "alice", "mode": "edit", "editor": "browser"}]));
+    assert_eq!(beat(&alice, notes, "edit").await.unwrap()["present"], json!([{"name": "bob", "mode": "view"}]), "only editing is in the editor");
+    t.exec("update drive_wopi_lock set lock = 'collabora-lock' where tenant_id = $1 and file = $2", notes).await;
+    assert_eq!(who(&bob, notes.to_string()).await["present"], json!({notes.to_string(): [{"name": "alice", "mode": "edit"}]}), "the online editor is shared");
+    t.exec("delete from drive_wopi_lock where tenant_id = $1 and file = $2", notes).await;
     beat(&alice, notes, "gone").await.unwrap();
     assert_eq!(beat(&bob, notes, "view").await.unwrap()["present"], json!([]), "alice left");
     t.exec("update drive_presence set seen_at = now() - interval '2 minutes' where tenant_id = $1 and file = $2", notes).await;
