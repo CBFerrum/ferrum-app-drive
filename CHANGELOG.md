@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1
+
+- The list is drawn with the suite's components: each item shows what it is (a folder, a document, a
+  spreadsheet, a presentation, a PDF, an image, a video, a sound, an archive) in its kind's colour
+  beside its name, and one menu per row holds opening, Open with, details, sharing, the star,
+  renaming, downloading and the trash. Join stays on the row while others edit the file.
+- Documents edited live show their names without `.fdoc`; renaming one keeps it a live document.
+- The New menu and Upload have icons; the folder path shows under the title only inside a folder.
+- The file picker (the `pick file` intent) shows each file's kind, and its list starts right under
+  the search field.
+
 ## 0.8.0
 
 - Drive's own interface (Ferrum docs/plan/apps-ui.md, U4a), out of the web app: `ui/`, at `/drive/`

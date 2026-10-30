@@ -10,7 +10,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { api, download, errorMessage, formatDateTime, shell, type IntentRequest } from "@ferrum/client";
 import { Button, EmptyState, Spinner, toast } from "@ferrum/kit";
 import { DetailsPanel, type ItemInfo } from "./Details";
-import { isLiveDoc, sizeLabel } from "./Drive";
+import { FileGlyph, isLiveDoc, shownName, sizeLabel } from "./Drive";
 import { type Shareable, ShareDialog } from "./Share";
 
 interface Found {
@@ -109,7 +109,7 @@ export function ViewPage() {
         <Link className="btn btn-default btn-sm" to={back}>
           Back
         </Link>
-        <strong>{item.data.name}</strong>
+        <strong>{shownName(item.data.name)}</strong>
         <span className="faint">
           {sizeLabel(item.data.size ?? null)} · {formatDateTime(item.data.modified_at)}
         </span>
@@ -194,7 +194,8 @@ export function PickPage() {
             return (
               <li key={f.id} role="option" aria-selected={on}>
                 <button type="button" className={on ? "drive-pick-item drive-pick-on" : "drive-pick-item"} onClick={() => toggle(f)} onDoubleClick={() => !opts.multiple && shell().intent.done({ files: [{ id: f.id, name: f.name, size: f.size, url: contentUrl(f.id) }] })}>
-                  <span className="drive-pick-name">{f.name}</span>
+                  <FileGlyph kind="file" name={f.name} size={20} />
+                  <span className="drive-pick-name">{shownName(f.name)}</span>
                   <span className="faint">
                     {sizeLabel(f.size)} · {formatDateTime(f.modified_at)}
                     {f.path ? ` · ${f.path}` : ""}
@@ -226,7 +227,7 @@ export function PreviewPage() {
   return (
     <div className="drive-intent">
       <div className="editor-bar">
-        <strong>{item.data.name}</strong>
+        <strong>{shownName(item.data.name)}</strong>
         <span className="faint">{sizeLabel(item.data.size ?? null)}</span>
         <span className="editor-bar-end">
           <a className="btn btn-default btn-sm" href={item.data.parent ? `/drive/${item.data.parent}?item=${item.data.id}` : "/drive"} onClick={(e) => (e.preventDefault(), shell().navigate(e.currentTarget.getAttribute("href")!))}>

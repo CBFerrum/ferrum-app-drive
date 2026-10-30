@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { api, download, errorMessage, formatDateTime, relativeTime } from "@ferrum/client";
 import { Badge, Button, Spinner, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
-import { EditorLink, defaultEditor, editorsFor, isLiveDoc, shared, sizeLabel, useEditors } from "./Drive";
+import { EditorLink, defaultEditor, editorsFor, isLiveDoc, shared, shownName, sizeLabel, useEditors } from "./Drive";
 import { joinable, presenceLabel, useFilesPresence } from "./presence";
 import { type Shareable, roleLabel } from "./Share";
 
@@ -106,9 +106,9 @@ export function DetailsPanel({
   const open = isFile && !inEditor ? defaultEditor(editorsFor({ id: item.id, name: item.name, size: item.size ?? null }, editors), narrow) : undefined;
   const join = open && shared(open.key) && joinable(present) ? open : undefined;
   return (
-    <aside className="drive-details" aria-label={`Details of ${item.name}`}>
+    <aside className="drive-details" aria-label={`Details of ${shownName(item.name)}`}>
       <div className="drive-details-head">
-        <strong className="drive-details-name">{item.name}</strong>
+        <strong className="drive-details-name">{shownName(item.name)}</strong>
         <Button size="sm" variant="ghost" icon="x" aria-label="Close details" onClick={onClose} />
       </div>
       <dl className="drive-facts">
