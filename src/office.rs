@@ -282,6 +282,12 @@ pub async fn hold(tx: &mut Tx, ctx: &Ctx, file: &Item, presented: Option<&str>) 
     }
 }
 
+/// `GET /api/app/drive/editors`: the kinds of editor this server runs: the online editor
+/// (`FERRUM_OFFICE_URL`, `FERRUM_OFFICE_WOPI_URL`) and browser editors (`FERRUM_EDITORS_URL`).
+pub fn available() -> Value {
+    json!({"online": config().is_some(), "browser": editors_url().is_some()})
+}
+
 /// The editor server for browser editors, as browsers reach it (`FERRUM_EDITORS_URL`).
 fn editors_url() -> Option<String> {
     let url = std::env::var("FERRUM_EDITORS_URL").ok()?.trim().trim_end_matches('/').to_string();
@@ -290,7 +296,7 @@ fn editors_url() -> Option<String> {
 
 /// `POST /api/app/drive/editor/{file}?kind=browser` (`action=view` to only read; `take_over` to
 /// move the caller's own browser editor session here): a session in a browser editor, as
-/// `{kind, url, name, size, version, action, lock, lock_seconds, held_by, held_in, author}`.
+/// `{kind, url, name, folder, size, version, action, lock, lock_seconds, held_by, held_in, author}`.
 /// Editing takes the file's editor lock; without Edit access, with the file checked out by
 /// someone else, or with another session holding the lock, it opens read-only (`action: view`)
 /// and says who holds it (`held_in`: `browser`, `online` or `checkout`).
@@ -319,6 +325,7 @@ pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, 
         "kind": "browser",
         "url": format!("{url}/relay.html"),
         "name": item.name,
+        "folder": item.parent,
         "size": item.size,
         "version": item.version_no,
         "action": action,

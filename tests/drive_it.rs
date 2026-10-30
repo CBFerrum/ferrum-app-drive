@@ -1086,11 +1086,17 @@ async fn scenario() {
     };
     let err = open(&alice, budget, &[]).await.unwrap_err();
     assert!(err.to_string().contains("not set up"), "{err}");
+    let kinds = || {
+        let (t, ctx) = (&t, alice.ctx.clone());
+        async move { t.json(t.site(Some(&ctx), "GET", "/editors", &[], &[], vec![]).await.unwrap()) }
+    };
+    assert_eq!(kinds().await, json!({"online": true, "browser": false}));
     // SAFETY: as above.
     unsafe { std::env::set_var("FERRUM_EDITORS_URL", "https://editors.test/") };
     let a1 = open(&alice, budget, &[]).await.unwrap();
     assert_eq!((a1["kind"].clone(), a1["url"].clone(), a1["action"].clone()), (json!("browser"), json!("https://editors.test/relay.html"), json!("edit")));
     assert_eq!((a1["version"].clone(), a1["size"].clone(), a1["held_by"].clone(), a1["lock_seconds"].clone()), (json!(1), json!(11), Value::Null, json!(1800)));
+    assert_eq!((a1["folder"].clone(), kinds().await["browser"].clone()), (json!(alice.root), json!(true)));
     let l1 = a1["lock"].as_str().unwrap().to_string();
     assert!(l1.starts_with("browser:"), "{l1}");
 
