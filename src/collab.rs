@@ -56,7 +56,7 @@ pub async fn tell_about_comment(k: &Kernel, ctx: &Ctx, tx: &mut Tx, f: &Item, bo
 }
 
 /// `POST /api/app/drive/presence/{file}?mode=view|edit|gone`: the caller has the file open (or
-/// closed it). Answers who else has it open now, as `{file, present: [{name, mode}]}`.
+/// closed it). Answers who else has it open now, as `{file, present: [{name, mode, editor?}]}`.
 pub async fn heartbeat(k: &Kernel, ctx: &Ctx, file: Uuid, mode: &str) -> Result<Value> {
     if !matches!(mode, "view" | "edit" | "gone") {
         return Err(Error::field("mode", "must be view, edit or gone"));
@@ -91,7 +91,7 @@ pub async fn heartbeat(k: &Kernel, ctx: &Ctx, file: Uuid, mode: &str) -> Result<
 }
 
 /// `GET /api/app/drive/presence?files=<id>,…`: who has each of these files open now, for the files
-/// the caller may see (at most 500), as `{present: {<file>: [{name, mode}]}}`.
+/// the caller may see (at most 500), as `{present: {<file>: [{name, mode, editor?}]}}`.
 pub async fn present(k: &Kernel, ctx: &Ctx, ids: &[Uuid]) -> Result<Value> {
     if ids.len() > 500 {
         return Err(Error::field("files", "at most 500 files"));
@@ -105,10 +105,15 @@ pub async fn present(k: &Kernel, ctx: &Ctx, ids: &[Uuid]) -> Result<Value> {
 }
 
 /// Who other than the caller reported one of `files` (already checked for the caller) open lately.
+/// Whoever edits a file a browser editor holds is in that editor (`"editor": "browser"`): it is one
+/// person's at a time, so nobody can join them (Ferrum docs/plan/collaboration.md, C2).
 async fn present_on(tx: &mut Tx, ctx: &Ctx, files: &[Uuid]) -> Result<BTreeMap<Uuid, Vec<Value>>> {
-    let rows: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "select file, name, mode from drive_presence where tenant_id = $1 and file = any($2) and user_id <> $3 \
-         and seen_at > now() - make_interval(secs => $4) order by file, mode desc, name",
+    let rows: Vec<(Uuid, String, String, bool)> = sqlx::query_as(
+        "select p.file, p.name, p.mode, coalesce(p.mode = 'edit' and l.lock like 'browser:%', false) \
+         from drive_presence p \
+         left join drive_wopi_lock l on l.tenant_id = p.tenant_id and l.file = p.file and l.expires_at > now() \
+         where p.tenant_id = $1 and p.file = any($2) and p.user_id <> $3 \
+         and p.seen_at > now() - make_interval(secs => $4) order by p.file, p.mode desc, p.name",
     )
     .bind(ctx.tenant)
     .bind(files)
@@ -117,8 +122,12 @@ async fn present_on(tx: &mut Tx, ctx: &Ctx, files: &[Uuid]) -> Result<BTreeMap<U
     .fetch_all(&mut **tx)
     .await?;
     let mut out: BTreeMap<Uuid, Vec<Value>> = BTreeMap::new();
-    for (file, name, mode) in rows {
-        out.entry(file).or_default().push(json!({"name": name, "mode": mode}));
+    for (file, name, mode, browser) in rows {
+        let mut one = json!({"name": name, "mode": mode});
+        if browser {
+            one["editor"] = json!("browser");
+        }
+        out.entry(file).or_default().push(one);
     }
     Ok(out)
 }

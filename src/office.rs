@@ -403,8 +403,12 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool) -> Resul
     } else {
         "?"
     };
+    // Collabora shows its close and version history buttons when asked; they post to the web app,
+    // which answers them (C2, as in `check_file_info`).
+    let collabora = page.contains("/cool.html") || page.contains("/loleaflet.html");
+    let buttons = if collabora && web_origin(k.settings.public_url.as_deref()).is_some() { "closebutton=1&revisionhistory=1&" } else { "" };
     Ok(json!({
-        "url": format!("{page}{sep}WOPISrc={}", encode(&src)),
+        "url": format!("{page}{sep}{buttons}WOPISrc={}", encode(&src)),
         "access_token": token,
         "access_token_ttl": exp * 1000,
         "name": item.name,
@@ -454,7 +458,7 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let g = Grants::load(&mut tx, &ctx).await?;
     let out = match (req.method.as_str(), contents, header("x-wopi-override").unwrap_or_default()) {
-        ("GET", false, _) => check_file_info(&mut tx, &ctx, &g, file).await,
+        ("GET", false, _) => check_file_info(k, &mut tx, &ctx, &g, file).await,
         ("GET", true, _) => get_file(k, &mut tx, &ctx, &g, file).await,
         ("POST", true, "PUT") => put_file(k, &mut tx, &ctx, &g, file, req).await,
         ("POST", false, op) => lock(&mut tx, &ctx, &g, file, op, header("x-wopi-lock"), header("x-wopi-oldlock")).await,
@@ -473,13 +477,19 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     }
 }
 
-async fn check_file_info(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Result<SiteResponse> {
+/// The web app's origin (the scheme, host and port of `PUBLIC_URL`): the page the editor runs in,
+/// which it may send messages to.
+fn web_origin(public_url: Option<&str>) -> Option<String> {
+    let (scheme, rest) = public_url?.trim().split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next().filter(|h| !h.is_empty())?;
+    matches!(scheme, "http" | "https").then(|| format!("{scheme}://{host}"))
+}
+
+async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Result<SiteResponse> {
     let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, false).await?;
     let h = held(tx, ctx.tenant, file).await?;
     let can_write = writable(ctx, g, &item, h.as_ref());
-    Ok(SiteResponse::json(
-        200,
-        &json!({
+    let mut info = json!({
             "BaseFileName": item.name,
             "Size": item.size,
             "Version": item.version_no.to_string(),
@@ -495,8 +505,25 @@ async fn check_file_info(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Resu
             "SupportsRename": false,
             "UserCanRename": false,
             "UserCanNotWriteRelative": true,
-        }),
-    ))
+            "UserExtraInfo": {"mail": ctx.email},
+    });
+    // The web app hears from the editor (Ferrum docs/plan/collaboration.md, C2): who joins and
+    // leaves (Collabora's View_Added and View_Removed), and its Share, version history and Close
+    // buttons, which open Drive's own panels instead (UI_Share or UI_Sharing, UI_FileVersions,
+    // UI_Close). Without the app's origin the editor keeps its own.
+    if let Some(origin) = web_origin(k.settings.public_url.as_deref()) {
+        let share = item.level(g) >= Level::Manage;
+        for (key, value) in [
+            ("PostMessageOrigin", json!(origin)),
+            ("EnableShare", json!(share)),
+            ("FileSharingPostMessage", json!(share)),
+            ("FileVersionPostMessage", json!(true)),
+            ("ClosePostMessage", json!(true)),
+        ] {
+            info[key] = value;
+        }
+    }
+    Ok(SiteResponse::json(200, &info))
 }
 
 async fn get_file(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Result<SiteResponse> {
@@ -601,6 +628,15 @@ async fn lock(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, op: &str, given: O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_editor_posts_to_the_web_apps_origin() {
+        assert_eq!(web_origin(Some("https://erp.acme.test/app/")), Some("https://erp.acme.test".into()));
+        assert_eq!(web_origin(Some(" http://localhost:5175 ")), Some("http://localhost:5175".into()));
+        assert_eq!(web_origin(Some("ftp://x.test")), None);
+        assert_eq!(web_origin(Some("erp.acme.test")), None);
+        assert_eq!(web_origin(None), None);
+    }
 
     const COLLABORA: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <wopi-discovery><net-zone name="external-http">

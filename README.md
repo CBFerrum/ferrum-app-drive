@@ -38,6 +38,20 @@ Collabora needs to know Ferrum and the web app:
 * `aliasgroup1=<FERRUM_OFFICE_WOPI_URL>` lets Ferrum be its WOPI host.
 * `--o:net.frame_ancestors=<web app origin>` lets the app frame it.
 
+The editor and the web app talk (WOPI's PostMessage API; Ferrum docs/plan/collaboration.md, C2).
+CheckFileInfo names the web app's origin, from the server's `PUBLIC_URL`, as `PostMessageOrigin`.
+* The editor says who is in the file (Collabora's `Views_List`, or `View_Added` and `View_Removed`
+  in older versions), and the page shows them.
+* Its Share button (for people with Manage access: `EnableShare`, `FileSharingPostMessage`) opens
+  Drive's sharing.
+* Its version history (`FileVersionPostMessage`) opens Drive's versions.
+* Its close button (`ClosePostMessage`) goes back.
+* The page shows whether the file has unsaved changes (`Doc_ModifiedStatus`).
+
+Collabora shows the close and version history buttons only when its page is opened with
+`closebutton=1` and `revisionhistory=1`, which Drive adds to its address. Without `PUBLIC_URL`, the
+editor keeps its own buttons.
+
 Tokens last ten hours and are bound to the workspace, the file and the person. Locks lapse 30
 minutes after their last refresh. A file is saved only by the session holding its lock, and an
 empty file can be filled without one.
@@ -96,6 +110,9 @@ is never overwritten. The person saves a copy or replaces it.
     every 30 seconds.
   * Anyone who may see a file sees who reported in the last 90 seconds, in the answer or with
     `GET /api/app/drive/presence?files=<id>,…`.
+  * Someone editing a file a browser editor holds is marked `"editor": "browser"`: that editor is
+    one person's at a time, so the web app offers to join only people in the online editor or a
+    live document.
 * **Requests for access.** `request_access` with `item` and an optional `message` tells the item's
   owner, or a team folder's managers. A request counts once a day per item and person. The answer
   is the same whether or not the item exists, so it reveals nothing.
