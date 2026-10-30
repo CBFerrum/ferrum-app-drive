@@ -11,7 +11,50 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api, download, errorMessage, formatDateTime, initials, shell } from "@ferrum/client";
-import { Badge, Button, Dialog, EmptyState, FamilyNav, Field, Icon, Menu, MenuItem, Spinner, Tabs, confirmDialog, toast } from "@ferrum/kit";
+import { Badge, Button, Dialog, EmptyState, FamilyNav, Field, Spinner, Tabs, confirmDialog, toast } from "@ferrum/kit";
+import {
+  Button as UiButton,
+  buttonVariants,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@ferrum/kit/primitives";
+import {
+  ArchiveRestore,
+  Download,
+  ExternalLink,
+  File,
+  FileArchive,
+  FileAudio,
+  FileImage,
+  FileText,
+  FileVideo,
+  Folder,
+  FolderPlus,
+  Info,
+  type LucideIcon,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Presentation,
+  Share2,
+  Sheet,
+  Star,
+  StarOff,
+  Trash2,
+  Upload,
+} from "lucide-react";
 import { type EditorView, applyViews, hostMessage, inkOn, othersOf, parseMessage } from "./wopi";
 import { DetailsPanel, type ItemInfo, allows } from "./Details";
 import { joinable, presenceLabel, useFilesPresence, usePresence } from "./presence";
@@ -48,6 +91,26 @@ interface Launch {
 
 /** Documents edited live (`.fdoc`): Docs' editor opens them. */
 export const isLiveDoc = (name: string) => /\.fdoc$/i.test(name);
+
+/** A name as people see it: a live document's without its `.fdoc`. */
+export const shownName = (name: string) => (isLiveDoc(name) ? name.slice(0, -5) : name);
+
+const GLYPHS: [RegExp, LucideIcon, string][] = [
+  [/\.(fdoc|docx?|odt|rtf|txt|md)$/i, FileText, "text-blue-600 dark:text-blue-400"],
+  [/\.(xlsx?|ods|csv|tsv)$/i, Sheet, "text-green-600 dark:text-green-400"],
+  [/\.(pptx?|odp)$/i, Presentation, "text-orange-600 dark:text-orange-400"],
+  [/\.pdf$/i, FileText, "text-red-600 dark:text-red-400"],
+  [/\.(png|jpe?g|gif|webp|svg|avif|heic|bmp|tiff?)$/i, FileImage, "text-purple-600 dark:text-purple-400"],
+  [/\.(mp4|mov|webm|mkv|avi)$/i, FileVideo, "text-pink-600 dark:text-pink-400"],
+  [/\.(mp3|wav|ogg|m4a|flac|aac)$/i, FileAudio, "text-cyan-600 dark:text-cyan-400"],
+  [/\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i, FileArchive, "text-slate-500 dark:text-slate-400"],
+];
+
+/** A folder, or what a file's name says it is, in its kind's colour. */
+export function FileGlyph({ kind, name, size = 18 }: { kind: "file" | "folder"; name: string; size?: number }) {
+  const [Glyph, tone] = kind === "folder" ? [Folder, "fill-amber-400/25 text-amber-500"] : (GLYPHS.find(([re]) => re.test(name))?.slice(1) as [LucideIcon, string] | undefined) ?? [File, "text-muted-foreground"];
+  return <Glyph aria-hidden size={size} className={`shrink-0 ${tone}`} />;
+}
 
 /** The apps the person may use (the bar's launcher): whether Docs is one of them. */
 export function useApps() {
@@ -320,14 +383,20 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const newFolder = () =>
     setNaming({ title: "New folder", label: "Name", initial: "", done: (name) => attempt(() => act("create_folder", { parent: id, name }), `Folder “${name}” made`) });
   const rename = (it: Item) =>
-    setNaming({ title: `Rename “${it.name}”`, label: "New name", initial: it.name, done: (name) => attempt(() => act("rename", { item: it.id, name }), "Renamed") });
+    setNaming({
+      title: `Rename “${shownName(it.name)}”`,
+      label: "New name",
+      initial: shownName(it.name),
+      // A live document stays one: its name keeps `.fdoc`, which people never see.
+      done: (name) => attempt(() => act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name }), "Renamed"),
+    });
   const trash = async (it: Item) => {
-    if (await confirmDialog({ title: `Move “${it.name}” to the trash?`, message: "You can restore it from Trash.", confirmLabel: "Move to trash", danger: true }))
-      await attempt(() => act("trash", { item: it.id }), `“${it.name}” is in the trash`);
+    if (await confirmDialog({ title: `Move “${shownName(it.name)}” to the trash?`, message: "You can restore it from Trash.", confirmLabel: "Move to trash", danger: true }))
+      await attempt(() => act("trash", { item: it.id }), `“${shownName(it.name)}” is in the trash`);
   };
   const destroy = async (it: Item) => {
-    if (await confirmDialog({ title: `Delete “${it.name}” for good?`, message: "This cannot be undone.", confirmLabel: "Delete forever", danger: true }))
-      await attempt(() => act("delete_forever", { item: it.id }), `“${it.name}” is deleted`);
+    if (await confirmDialog({ title: `Delete “${shownName(it.name)}” for good?`, message: "This cannot be undone.", confirmLabel: "Delete forever", danger: true }))
+      await attempt(() => act("delete_forever", { item: it.id }), `“${shownName(it.name)}” is deleted`);
   };
 
   const current = list.data?.folder;
@@ -349,11 +418,11 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   return (
     <div className={selected ? "drive-layout drive-layout-details" : "drive-layout"}>
       <div className="drive-main">
-        <FamilyNav />
+        <FamilyNav className="mb-3" />
         <div className="page-head">
           <div>
             <h1 className="page-title">{title}</h1>
-            {inFolder && list.data && (
+            {inFolder && list.data && list.data.breadcrumbs.length > 1 && (
               <nav className="page-sub" aria-label="Folder path">
                 {list.data.breadcrumbs.map((b, i) => (
                   <span key={b.id}>
@@ -365,43 +434,36 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             )}
           </div>
           {canAdd && (
-            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <div className="flex flex-wrap items-center gap-2">
               {kind ? (
                 fresh.map((n) => (
-                  <Button key={n.kind} size="sm" icon="plus" onClick={() => void create(n.kind)}>
-                    {n.label}
-                  </Button>
+                  <UiButton key={n.kind} size="sm" variant="outline" onClick={() => void create(n.kind)}>
+                    <Plus /> {n.label}
+                  </UiButton>
                 ))
               ) : (
-                <Menu label="New" icon="plus" ariaLabel="New document or folder" buttonClass="btn btn-default btn-sm">
-                  {(close) => (
-                    <>
-                      {fresh.map((n) => (
-                        <MenuItem
-                          key={n.kind}
-                          onSelect={() => {
-                            close();
-                            void create(n.kind);
-                          }}
-                        >
-                          {n.label}
-                        </MenuItem>
-                      ))}
-                      <MenuItem
-                        onSelect={() => {
-                          close();
-                          newFolder();
-                        }}
-                      >
-                        Folder
-                      </MenuItem>
-                    </>
-                  )}
-                </Menu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <UiButton size="sm" variant="outline" aria-label="New document or folder">
+                      <Plus /> New
+                    </UiButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="min-w-52">
+                    {fresh.map((n) => (
+                      <DropdownMenuItem key={n.kind} onSelect={() => void create(n.kind)}>
+                        <FileGlyph kind="file" name={`new.${n.kind}`} size={16} /> {n.label}
+                      </DropdownMenuItem>
+                    ))}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={newFolder}>
+                      <FolderPlus /> Folder
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
-              <Button size="sm" variant="primary" icon="upload" loading={busy} onClick={() => picker.current?.click()}>
-                Upload
-              </Button>
+              <UiButton size="sm" disabled={busy} onClick={() => picker.current?.click()}>
+                <Upload /> Upload
+              </UiButton>
               <input ref={picker} type="file" multiple hidden onChange={(e) => void upload(e.target.files)} />
             </div>
           )}
@@ -442,16 +504,18 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             {canAdd && <p className="muted">Upload files or start a document.</p>}
           </EmptyState>
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th className="num">Size</th>
-                <th>Modified</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
+          <Table className="drive-list">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Name</TableHead>
+                <TableHead className="hidden md:table-cell">Modified</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">Size</TableHead>
+                <TableHead className="w-12">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {items.map((it) => {
                 const choices = it.kind === "file" && view !== "trash" ? editorsFor(it, editors) : [];
                 const open = defaultEditor(choices, narrow);
@@ -459,117 +523,140 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                 // Others editing where people edit together: join them there (C2).
                 const editing = here.filter((p) => p.mode === "edit");
                 const joins = !!open && shared(open.key) && joinable(here);
+                const name = shownName(it.name);
+                const glyph = <FileGlyph kind={it.kind} name={it.name} />;
+                const others = choices.filter((c) => c !== open);
                 return (
-                  <tr key={it.id} className={it.id === selected ? "row-selected" : undefined}>
-                    <td>
-                      {it.kind === "folder" && view !== "trash" ? (
-                        <Link to={`/drive/${it.id}`}>
-                          <Icon name="list" size={14} /> {it.name}
-                        </Link>
-                      ) : open ? (
-                        <EditorLink choice={open}>
-                          <Icon name="file" size={14} /> {it.name}
-                        </EditorLink>
-                      ) : (
-                        <span>
-                          <Icon name={it.kind === "folder" ? "list" : "file"} size={14} /> {it.name}
-                        </span>
-                      )}
-                      {it.starred && (
-                        <span className="drive-star" aria-label="Starred" title="Starred">
-                          ★
-                        </span>
-                      )}
-                      {it.locked_by && <Badge tone="amber">Checked out</Badge>}
-                      {here.length > 0 && (
-                        <Badge tone="green" title={presenceLabel(here)}>
-                          {presenceLabel(here)}
-                        </Badge>
-                      )}
-                      {!inFolder && it.owner && <div className="faint">{it.owner}</div>}
-                    </td>
-                    <td className="num">{sizeLabel(it.size)}</td>
-                    <td className="muted">
+                  <TableRow key={it.id} data-state={it.id === selected ? "selected" : undefined}>
+                    <TableCell className="w-full max-w-0 py-2">
+                      <div className="flex min-w-0 items-center gap-3">
+                        {it.kind === "folder" && view !== "trash" ? (
+                          <Link to={`/drive/${it.id}`} className="drive-name">
+                            {glyph}
+                            <span className="truncate">{name}</span>
+                          </Link>
+                        ) : open ? (
+                          <EditorLink choice={open} className="drive-name">
+                            {glyph}
+                            <span className="truncate">{name}</span>
+                          </EditorLink>
+                        ) : (
+                          <span className="drive-name">
+                            {glyph}
+                            <span className="truncate">{name}</span>
+                          </span>
+                        )}
+                        {it.starred && <Star aria-label="Starred" size={14} className="shrink-0 fill-amber-400 text-amber-400" />}
+                        {it.locked_by && <Badge tone="amber">Checked out</Badge>}
+                        {here.length > 0 && (
+                          <Badge tone="green" title={presenceLabel(here)}>
+                            {presenceLabel(here)}
+                          </Badge>
+                        )}
+                      </div>
+                      {!inFolder && it.owner && <div className="truncate pl-[30px] text-xs text-muted-foreground">{it.owner}</div>}
+                    </TableCell>
+                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                       {formatDateTime(it.modified_at)}
-                      {it.modified_by ? ` · ${it.modified_by}` : ""}
-                    </td>
-                    <td className="drive-actions">
-                      {open && (
-                        <EditorLink
-                          className={joins ? "btn btn-primary btn-sm" : "btn btn-default btn-sm"}
-                          choice={open}
-                          aria-label={joins ? `Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${it.name}` : undefined}
-                        >
-                          {joins ? "Join" : open.key === "live" || open.key === "view" || !allows(it.permission, "Edit") || editing.length > 0 ? "Open" : "Edit online"}
+                      {it.modified_by && <span className="hidden lg:inline"> · {it.modified_by}</span>}
+                    </TableCell>
+                    <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{sizeLabel(it.size)}</TableCell>
+                    <TableCell className="py-1 text-right whitespace-nowrap">
+                      {joins && (
+                        <EditorLink className={`${buttonVariants({ size: "xs" })} mr-1`} choice={open} aria-label={`Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${name}`}>
+                          Join
                         </EditorLink>
-                      )}{" "}
-                      {choices.length > (open ? 1 : 0) && (
-                        <Menu label="Open with" ariaLabel={`Open ${it.name} with`} buttonClass="btn btn-default btn-sm">
-                          {(close) =>
-                            choices.map((c) => (
-                              <MenuItem
-                                key={c.key}
-                                onSelect={() => {
-                                  close();
-                                  if (c.unavailable) toast(`${c.label} cannot open ${it.name}: ${c.unavailable}`, "error");
-                                  else openChoice(c, navigate);
-                                }}
-                              >
-                                {c.label}
-                                {c.unavailable && <span className="faint"> ({c.unavailable})</span>}
-                                {!c.unavailable && editing.length > 0 && (
-                                  <span className="faint"> ({shared(c.key) && joinable(here) ? `join ${editing.map((p) => p.name).join(", ")}` : "read only while others edit"})</span>
-                                )}
-                              </MenuItem>
-                            ))
-                          }
-                        </Menu>
-                      )}{" "}
-                      <Menu label="More" ariaLabel={`More for ${it.name}`} buttonClass="btn btn-default btn-sm">
-                        {(close) => {
-                          const item = (run: () => unknown) => () => {
-                            close();
-                            void run();
-                          };
-                          if (view === "trash")
-                            return (
-                              <>
-                                <MenuItem onSelect={item(() => attempt(() => act("restore", { item: it.id }), `“${it.name}” is restored`))}>Restore</MenuItem>
-                                {allows(it.permission, "Manage") && (
-                                  <MenuItem danger onSelect={item(() => destroy(it))}>
-                                    Delete forever
-                                  </MenuItem>
-                                )}
-                              </>
-                            );
-                          return (
+                      )}
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <UiButton variant="ghost" size="icon-sm" aria-label={`More for ${name}`} className="text-muted-foreground">
+                            <MoreHorizontal />
+                          </UiButton>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-52">
+                          {view === "trash" ? (
                             <>
-                              <MenuItem onSelect={item(() => pick({ item: it.id }))}>Details</MenuItem>
-                              {allows(it.permission, "Manage") && <MenuItem onSelect={item(() => setSharing(it))}>Share</MenuItem>}
-                              <MenuItem onSelect={item(() => attempt(() => act(it.starred ? "unstar" : "star", { item: it.id })))}>
-                                {it.starred ? "Remove star" : "Star"}
-                              </MenuItem>
-                              {allows(it.permission, "Edit") && <MenuItem onSelect={item(() => rename(it))}>Rename</MenuItem>}
-                              {it.kind === "file" && (
-                                <MenuItem onSelect={item(() => download(`/api/app/drive/files/${it.id}/content`, it.name).catch((e) => toast(errorMessage(e), "error")))}>
-                                  Download
-                                </MenuItem>
-                              )}
-                              {allows(it.permission, "Edit") && (
-                                <MenuItem danger onSelect={item(() => trash(it))}>
-                                  Move to trash
-                                </MenuItem>
+                              <DropdownMenuItem onSelect={() => void attempt(() => act("restore", { item: it.id }), `“${name}” is restored`)}>
+                                <ArchiveRestore /> Restore
+                              </DropdownMenuItem>
+                              {allows(it.permission, "Manage") && (
+                                <DropdownMenuItem variant="destructive" onSelect={() => void destroy(it)}>
+                                  <Trash2 /> Delete forever
+                                </DropdownMenuItem>
                               )}
                             </>
-                          );
-                        }}
-                      </Menu>
-                    </td>
-                  </tr>
+                          ) : (
+                            <>
+                              {open && (
+                                <DropdownMenuItem onSelect={() => openChoice(open, navigate)}>
+                                  <ExternalLink /> {open.key === "live" || open.key === "view" || !allows(it.permission, "Edit") || editing.length > 0 ? "Open" : "Edit online"}
+                                </DropdownMenuItem>
+                              )}
+                              {others.length > 0 && (
+                                <DropdownMenuSub>
+                                  <DropdownMenuSubTrigger>
+                                    <ExternalLink /> Open with
+                                  </DropdownMenuSubTrigger>
+                                  <DropdownMenuSubContent className="min-w-52">
+                                    {others.map((c) => (
+                                      <DropdownMenuItem
+                                        key={c.key}
+                                        onSelect={() => (c.unavailable ? toast(`${c.label} cannot open ${name}: ${c.unavailable}`, "error") : openChoice(c, navigate))}
+                                      >
+                                        <span className="grid">
+                                          {c.label}
+                                          {c.unavailable && <span className="text-xs text-muted-foreground">{c.unavailable}</span>}
+                                          {!c.unavailable && editing.length > 0 && (
+                                            <span className="text-xs text-muted-foreground">
+                                              {shared(c.key) && joinable(here) ? `Join ${editing.map((p) => p.name).join(", ")}` : "Read only while others edit"}
+                                            </span>
+                                          )}
+                                        </span>
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuSub>
+                              )}
+                              {(open || others.length > 0) && <DropdownMenuSeparator />}
+                              <DropdownMenuItem onSelect={() => pick({ item: it.id })}>
+                                <Info /> Details
+                              </DropdownMenuItem>
+                              {allows(it.permission, "Manage") && (
+                                <DropdownMenuItem onSelect={() => setSharing(it)}>
+                                  <Share2 /> Share
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem onSelect={() => void attempt(() => act(it.starred ? "unstar" : "star", { item: it.id }))}>
+                                {it.starred ? <StarOff /> : <Star />} {it.starred ? "Remove star" : "Star"}
+                              </DropdownMenuItem>
+                              {allows(it.permission, "Edit") && (
+                                <DropdownMenuItem onSelect={() => rename(it)}>
+                                  <Pencil /> Rename
+                                </DropdownMenuItem>
+                              )}
+                              {it.kind === "file" && (
+                                <DropdownMenuItem onSelect={() => void download(`/api/app/drive/files/${it.id}/content`, it.name).catch((e) => toast(errorMessage(e), "error"))}>
+                                  <Download /> Download
+                                </DropdownMenuItem>
+                              )}
+                              {allows(it.permission, "Edit") && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem variant="destructive" onSelect={() => void trash(it)}>
+                                    <Trash2 /> Move to trash
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </TableCell>
+                  </TableRow>
                 );
               })}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </div>
       {selected && space.data && <DetailsPanel id={selected} space={space.data.id} onClose={() => pick({ item: null })} onShare={setSharing} />}

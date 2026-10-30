@@ -8,6 +8,7 @@ import { type FormEvent, useId, useState } from "react";
 import { api, errorMessage, formatDate } from "@ferrum/client";
 import { Badge, Button, Dialog, Field, Spinner, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
+import { shownName } from "./Drive";
 
 export interface Shareable {
   id: string;
@@ -133,7 +134,7 @@ export function ShareDialog({ item, space, onClose }: { item: Shareable; space: 
   return (
     <Dialog
       open
-      title={`Share “${item.name}”`}
+      title={`Share “${shownName(item.name)}”`}
       onClose={onClose}
       footer={
         <>
