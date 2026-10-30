@@ -1,6 +1,6 @@
 id: drive
 name: Drive
-version: 0.3.0
+version: 0.4.0
 publisher: cbferrum
 summary: "Team and personal file storage: folders, versions, sharing with people and teams, expiring public links, trash, quotas and search"
 description: README.md
@@ -12,3 +12,20 @@ runtime: native
 platform: ">=0.3, <0.4"
 packages: [drive]
 uninstall: ask
+# Editors for file types, opened from Drive in the person's browser (Ferrum
+# docs/plan/browser-editors.md). `program` is a directory of the operator's editor server
+# (FERRUM_EDITORS_URL) holding a web app that speaks the host bridge; `types` are lower-case
+# extensions; files over `max_mb` are not offered to it.
+extension_points:
+  drive.editor:
+    description: An editor for files of given types, run in the browser from the editor server
+    schema:
+      type: object
+      required: [title, kind, program, types]
+      additionalProperties: false
+      properties:
+        title: {type: string, maxLength: 60}
+        kind: {enum: [browser]}
+        program: {type: string, maxLength: 40}
+        types: {type: array, maxItems: 20, items: {type: string, maxLength: 10}}
+        max_mb: {type: integer}

@@ -1061,6 +1061,113 @@ async fn scenario() {
     assert_eq!(wopi(doc, "", "GET", token.clone(), vec![], vec![]).await.status, 403);
     unsafe { std::env::remove_var("FERRUM_OFFICE_IPS") };
     t.consistent().await;
+
+    // ── browser editors (src/office.rs; Ferrum docs/plan/browser-editors.md) ──
+    let budget = uid(&t.upload(&alice, alice.root, "budget.xlsx", b"PK budget 1").await);
+    let open = |u: &U, file: Uuid, extra: &'static [(&'static str, &'static str)]| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move {
+            let mut q = vec![("kind", "browser")];
+            q.extend_from_slice(extra);
+            t.site(Some(&ctx), "POST", &format!("/editor/{file}"), &q, &[], vec![]).await.map(|r| t.json(r))
+        }
+    };
+    let save = |u: &U, lock: Option<&str>, base: Option<i64>, body: &'static [u8]| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        let (lock, base) = (lock.map(str::to_string), base.map(|b| b.to_string()));
+        async move {
+            let q: Vec<(&str, &str)> = [("lock", lock.as_deref()), ("base", base.as_deref())].into_iter().filter_map(|(k, v)| Some((k, v?))).collect();
+            t.site(Some(&ctx), "POST", &format!("/files/{budget}/versions"), &q, &[], body.to_vec()).await.map(|r| t.json(r))
+        }
+    };
+    let lock_op = |u: &U, lock: &str, op: &'static str| {
+        let (t, ctx, lock) = (&t, u.ctx.clone(), lock.to_string());
+        async move { t.site(Some(&ctx), "POST", &format!("/editor/{budget}/lock"), &[("lock", lock.as_str()), ("op", op)], &[], vec![]).await.map(|r| t.json(r)) }
+    };
+    let err = open(&alice, budget, &[]).await.unwrap_err();
+    assert!(err.to_string().contains("not set up"), "{err}");
+    // SAFETY: as above.
+    unsafe { std::env::set_var("FERRUM_EDITORS_URL", "https://editors.test/") };
+    let a1 = open(&alice, budget, &[]).await.unwrap();
+    assert_eq!((a1["kind"].clone(), a1["url"].clone(), a1["action"].clone()), (json!("browser"), json!("https://editors.test/relay.html"), json!("edit")));
+    assert_eq!((a1["version"].clone(), a1["size"].clone(), a1["held_by"].clone(), a1["lock_seconds"].clone()), (json!(1), json!(11), Value::Null, json!(1800)));
+    let l1 = a1["lock"].as_str().unwrap().to_string();
+    assert!(l1.starts_with("browser:"), "{l1}");
+
+    // While the session is open only its saves count, and only from the version it opened.
+    let busy = save(&alice, None, None, b"PK upload").await.unwrap_err();
+    assert_eq!(code(&busy), "conflict");
+    assert!(busy.to_string().contains("'budget.xlsx' is being edited by alice@acme.test in a browser editor"), "{busy}");
+    assert_eq!(save(&alice, Some(&l1), Some(1), b"PK budget 2").await.unwrap()["version"], json!(2));
+    let stale = save(&alice, Some(&l1), Some(1), b"PK stale").await.unwrap_err();
+    assert!(stale.to_string().contains("changed since it was opened (version 1, now 2)"), "{stale}");
+    assert_eq!(code(&t.no(&alice, "restore_version", json!({"file": budget, "version": 1})).await), "conflict");
+
+    // Bob may edit it, but not while Alice does: not here, not in the online editor, not by upload.
+    t.ok(&alice, "share", json!({"item": budget, "email": "bob@acme.test", "permission": "Edit"})).await;
+    let b1 = open(&bob, budget, &[]).await.unwrap();
+    assert_eq!(
+        (b1["action"].clone(), b1["held_by"].clone(), b1["held_in"].clone(), b1["lock"].clone()),
+        (json!("view"), json!("alice@acme.test"), json!("browser"), Value::Null)
+    );
+    let bob_wopi =
+        t.json(t.site(Some(&bob.ctx), "POST", &format!("/editor/{budget}"), &[], &[], vec![]).await.unwrap())["access_token"].as_str().unwrap().to_string();
+    assert_eq!(t.json(wopi(budget, "", "GET", bob_wopi.clone(), vec![], vec![]).await)["UserCanWrite"], json!(false), "the online editor opens it read-only");
+    let wopi_lock = wopi(budget, "", "POST", bob_wopi.clone(), vec![("x-wopi-override", "LOCK".into()), ("x-wopi-lock", "W".into())], vec![]).await;
+    assert_eq!(wopi_lock.status, 409);
+    assert_eq!(code(&save(&bob, None, None, b"PK bob").await.unwrap_err()), "conflict");
+    assert_eq!(open(&bob, budget, &[("take_over", "true")]).await.unwrap()["action"], json!("view"), "only Alice may move her session");
+
+    // Alice's second tab opens read-only until it takes her session over; the first tab's lock is then stale.
+    assert_eq!(open(&alice, budget, &[]).await.unwrap()["action"], json!("view"));
+    let a3 = open(&alice, budget, &[("take_over", "true")]).await.unwrap();
+    assert_eq!(a3["action"], json!("edit"));
+    let l3 = a3["lock"].as_str().unwrap().to_string();
+    assert_ne!(l3, l1);
+    assert_eq!(code(&save(&alice, Some(&l1), Some(2), b"PK old tab").await.unwrap_err()), "conflict");
+
+    // The lock is refreshed, taken back after it lapsed if nobody took it, and released.
+    assert_eq!(lock_op(&alice, &l3, "refresh").await.unwrap()["lock_seconds"], json!(1800));
+    assert_eq!(code(&lock_op(&alice, &l1, "refresh").await.unwrap_err()), "conflict");
+    assert!(lock_op(&alice, "nonsense", "refresh").await.is_err());
+    assert!(lock_op(&alice, &l3, "explode").await.is_err());
+    let lapse = "update drive_wopi_lock set expires_at = now() - interval '1 minute' where tenant_id = $1 and file = $2";
+    t.exec(lapse, budget).await;
+    assert_eq!(save(&alice, Some(&l3), Some(2), b"PK budget 3").await.unwrap()["version"], json!(3));
+    let live = "select count(*) from drive_wopi_lock where tenant_id = $1 and file = $2 and expires_at > now()";
+    assert_eq!(t.scalar(live, Some(budget)).await, 1, "the lapsed lock was taken back");
+    t.exec(lapse, budget).await;
+    let b2 = open(&bob, budget, &[]).await.unwrap();
+    assert_eq!(b2["action"], json!("edit"), "a lapsed lock is free");
+    let lb = b2["lock"].as_str().unwrap().to_string();
+    let late = save(&alice, Some(&l3), Some(3), b"PK late").await.unwrap_err();
+    assert!(late.to_string().contains("being edited by bob@acme.test in a browser editor"), "{late}");
+    assert_eq!(lock_op(&bob, &lb, "release").await.unwrap()["released"], json!(true));
+    assert_eq!(lock_op(&bob, &lb, "release").await.unwrap()["released"], json!(true), "releasing twice is fine");
+    assert_eq!(t.scalar(live, Some(budget)).await, 0);
+
+    // An online editor session holds the file the same way and says who took it.
+    let alice_wopi =
+        t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{budget}"), &[], &[], vec![]).await.unwrap())["access_token"].as_str().unwrap().to_string();
+    let wopi_op =
+        |name: &'static str| wopi(budget, "", "POST", alice_wopi.clone(), vec![("x-wopi-override", name.into()), ("x-wopi-lock", "W1".into())], vec![]);
+    assert_eq!(wopi_op("LOCK").await.status, 200);
+    let b3 = open(&bob, budget, &[]).await.unwrap();
+    assert_eq!((b3["action"].clone(), b3["held_by"].clone(), b3["held_in"].clone()), (json!("view"), json!("alice@acme.test"), json!("online")));
+    let during = save(&bob, None, None, b"PK during").await.unwrap_err();
+    assert!(during.to_string().contains("in the online editor"), "{during}");
+    assert_eq!(wopi_op("UNLOCK").await.status, 200);
+
+    // A check-out holds it too; a viewer opens read-only; a stranger sees nothing.
+    t.ok(&alice, "check_out", json!({"file": budget})).await;
+    let b4 = open(&bob, budget, &[]).await.unwrap();
+    assert_eq!((b4["action"].clone(), b4["held_by"].clone(), b4["held_in"].clone()), (json!("view"), json!("alice@acme.test"), json!("checkout")));
+    t.ok(&alice, "check_in", json!({"file": budget})).await;
+    let viewer = open(&bob, doc, &[]).await.unwrap();
+    assert_eq!((viewer["action"].clone(), viewer["held_by"].clone(), viewer["lock"].clone()), (json!("view"), Value::Null, Value::Null));
+    assert_eq!(open(&frank, budget, &[]).await.unwrap_err().to_string(), "Drive item not found");
+    unsafe { std::env::remove_var("FERRUM_EDITORS_URL") };
+    t.consistent().await;
 }
 
 /// An editor server that only answers discovery: Writer for docx, Calc for xlsx.

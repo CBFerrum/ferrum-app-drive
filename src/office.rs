@@ -10,6 +10,12 @@
 //! When the editor publishes a proof key in its discovery, every WOPI call must carry a valid
 //! proof signature over its token, URL and time ([`proof_valid`]), so a stolen token alone opens
 //! nothing. The stock Collabora image publishes none until a key is mounted (`proof_key`).
+//!
+//! Browser editors (Ferrum docs/plan/browser-editors.md) run in the person's browser from the
+//! editor server (`FERRUM_EDITORS_URL`): the web app downloads the file, hands it to the editor
+//! and saves what it returns as a new version through Drive's own endpoints, with the person's
+//! rights. Both kinds share one editor lock per file ([`take`]), so only one session edits a
+//! file at a time, and every save that does not hold the lock is refused meanwhile ([`hold`]).
 
 use crate::acl::{Grants, Level};
 use crate::files::{self, Content};
@@ -184,8 +190,177 @@ fn encode(s: &str) -> String {
     s.bytes().map(|b| if b.is_ascii_alphanumeric() || b"-._~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
-fn writable(ctx: &Ctx, g: &Grants, item: &Item) -> bool {
-    item.level(g) >= Level::Edit && files::check_lock(ctx, item).is_ok()
+/// A WOPI session may edit: Edit access, no check-out by someone else, and no browser editor
+/// session holding the file (WOPI sessions share theirs: co-editing).
+fn writable(ctx: &Ctx, g: &Grants, item: &Item, held: Option<&Held>) -> bool {
+    item.level(g) >= Level::Edit && files::check_lock(ctx, item).is_ok() && !held.is_some_and(Held::browser)
+}
+
+/// A browser editor session's lock: this prefix and a random value. WOPI editors choose their own.
+const BROWSER: &str = "browser:";
+/// How long an editor lock lasts without a refresh.
+const LOCK_SECONDS: i64 = 30 * 60;
+
+/// A file's editor lock while it lasts, and who took it.
+pub struct Held {
+    lock: String,
+    holder: Option<String>,
+}
+
+impl Held {
+    fn browser(&self) -> bool {
+        self.lock.starts_with(BROWSER)
+    }
+
+    /// Where the file is being edited, for people: in a browser editor or in the online editor.
+    fn place(&self) -> &'static str {
+        if self.browser() { "browser" } else { "online" }
+    }
+}
+
+async fn held(tx: &mut Tx, tenant: Uuid, file: Uuid) -> Result<Option<Held>> {
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("select lock, holder from drive_wopi_lock where tenant_id = $1 and file = $2 and expires_at > now()")
+            .bind(tenant)
+            .bind(file)
+            .fetch_optional(&mut **tx)
+            .await?;
+    Ok(row.map(|(lock, holder)| Held { lock, holder }))
+}
+
+fn being_edited(file: &Item, h: &Held) -> Error {
+    let who = h.holder.as_deref().unwrap_or("someone");
+    let place = if h.browser() { "a browser editor" } else { "the online editor" };
+    Error::Conflict(format!("'{}' is being edited by {who} in {place}; it can be changed once they close it", file.name))
+}
+
+/// Takes the file's editor lock for `lock` for another 30 minutes: when it is free or lapsed, or
+/// already `lock`; with `take_over`, also from the same person's other browser editor session.
+/// False when another session holds it. One statement, so two sessions cannot both take it.
+async fn take(tx: &mut Tx, ctx: &Ctx, file: Uuid, lock: &str, take_over: bool) -> Result<bool> {
+    let taken: Option<String> = sqlx::query_scalar(
+        "insert into drive_wopi_lock (tenant_id, file, lock, holder, expires_at) values ($1, $2, $3, $4, now() + make_interval(secs => $5)) \
+         on conflict (tenant_id, file) do update set lock = excluded.lock, holder = excluded.holder, expires_at = excluded.expires_at \
+         where drive_wopi_lock.lock = excluded.lock or drive_wopi_lock.expires_at <= now() \
+            or ($6 and drive_wopi_lock.lock like 'browser:%' and drive_wopi_lock.holder = excluded.holder) \
+         returning lock",
+    )
+    .bind(ctx.tenant)
+    .bind(file)
+    .bind(lock)
+    .bind(files::actor(ctx))
+    .bind(LOCK_SECONDS as f64)
+    .bind(take_over)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(taken.is_some())
+}
+
+/// Refuses a save that does not hold the file's editor lock while an editor session holds it.
+pub async fn check_editor_lock(tx: &mut Tx, tenant: Uuid, file: &Item, presented: Option<&str>) -> Result<()> {
+    match held(tx, tenant, file.id).await? {
+        Some(h) if presented != Some(h.lock.as_str()) => Err(being_edited(file, &h)),
+        _ => Ok(()),
+    }
+}
+
+/// [`check_editor_lock`] as a save commits, under the file's tree lock. A browser editor session
+/// whose lock lapsed (a laptop asleep) takes it back, unless another session took it meanwhile;
+/// the save's `base` version then tells whether the file changed in between.
+pub async fn hold(tx: &mut Tx, ctx: &Ctx, file: &Item, presented: Option<&str>) -> Result<()> {
+    match presented {
+        Some(lock) if lock.starts_with(BROWSER) => {
+            if take(tx, ctx, file.id, lock, false).await? {
+                return Ok(());
+            }
+            match held(tx, ctx.tenant, file.id).await? {
+                Some(h) => Err(being_edited(file, &h)),
+                None => Err(Error::Unavailable("the file's editor lock is changing; try again".into())),
+            }
+        }
+        _ => check_editor_lock(tx, ctx.tenant, file, presented).await,
+    }
+}
+
+/// The editor server for browser editors, as browsers reach it (`FERRUM_EDITORS_URL`).
+fn editors_url() -> Option<String> {
+    let url = std::env::var("FERRUM_EDITORS_URL").ok()?.trim().trim_end_matches('/').to_string();
+    (url.starts_with("https://") || url.starts_with("http://")).then_some(url)
+}
+
+/// `POST /api/app/drive/editor/{file}?kind=browser` (`action=view` to only read; `take_over` to
+/// move the caller's own browser editor session here): a session in a browser editor, as
+/// `{kind, url, name, size, version, action, lock, lock_seconds, held_by, held_in, author}`.
+/// Editing takes the file's editor lock; without Edit access, with the file checked out by
+/// someone else, or with another session holding the lock, it opens read-only (`action: view`)
+/// and says who holds it (`held_in`: `browser`, `online` or `checkout`).
+pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, take_over: bool) -> Result<Value> {
+    let url = editors_url().ok_or_else(|| Error::Unavailable("browser editors are not set up on this server (FERRUM_EDITORS_URL)".into()))?;
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let g = Grants::load(&mut tx, ctx).await?;
+    let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::View, false).await?;
+    let (mut lock, mut held_by, mut held_in) = (None, None, None);
+    if want_edit && item.level(&g) >= Level::Edit {
+        if files::check_lock(ctx, &item).is_err() {
+            (held_by, held_in) = (item.locked_by.clone(), Some("checkout"));
+        } else {
+            let mine = format!("{BROWSER}{}", Uuid::new_v4().simple());
+            if take(&mut tx, ctx, file, &mine, take_over).await? {
+                lock = Some(mine);
+            } else if let Some(h) = held(&mut tx, ctx.tenant, file).await? {
+                (held_by, held_in) = (h.holder.clone(), Some(h.place()));
+            }
+        }
+    }
+    let action = if lock.is_some() { "edit" } else { "view" };
+    tree::log(&mut tx, ctx, &item, "Open in browser editor", json!({"action": action})).await?;
+    tx.commit().await?;
+    Ok(json!({
+        "kind": "browser",
+        "url": format!("{url}/relay.html"),
+        "name": item.name,
+        "size": item.size,
+        "version": item.version_no,
+        "action": action,
+        "lock": lock,
+        "lock_seconds": LOCK_SECONDS,
+        "held_by": held_by,
+        "held_in": held_in,
+        "author": ctx.full_name,
+    }))
+}
+
+/// `POST /api/app/drive/editor/{file}/lock?lock=…&op=refresh|release`: keeps a browser editor
+/// session's lock for another 30 minutes (taking it back if it lapsed and nobody else took it),
+/// or ends it. Refreshing needs Edit access still; releasing is always allowed.
+pub async fn browser_lock(k: &Kernel, ctx: &Ctx, file: Uuid, lock: &str, op: &str) -> Result<Value> {
+    if !lock.starts_with(BROWSER) || lock.len() > 80 {
+        return Err(Error::field("lock", "is not a browser editor lock"));
+    }
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let out = match op {
+        "release" => {
+            sqlx::query("delete from drive_wopi_lock where tenant_id = $1 and file = $2 and lock = $3")
+                .bind(ctx.tenant)
+                .bind(file)
+                .bind(lock)
+                .execute(&mut *tx)
+                .await?;
+            json!({"released": true})
+        }
+        "refresh" => {
+            let g = Grants::load(&mut tx, ctx).await?;
+            let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::Edit, false).await?;
+            if !take(&mut tx, ctx, file, lock, false).await? {
+                let h = held(&mut tx, ctx.tenant, file).await?;
+                return Err(h.map_or_else(|| Error::Unavailable("the file's editor lock is changing; try again".into()), |h| being_edited(&item, &h)));
+            }
+            json!({"lock_seconds": LOCK_SECONDS})
+        }
+        _ => return Err(Error::field("op", "must be refresh or release")),
+    };
+    tx.commit().await?;
+    Ok(out)
 }
 
 /// `POST /api/app/drive/editor/{file}` (`action=view` to only read): the editor page for the file
@@ -197,8 +372,10 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool) -> Resul
     let g = Grants::load(&mut tx, ctx).await?;
     let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::View, false).await?;
     let ext = item.name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-    let (action, page) =
-        d.page(&ext, want_edit && writable(ctx, &g, &item)).ok_or_else(|| Error::invalid(format!("{} cannot be opened in the editor", item.name)))?;
+    let h = held(&mut tx, ctx.tenant, file).await?;
+    let (action, page) = d
+        .page(&ext, want_edit && writable(ctx, &g, &item, h.as_ref()))
+        .ok_or_else(|| Error::invalid(format!("{} cannot be opened in the editor", item.name)))?;
     let exp = chrono::Utc::now().timestamp() + TOKEN_SECONDS;
     let token = sign(&crate::sharing::tenant_key(&mut tx, ctx.tenant).await?, ctx.tenant, file, ctx.user, exp)?;
     tree::log(&mut tx, ctx, &item, "Open online", json!({"action": action})).await?;
@@ -286,7 +463,8 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
 
 async fn check_file_info(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Result<SiteResponse> {
     let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, false).await?;
-    let can_write = writable(ctx, g, &item);
+    let h = held(tx, ctx.tenant, file).await?;
+    let can_write = writable(ctx, g, &item, h.as_ref());
     Ok(SiteResponse::json(
         200,
         &json!({
@@ -324,15 +502,17 @@ async fn current_lock(tx: &mut Tx, tenant: Uuid, file: Uuid) -> Result<Option<St
         .await?)
 }
 
-async fn set_lock(tx: &mut Tx, tenant: Uuid, file: Uuid, lock: &str) -> Result<()> {
+async fn set_lock(tx: &mut Tx, ctx: &Ctx, file: Uuid, lock: &str) -> Result<()> {
     // WOPI locks lapse after 30 minutes without a RefreshLock.
     sqlx::query(
-        "insert into drive_wopi_lock (tenant_id, file, lock, expires_at) values ($1, $2, $3, now() + interval '30 minutes') \
-         on conflict (tenant_id, file) do update set lock = excluded.lock, expires_at = excluded.expires_at",
+        "insert into drive_wopi_lock (tenant_id, file, lock, holder, expires_at) values ($1, $2, $3, $4, now() + make_interval(secs => $5)) \
+         on conflict (tenant_id, file) do update set lock = excluded.lock, holder = excluded.holder, expires_at = excluded.expires_at",
     )
-    .bind(tenant)
+    .bind(ctx.tenant)
     .bind(file)
     .bind(lock)
+    .bind(files::actor(ctx))
+    .bind(LOCK_SECONDS as f64)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -356,7 +536,8 @@ async fn put_file(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, re
     } else {
         "Saved online"
     };
-    let saved = files::upload_version(k, ctx, tx, g, file, &Content::new(&item.name, &req.body), Some(comment), false).await?;
+    let expect = files::Expect { lock: given, base: None };
+    let saved = files::upload_version(k, ctx, tx, g, file, &Content::new(&item.name, &req.body), Some(comment), false, expect).await?;
     let version = saved.get("version").and_then(Value::as_i64).unwrap_or(item.version_no + 1);
     let mut r = SiteResponse::json(200, &json!({"LastModifiedTime": crate::now()}));
     r.headers.push(("X-WOPI-ItemVersion".into(), version.to_string()));
@@ -382,18 +563,18 @@ async fn lock(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, op: &str, given: O
             if cur != old {
                 return Ok(conflict(cur, "the old lock is not the current one"));
             }
-            set_lock(tx, tenant, file, lock).await?;
+            set_lock(tx, ctx, file, lock).await?;
             Ok(status(200))
         }
         ("LOCK", Some(lock)) => match cur {
             Some(c) if c != lock => Ok(conflict(cur, "locked by another editor session")),
             _ => {
-                set_lock(tx, tenant, file, lock).await?;
+                set_lock(tx, ctx, file, lock).await?;
                 Ok(status(200))
             }
         },
         ("REFRESH_LOCK", Some(lock)) if cur == Some(lock) => {
-            set_lock(tx, tenant, file, lock).await?;
+            set_lock(tx, ctx, file, lock).await?;
             Ok(status(200))
         }
         ("UNLOCK", Some(lock)) if cur == Some(lock) => {

@@ -37,6 +37,15 @@ impl<'a> Content<'a> {
     }
 }
 
+/// What a save expects of its file: the editor lock its session holds (WOPI or browser editor)
+/// and the version it was made from. While an editor session holds a file, saves that do not
+/// hold its lock are refused ([`crate::office::hold`]).
+#[derive(Clone, Copy, Default)]
+pub struct Expect<'a> {
+    pub lock: Option<&'a str>,
+    pub base: Option<i64>,
+}
+
 /// Stores bytes as a platform file that belongs to nobody yet.
 async fn put_object(k: &Kernel, ctx: &Ctx, c: &Content<'_>) -> Result<Uuid> {
     let stored = k.store_file(&sys(ctx), None, &c.name, c.content_type, c.data).await?;
@@ -157,7 +166,7 @@ pub async fn commit_upload(
     let name = match (on, same) {
         (OnConflict::Replace, Some(existing)) => {
             let file = tree::open_kind(tx, ctx, g, Kind::File, existing, Level::Edit, true).await?;
-            let item = add_version(k, ctx, tx, &file, object, c, comment, false).await?;
+            let item = add_version(k, ctx, tx, &file, object, c, comment, false, Expect::default()).await?;
             return Ok(item.json(item.level(g), false));
         }
         (OnConflict::KeepBoth, _) => tree::free_name(tx, ctx.tenant, Some(f.id), &name, false).await?,
@@ -254,8 +263,27 @@ pub fn check_lock(ctx: &Ctx, file: &Item) -> Result<()> {
 
 /// Adds a version to `file` (locked by the caller) and prunes old versions beyond the limit.
 #[allow(clippy::too_many_arguments)]
-async fn add_version(k: &Kernel, ctx: &Ctx, tx: &mut Tx, file: &Item, object: Uuid, c: &Content<'_>, comment: Option<&str>, check_in: bool) -> Result<Item> {
+async fn add_version(
+    k: &Kernel,
+    ctx: &Ctx,
+    tx: &mut Tx,
+    file: &Item,
+    object: Uuid,
+    c: &Content<'_>,
+    comment: Option<&str>,
+    check_in: bool,
+    expect: Expect<'_>,
+) -> Result<Item> {
     check_lock(ctx, file)?;
+    crate::office::hold(tx, ctx, file, expect.lock).await?;
+    if let Some(base) = expect.base
+        && base != file.version_no
+    {
+        return Err(Error::Conflict(format!(
+            "'{}' changed since it was opened (version {base}, now {}): save a copy, or replace it",
+            file.name, file.version_no
+        )));
+    }
     let payer = tree::payer(tx, ctx.tenant, file.top()).await?;
     tree::charge(tx, ctx.tenant, payer, c.size()).await?;
     let no = file.version_no + 1;
@@ -312,9 +340,10 @@ async fn prune(tx: &mut Tx, ctx: &Ctx, file: &Item) -> Result<()> {
 
 /// Checks a new version of `file` before any bytes are stored (for check-in: the file must be
 /// checked out, by the caller).
-pub async fn check_version(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, c: &Content<'_>, check_in: bool) -> Result<()> {
+pub async fn check_version(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, c: &Content<'_>, check_in: bool, expect: Expect<'_>) -> Result<()> {
     let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
     check_lock(ctx, &f)?;
+    crate::office::check_editor_lock(tx, ctx.tenant, &f, expect.lock).await?;
     if check_in && f.locked_by.is_none() {
         return Err(Error::invalid(format!("'{}' is not checked out", f.name)));
     }
@@ -333,6 +362,7 @@ pub async fn commit_version(
     object: Uuid,
     comment: Option<&str>,
     check_in: bool,
+    expect: Expect<'_>,
 ) -> Result<Value> {
     let pre = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
     tree::lock_trees(tx, ctx.tenant, &[pre.top()], &[]).await?;
@@ -340,7 +370,7 @@ pub async fn commit_version(
     if check_in && f.locked_by.is_none() {
         return Err(Error::invalid(format!("'{}' is not checked out", f.name)));
     }
-    let item = add_version(k, ctx, tx, &f, object, c, comment, check_in).await?;
+    let item = add_version(k, ctx, tx, &f, object, c, comment, check_in, expect).await?;
     Ok(item.json(item.level(g), false))
 }
 
@@ -354,10 +384,11 @@ pub async fn upload_version(
     c: &Content<'_>,
     comment: Option<&str>,
     check_in: bool,
+    expect: Expect<'_>,
 ) -> Result<Value> {
-    check_version(tx, ctx, g, file, c, check_in).await?;
+    check_version(tx, ctx, g, file, c, check_in, expect).await?;
     let object = put_object(k, ctx, c).await?;
-    let res = commit_version(k, ctx, tx, g, file, c, object, comment, check_in).await;
+    let res = commit_version(k, ctx, tx, g, file, c, object, comment, check_in, expect).await;
     if res.is_err() {
         discard(k, ctx, object).await;
     }
@@ -463,7 +494,7 @@ pub async fn restore_version(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: 
     let data = read(k, ctx, object).await?;
     let c = Content::new(&f.name, &data);
     let comment = format!("Restored from version {no}");
-    let out = upload_version(k, ctx, tx, g, file, &c, Some(&comment), false).await?;
+    let out = upload_version(k, ctx, tx, g, file, &c, Some(&comment), false, Expect::default()).await?;
     let item = tree::load_kind(tx, ctx.tenant, Kind::File, file, false).await?.ok_or_else(tree::missing)?;
     tree::log(tx, ctx, &item, "Restore Version", json!({"from": no, "version": item.version_no})).await?;
     Ok(out)
@@ -491,7 +522,7 @@ pub async fn check_in(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params
     if let Some(c) = p.content()? {
         let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
         let c = Content::new(&f.name, &c);
-        return upload_version(k, ctx, tx, g, file, &c, p.str("comment"), true).await;
+        return upload_version(k, ctx, tx, g, file, &c, p.str("comment"), true, Expect::default()).await;
     }
     let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, true).await?;
     let Some(holder) = f.locked_by.clone() else { return Err(Error::invalid(format!("'{}' is not checked out", f.name))) };
@@ -527,7 +558,7 @@ pub async fn upload_version_action(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grant
     let data = p.content()?.ok_or_else(|| Error::field("content_base64", "send the file as content_base64 or text"))?;
     let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
     let c = Content::new(&f.name, &data);
-    upload_version(k, ctx, tx, g, file, &c, p.str("comment"), false).await
+    upload_version(k, ctx, tx, g, file, &c, p.str("comment"), false, Expect::default()).await
 }
 
 /// Copies a file's current content into a new file in `dest` (locked by the caller).
