@@ -86,14 +86,15 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             crate::collab::present(k, ctx, &ids).await?
         }
         ("POST", ["editor", file, "lock"]) => crate::office::browser_lock(k, ctx, id(file)?, p.req("lock")?, p.req("op")?).await?,
-        // A blank document, spreadsheet or presentation (the editor fills in an empty file).
+        // A blank document, spreadsheet or presentation (the editor fills in an empty file); `fdoc`
+        // is a document edited live (`docs`), empty until someone types.
         ("POST", [verb @ ("upload" | "new")]) => {
             let space = tree::ensure_space(k, ctx).await?;
             let folder = p.uuid("folder")?.unwrap_or(space.root);
             let (name, on) = if *verb == "new" {
                 let kind = p.req("kind")?;
-                if !["docx", "xlsx", "pptx", "odt", "ods", "odp"].contains(&kind) {
-                    return Err(Error::invalid(format!("kind must be docx, xlsx, pptx, odt, ods or odp, not {kind}")));
+                if !["fdoc", "docx", "xlsx", "pptx", "odt", "ods", "odp"].contains(&kind) {
+                    return Err(Error::invalid(format!("kind must be fdoc, docx, xlsx, pptx, odt, ods or odp, not {kind}")));
                 }
                 (format!("{}.{kind}", p.str("name").filter(|n| !n.trim().is_empty()).unwrap_or("Untitled")), OnConflict::KeepBoth)
             } else {
@@ -151,13 +152,26 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
 }
 
 /// `GET /files/{id}/content?version=&inline=1`: images and PDFs may be shown inline; everything
-/// else downloads, and types a browser could run arrive as opaque bytes.
+/// else downloads, and types a browser could run arrive as opaque bytes. A live document serves
+/// its current content (or a version's) as `format=html`, `pdf` or `txt`; without a format, its
+/// state for Ferrum.
 async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<SiteResponse> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
     let d = files::prepare_download(&mut tx, ctx, &g, file, p.int("version")?).await?;
+    let live = crate::docs::is_live(&d.file);
+    let current = if live && p.int("version")?.is_none() { Some(crate::docs::current(k, ctx, &mut tx, &d.file).await?) } else { None };
     tx.commit().await?;
-    let data = files::read(k, ctx, d.object).await?;
+    let data = match current {
+        Some(state) => state,
+        None => files::read(k, ctx, d.object).await?,
+    };
+    if live && let Some(format) = p.str("format") {
+        let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+        files::logged(&mut tx, ctx, &d).await?;
+        tx.commit().await?;
+        return export(k, &d.file.name, &data, format, p.flag("inline")).await;
+    }
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     files::logged(&mut tx, ctx, &d).await?;
     tx.commit().await?;
@@ -174,6 +188,25 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
         headers.push(("etag".into(), format!("\"{sha}\"")));
     }
     Ok(SiteResponse { status: 200, content_type: ctype, headers, body: data })
+}
+
+/// A live document as a page (`html`), a PDF (`pdf`) or its words (`txt`). Pages run nothing.
+pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: bool) -> Result<SiteResponse> {
+    let doc = ferrum_kernel::coedit::decode(state);
+    let stem = crate::content::stem(name, false);
+    let (body, ctype, ext) = match format {
+        "html" => (ferrum_kernel::coedit::html_page(stem, &doc).into_bytes(), "text/html; charset=utf-8", "html"),
+        "pdf" => (k.html_to_pdf(&ferrum_kernel::coedit::html_page(stem, &doc)).await?, "application/pdf", "pdf"),
+        "txt" => (ferrum_kernel::coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt"),
+        other => return Err(Error::field("format", format!("must be html, pdf or txt, not {other}"))),
+    };
+    let headers = vec![
+        ("content-disposition".to_string(), crate::content::disposition(inline, &format!("{stem}.{ext}"))),
+        ("x-content-type-options".into(), "nosniff".into()),
+        ("content-security-policy".into(), "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox".into()),
+        ("cache-control".into(), "private, no-store".into()),
+    ];
+    Ok(SiteResponse { status: 200, content_type: ctype.into(), headers, body })
 }
 
 #[cfg(test)]

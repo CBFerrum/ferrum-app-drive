@@ -1285,6 +1285,130 @@ async fn scenario() {
     assert_eq!(told(&alice, "% asks for access to \"Engineering\"").await, 1, "a team folder's manager is told");
     assert_eq!(told(&bob, "% asks for access to \"Engineering\"").await, 0, "an editor is not");
     t.consistent().await;
+
+    // ── documents edited live (src/docs.rs; Ferrum docs/plan/collaboration.md, C3) ──
+    use ferrum_kernel::{DocAccess, coedit};
+    use yrs::{Transact, XmlElementPrelim, XmlFragment, XmlTextPrelim};
+    let host = k.hooks.doc_host("drive").expect("Drive hosts live documents").clone();
+    let made = t.json(t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "fdoc"), ("name", "Brief")], &[], vec![]).await.unwrap());
+    let brief = uid(&made);
+    assert_eq!(
+        (made["name"].as_str(), made["file_type"].as_str(), made["content_type"].as_str()),
+        (Some("Brief.fdoc"), Some("Document"), Some("application/vnd.ferrum.doc"))
+    );
+    t.ok(&alice, "share", json!({"item": brief, "email": "bob@acme.test", "permission": "Comment"})).await;
+    assert_eq!(host.access(&k, &alice.ctx, brief).await.unwrap(), DocAccess::Write);
+    assert_eq!(host.access(&k, &bob.ctx, brief).await.unwrap(), DocAccess::Read, "comment access reads");
+    assert_eq!(host.access(&k, &frank.ctx, brief).await.unwrap(), DocAccess::None, "no access, no document");
+    assert_eq!(host.access(&k, &alice.ctx, notes).await.unwrap(), DocAccess::None, "not a live document");
+    assert_eq!(host.initial(&k, tenant, brief).await.unwrap(), Some(vec![]), "a new document is empty");
+
+    // What the editors typed, as the platform hands it over: a version, by the first of them.
+    let typed = |words: &[&str]| {
+        let doc = coedit::new_doc();
+        let fragment = doc.get_or_insert_xml_fragment(coedit::FRAGMENT);
+        let mut txn = doc.transact_mut();
+        let h = fragment.push_back(&mut txn, XmlElementPrelim::empty("heading"));
+        h.push_back(&mut txn, XmlTextPrelim::new("Q4 brief"));
+        for w in words {
+            let p = fragment.push_back(&mut txn, XmlElementPrelim::empty("paragraph"));
+            p.push_back(&mut txn, XmlTextPrelim::new(*w));
+        }
+        drop(txn);
+        doc
+    };
+    let first = typed(&["Goals"]);
+    let state = coedit::encode(&first);
+    host.saved(&k, tenant, brief, &state, &coedit::plain_text(&first), &[alice.id, bob.id]).await.unwrap();
+    host.saved(&k, tenant, brief, &state, &coedit::plain_text(&first), &[alice.id]).await.unwrap();
+    let versions = t.ok(&alice, "list_versions", json!({"file": brief})).await;
+    let v = &versions["versions"][0];
+    assert_eq!((versions["versions"].as_array().unwrap().len(), v["version"].as_i64()), (2, Some(2)), "unchanged content adds no version");
+    assert_eq!((v["author"].as_str(), v["comment"].as_str()), (Some("alice@acme.test"), Some("Edited live by 2 people")));
+
+    // Its editors kept typing: storage holds more than the last version, and everything reads that.
+    let live = coedit::decode(&state);
+    let change = {
+        let fragment = live.get_or_insert_xml_fragment(coedit::FRAGMENT);
+        let mut txn = live.transact_mut();
+        let p = fragment.push_back(&mut txn, XmlElementPrelim::empty("paragraph"));
+        p.push_back(&mut txn, XmlTextPrelim::new("Risks"));
+        txn.encode_update_v1()
+    };
+    let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+    sqlx::query("insert into coedit_doc (tenant_id, package, id, seq, snapshot) values ($1, 'drive', $2, 1, $3)")
+        .bind(tenant)
+        .bind(brief)
+        .bind(&state)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("insert into coedit_update (tenant_id, package, doc, seq, data) values ($1, 'drive', $2, 1, $3)")
+        .bind(tenant)
+        .bind(brief)
+        .bind(&change)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let words = coedit::plain_text(&live);
+    assert_eq!(words, "Q4 brief\nGoals\nRisks");
+    let got = t.ok(&bob, "download", json!({"file": brief})).await;
+    assert_eq!(got["text"], json!(words), "agents read its words, as typed");
+    let txt = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "txt")], &[], vec![]).await.unwrap();
+    assert_eq!((txt.content_type.as_str(), String::from_utf8(txt.body).unwrap()), ("text/plain; charset=utf-8", words.clone()));
+    let page = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "html")], &[], vec![]).await.unwrap();
+    let html = String::from_utf8(page.body.clone()).unwrap();
+    assert!(html.contains("<title>Brief</title>") && html.contains("<h1>Q4 brief</h1>") && html.contains("<p>Risks</p>"), "{html}");
+    assert!(header(&page, "content-disposition").unwrap().starts_with("attachment; filename=\"Brief.html\""));
+    assert!(header(&page, "content-security-policy").unwrap().contains("sandbox"));
+    let old = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "txt"), ("version", "2")], &[], vec![]).await.unwrap();
+    assert_eq!(String::from_utf8(old.body).unwrap(), "Q4 brief\nGoals", "a version reads as it was");
+    let pdf = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "pdf")], &[], vec![]).await.unwrap_err();
+    assert_eq!(code(&pdf), "unavailable", "no PDF renderer on this server: {pdf}");
+    let copied = t.ok(&alice, "copy", json!({"item": brief, "to": alice.root})).await;
+    let copy_text = t.ok(&alice, "download", json!({"file": uid(&copied)})).await;
+    assert_eq!(copy_text["text"], json!(words), "a copy takes what its editors typed, not the last version");
+
+    // Nothing changes its content around the editor; it is never checked out.
+    let e = t.no(&alice, "upload_version", json!({"file": brief, "text": "plain"})).await;
+    assert!(e.to_string().contains("is edited live"), "{e}");
+    let e = t.site(Some(&alice.ctx), "POST", &format!("/files/{brief}/versions"), &[], &[], b"bytes".to_vec()).await.unwrap_err();
+    assert!(e.to_string().contains("is edited live"), "{e}");
+    let e = t.no(&alice, "upload", json!({"folder": alice.root, "name": "Brief.fdoc", "text": "x", "on_conflict": "replace"})).await;
+    assert!(e.to_string().contains("is edited live"), "{e}");
+    let e = t.no(&alice, "check_out", json!({"file": brief})).await;
+    assert!(e.to_string().contains("is edited live"), "{e}");
+
+    // An old version comes back beside it, as a document of its own.
+    let restored = t.ok(&alice, "restore_version", json!({"file": brief, "version": 1})).await;
+    assert_eq!(restored["name"], json!("Brief (version 1).fdoc"));
+    assert_eq!(t.ok(&alice, "list_versions", json!({"file": brief})).await["versions"][0]["version"], json!(2), "the live document is untouched");
+
+    // Guests read it as a page, whatever link they have; only Download links get its words.
+    let link = t.ok(&alice, "create_link", json!({"item": brief})).await;
+    let token = link["token"].as_str().unwrap().to_string();
+    let shown = t.site(None, "GET", &format!("/links/{token}/content"), &[("inline", "1")], &[], vec![]).await.unwrap();
+    assert_eq!(shown.content_type, "text/html; charset=utf-8");
+    assert!(String::from_utf8(shown.body.clone()).unwrap().contains("<p>Risks</p>"));
+    assert_eq!(header(&shown, "cache-control"), Some("no-store"));
+    assert!(t.site(None, "GET", &format!("/links/{token}/content"), &[("format", "txt")], &[], vec![]).await.is_err(), "a View link only shows it");
+
+    // In the trash nobody opens it; deleted for good, its live content goes too.
+    t.ok(&alice, "trash", json!({"item": brief})).await;
+    assert_eq!(host.access(&k, &alice.ctx, brief).await.unwrap(), DocAccess::None);
+    host.saved(&k, tenant, brief, &coedit::encode(&live), &words, &[alice.id]).await.unwrap();
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_file_version where tenant_id = $1 and file = $2", Some(brief)).await,
+        2,
+        "no versions while in the trash"
+    );
+    t.ok(&alice, "restore", json!({"item": brief})).await;
+    assert_eq!(host.access(&k, &alice.ctx, brief).await.unwrap(), DocAccess::Write);
+    t.ok(&alice, "trash", json!({"item": brief})).await;
+    t.ok(&alice, "delete_forever", json!({"item": brief})).await;
+    assert_eq!(t.scalar("select count(*) from coedit_doc where tenant_id = $1 and id = $2", Some(brief)).await, 0);
+    t.consistent().await;
 }
 
 /// An editor server that only answers discovery: Writer for docx, Calc for xlsx.

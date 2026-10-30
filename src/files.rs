@@ -166,6 +166,7 @@ pub async fn commit_upload(
     let name = match (on, same) {
         (OnConflict::Replace, Some(existing)) => {
             let file = tree::open_kind(tx, ctx, g, Kind::File, existing, Level::Edit, true).await?;
+            crate::docs::refuse_replace(&file)?;
             let item = add_version(k, ctx, tx, &file, object, c, comment, false, Expect::default()).await?;
             return Ok(item.json(item.level(g), false));
         }
@@ -192,7 +193,16 @@ pub async fn upload(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, folder: Uuid
 
 /// Creates a file with its first version in folder `f` (locked by the caller), charging its payer.
 #[allow(clippy::too_many_arguments)]
-async fn create_file(k: &Kernel, ctx: &Ctx, tx: &mut Tx, f: &Item, name: &str, object: Uuid, c: &Content<'_>, comment: Option<&str>) -> Result<Item> {
+pub(crate) async fn create_file(
+    k: &Kernel,
+    ctx: &Ctx,
+    tx: &mut Tx,
+    f: &Item,
+    name: &str,
+    object: Uuid,
+    c: &Content<'_>,
+    comment: Option<&str>,
+) -> Result<Item> {
     let payer = tree::payer(tx, ctx.tenant, f.top()).await?;
     tree::charge(tx, ctx.tenant, payer, c.size()).await?;
     let id = Uuid::now_v7();
@@ -263,7 +273,7 @@ pub fn check_lock(ctx: &Ctx, file: &Item) -> Result<()> {
 
 /// Adds a version to `file` (locked by the caller) and prunes old versions beyond the limit.
 #[allow(clippy::too_many_arguments)]
-async fn add_version(
+pub(crate) async fn add_version(
     k: &Kernel,
     ctx: &Ctx,
     tx: &mut Tx,
@@ -342,6 +352,7 @@ async fn prune(tx: &mut Tx, ctx: &Ctx, file: &Item) -> Result<()> {
 /// checked out, by the caller).
 pub async fn check_version(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, c: &Content<'_>, check_in: bool, expect: Expect<'_>) -> Result<()> {
     let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
+    crate::docs::refuse_replace(&f)?;
     check_lock(ctx, &f)?;
     crate::office::check_editor_lock(tx, ctx.tenant, &f, expect.lock).await?;
     if check_in && f.locked_by.is_none() {
@@ -396,7 +407,7 @@ pub async fn upload_version(
 }
 
 /// One version's stored object: `(object, version_no, size, sha256, content_type)`.
-async fn version(tx: &mut Tx, tenant: Uuid, file: &Item, no: Option<i64>) -> Result<(Uuid, i64, i64, Option<String>, Option<String>)> {
+pub(crate) async fn version(tx: &mut Tx, tenant: Uuid, file: &Item, no: Option<i64>) -> Result<(Uuid, i64, i64, Option<String>, Option<String>)> {
     let no = no.unwrap_or(file.version_no);
     let row: Option<(Option<String>, Option<i64>, Option<String>, Option<String>)> =
         sqlx::query_as("select stored_file, size, sha256, content_type from e_drive_file_version where tenant_id = $1 and file = $2 and version_no = $3")
@@ -452,10 +463,17 @@ pub async fn download(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params
             d.file.name, d.version
         )));
     }
-    let data = read(k, ctx, d.object).await?;
+    let live = crate::docs::is_live(&d.file);
+    let data = if live && p.int("version")?.is_none() { crate::docs::current(k, ctx, tx, &d.file).await? } else { read(k, ctx, d.object).await? };
     logged(tx, ctx, &d).await?;
     use base64::Engine as _;
-    let text = if content::is_textual(&d.content_type) { String::from_utf8(data.clone()).ok() } else { None };
+    let text = if live {
+        Some(ferrum_kernel::coedit::plain_text(&ferrum_kernel::coedit::decode(&data)))
+    } else if content::is_textual(&d.content_type) {
+        String::from_utf8(data.clone()).ok()
+    } else {
+        None
+    };
     Ok(json!({"file": file, "name": d.file.name, "version": d.version, "content_type": d.content_type, "size": data.len(), "sha256": d.sha256,
               "content_base64": base64::engine::general_purpose::STANDARD.encode(&data), "text": text}))
 }
@@ -487,6 +505,9 @@ pub async fn restore_version(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: 
     let no = p.int("version")?.ok_or_else(|| Error::field("version", "is required"))?;
     let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
     check_lock(ctx, &f)?;
+    if crate::docs::is_live(&f) {
+        return crate::docs::restore_as_copy(k, ctx, tx, g, &f, no).await;
+    }
     if no == f.version_no {
         return Err(Error::invalid(format!("version {no} is already the current version")));
     }
@@ -503,6 +524,9 @@ pub async fn restore_version(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: 
 /// `check_out`: reserves the file for the caller; others cannot change it until it is checked in.
 pub async fn check_out(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
     let f = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::Edit, true).await?;
+    if crate::docs::is_live(&f) {
+        return Err(Error::invalid(format!("'{}' is edited live: everyone with access edits it together", f.name)));
+    }
     check_lock(ctx, &f)?;
     if f.locked_by.is_none() {
         let mut doc = Doc::new();
@@ -563,8 +587,13 @@ pub async fn upload_version_action(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grant
 
 /// Copies a file's current content into a new file in `dest` (locked by the caller).
 pub async fn copy_file(k: &Kernel, ctx: &Ctx, tx: &mut Tx, src: &Item, dest: &Item, name: &str, objects: &mut Vec<Uuid>) -> Result<Item> {
-    let (object, _, _, _, _) = version(tx, ctx.tenant, src, None).await?;
-    let data = read(k, ctx, object).await?;
+    // A live document is copied as its editors left it, not as last saved.
+    let data = if crate::docs::is_live(src) {
+        crate::docs::current(k, ctx, tx, src).await?
+    } else {
+        let (object, _, _, _, _) = version(tx, ctx.tenant, src, None).await?;
+        read(k, ctx, object).await?
+    };
     let c = Content::new(name, &data);
     let copy = put_object(k, ctx, &c).await?;
     objects.push(copy);
