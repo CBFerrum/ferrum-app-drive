@@ -10,6 +10,9 @@
 //! when the item is trashed or deleted, and every such case answers exactly like an unknown
 //! token. A password (Argon2id) is exchanged once for a one-hour grant signed with a per-tenant
 //! key kept outside every entity; ten wrong passwords lock the link for 15 minutes.
+//!
+//! Sharing with someone outside the workspace (a guest) makes a Download link for them alone,
+//! under the same rules, and mails it to them. Sharing with them again replaces it.
 
 use crate::acl::{Grants, Level};
 use crate::content;
@@ -70,8 +73,19 @@ pub async fn share(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_
         if Some(e) == actor(ctx).as_ref() {
             return Err(Error::field("email", "you cannot share with yourself"));
         }
-        recipient =
-            Some(tree::user_by_email(tx, ctx.tenant, e).await?.ok_or_else(|| Error::field("email", format!("{e} is not an active user of this workspace")))?.0);
+        match tree::user_by_email(tx, ctx.tenant, e).await? {
+            Some(user) => recipient = Some(user.0),
+            // A deactivated colleague is no guest: a link would let them back in.
+            None if sqlx::query_scalar("select exists (select 1 from app_user where tenant_id = $1 and email = $2)")
+                .bind(ctx.tenant)
+                .bind(e)
+                .fetch_one(&mut **tx)
+                .await? =>
+            {
+                return Err(Error::field("email", format!("{e} is not an active user of this workspace")));
+            }
+            None => return share_with_guest(k, ctx, tx, &item, e, level, expires).await,
+        }
     }
     if let Some(r) = &role {
         let exists: bool =
@@ -116,6 +130,117 @@ pub async fn share(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_
     }
     tree::log(tx, ctx, &item, "Share", json!({"email": email, "role": role, "permission": level.name(), "expires_at": expires})).await?;
     Ok(json!({"id": id, "item": item.id, "email": email, "role": role, "permission": level.name(), "expires_at": expires}))
+}
+
+/// Sharing with someone outside the workspace: a link for them alone (they view and download),
+/// under the workspace's rules for public links, mailed to them.
+async fn share_with_guest(k: &Kernel, ctx: &Ctx, tx: &mut Tx, item: &Item, email: &str, level: Level, expires: Option<DateTime<Utc>>) -> Out {
+    if !email.contains('@') || email.chars().any(char::is_whitespace) || email.len() > 254 {
+        return Err(Error::field("email", "is not an email address"));
+    }
+    if level != Level::View {
+        return Err(Error::field("permission", "someone outside the workspace can only be a Viewer"));
+    }
+    let s = tree::settings(tx, ctx.tenant).await?;
+    if !s.allow_public_links {
+        return Err(Error::Forbidden("sharing with people outside the workspace uses public links, which are turned off for this workspace".into()));
+    }
+    if s.link_password_required {
+        return Err(Error::Forbidden("links in this workspace need a password: make a public link with a password, and send both".into()));
+    }
+    let expires = match (expires, s.max_link_days) {
+        (None, days) if days > 0 => Some(Utc::now() + Duration::days(days)),
+        (Some(t), days) if days > 0 && t > Utc::now() + Duration::days(days) => {
+            return Err(Error::field("expires_at", format!("links to people outside the workspace must end within {days} days")));
+        }
+        (t, _) => t,
+    };
+    let page = k
+        .settings
+        .public_url
+        .clone()
+        .ok_or_else(|| Error::Unavailable("the server's public address (PUBLIC_URL) is not set, so links cannot be sent".into()))?;
+    let (file, folder) = item_columns(item);
+    sqlx::query(
+        "update e_drive_link set revoked = true, revoked_at = now(), revoked_by = $4 \
+         where tenant_id = $1 and email = $2 and (file = $3 or folder = $3) and not revoked",
+    )
+    .bind(ctx.tenant)
+    .bind(email)
+    .bind(item.id)
+    .bind(actor(ctx))
+    .execute(&mut **tx)
+    .await?;
+    let (token, hash) = new_token();
+    let id = Uuid::now_v7();
+    insert_link(tx, ctx, id, file, folder, "Download", &hash, None, expires, None, Some(email)).await?;
+    tree::log(tx, ctx, item, "Shared With Guest", json!({"link": id, "email": email, "expires_at": expires})).await?;
+    let page = format!("{page}/app/s/{}/{token}", tenant_slug(tx, ctx.tenant).await?);
+    let by = if ctx.full_name.trim().is_empty() { ctx.email.clone() } else { ctx.full_name.clone() };
+    let until = expires.map(|t| format!(" The link works until {}.", t.format("%-d %B %Y"))).unwrap_or_default();
+    let mailed = guest_mail(k, ctx, tx, email, &format!("{by} shared \"{}\" with you", item.name), &page, &until).await?;
+    Ok(json!({"id": id, "item": item.id, "email": email, "guest": true, "permission": "View", "expires_at": expires, "mailed": mailed,
+              "page": if mailed { None } else { Some(page) }}))
+}
+
+/// Mails a guest their link, where mail can be sent (Mail, Chat and Calendar installed).
+async fn guest_mail(k: &Kernel, ctx: &Ctx, tx: &mut Tx, to: &str, subject: &str, page: &str, until: &str) -> Result<bool> {
+    if !ctx.schema.packages.iter().any(|p| p == "comms") || ctx.schema.entity("Communication").is_none() {
+        return Ok(false);
+    }
+    let escape = |s: &str| s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;");
+    let mut doc = Doc::new();
+    for (key, v) in [
+        ("channel", json!("Email")),
+        ("direction", json!("Sent")),
+        ("recipients", json!(to)),
+        ("subject", json!(subject)),
+        ("content", json!(format!("<p>{}.</p><p><a href=\"{}\">Open it</a>.{}</p>", escape(subject), escape(page), escape(until)))),
+        ("text_content", json!(format!("{subject}: {page}{until}"))),
+    ] {
+        doc.insert(key.into(), v);
+    }
+    k.insert_tx(&ferrum_domain::util::sys(ctx), tx, "Communication", doc).await?;
+    Ok(true)
+}
+
+/// A link's record. Written directly, not through the document pipeline: the record carries
+/// hashes that must not travel in change events.
+#[allow(clippy::too_many_arguments)]
+async fn insert_link(
+    tx: &mut Tx,
+    ctx: &Ctx,
+    id: Uuid,
+    file: Option<Uuid>,
+    folder: Option<Uuid>,
+    access: &str,
+    token_hash: &str,
+    password_hash: Option<&str>,
+    expires: Option<DateTime<Utc>>,
+    max_downloads: Option<i64>,
+    email: Option<&str>,
+) -> Result<()> {
+    sqlx::query(
+        "insert into e_drive_link (tenant_id, id, file, folder, access, token_hash, password_hash, has_password, expires_at, max_downloads, \
+         download_count, revoked, shared_by, failed_attempts, email, created_by, updated_by) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $13, $13)",
+    )
+    .bind(ctx.tenant)
+    .bind(id)
+    .bind(file)
+    .bind(folder)
+    .bind(access)
+    .bind(token_hash)
+    .bind(password_hash)
+    .bind(password_hash.is_some())
+    .bind(expires)
+    .bind(max_downloads)
+    .bind(actor(ctx))
+    .bind(email)
+    .bind((!ctx.user.is_nil()).then_some(ctx.user))
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
 
 /// `unshare`: removes a share of an item (by `share` id, `email` or `role`). Removing your own
@@ -276,27 +401,7 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     let (token, hash) = new_token();
     let id = Uuid::now_v7();
     let (file, folder) = item_columns(&item);
-    // Written directly, not through the document pipeline: the record carries hashes that must not
-    // travel in change events.
-    sqlx::query(
-        "insert into e_drive_link (tenant_id, id, file, folder, access, token_hash, password_hash, has_password, expires_at, max_downloads, \
-         download_count, revoked, shared_by, failed_attempts, created_by, updated_by) \
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $12)",
-    )
-    .bind(ctx.tenant)
-    .bind(id)
-    .bind(file)
-    .bind(folder)
-    .bind(access)
-    .bind(&hash)
-    .bind(&password_hash)
-    .bind(password_hash.is_some())
-    .bind(expires)
-    .bind(max_downloads)
-    .bind(actor(ctx))
-    .bind((!ctx.user.is_nil()).then_some(ctx.user))
-    .execute(&mut **tx)
-    .await?;
+    insert_link(tx, ctx, id, file, folder, access, &hash, password_hash.as_deref(), expires, max_downloads, None).await?;
     tree::log(
         tx,
         ctx,
@@ -306,8 +411,10 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     )
     .await?;
     let slug = tenant_slug(tx, ctx.tenant).await?;
-    Ok(json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "access": access,
-              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads}))
+    Ok(
+        json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "page": format!("/app/s/{slug}/{token}"), "access": access,
+              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads}),
+    )
 }
 
 /// `revoke_link` (Manage access to its item, which may be in the trash).
@@ -343,9 +450,9 @@ pub async fn revoke_link(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> 
 /// `list_links` (Manage access): every link of the item, newest first, without tokens.
 pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let item = tree::open(tx, ctx, g, p.req_uuid("item")?, Level::Manage, false).await?;
-    type R = (Uuid, String, bool, Option<DateTime<Utc>>, Option<i64>, Option<i64>, bool, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>);
+    type R = (Uuid, String, bool, Option<DateTime<Utc>>, Option<i64>, Option<i64>, bool, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>, Option<String>);
     let rows: Vec<R> = sqlx::query_as(
-        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at \
+        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, email::text \
          from e_drive_link where tenant_id = $1 and (file = $2 or folder = $2) order by created_at desc",
     )
     .bind(ctx.tenant)
@@ -353,11 +460,11 @@ pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> O
     .fetch_all(&mut **tx)
     .await?;
     let now = Utc::now();
-    Ok(json!({"item": item.id, "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last)| {
+    Ok(json!({"item": item.id, "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last, email)| {
         let count = count.unwrap_or(0);
         let active = !revoked && exp.is_none_or(|t| t > now) && max.is_none_or(|m| m == 0 || count < m);
         json!({"id": id, "access": access, "has_password": pw, "expires_at": exp, "max_downloads": max, "download_count": count,
-               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active})
+               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "email": email})
     }).collect::<Vec<_>>()}))
 }
 

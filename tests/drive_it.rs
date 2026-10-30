@@ -264,7 +264,8 @@ async fn scenario() {
     for source in ferrum_app_drive::reports() {
         ferrum_domain::reports::add_source(source);
     }
-    let k = Kernel::boot(db, catalog, hooks, KernelSettings::default(), None).await.expect("boot");
+    let settings = KernelSettings { public_url: Some("https://erp.acme.test".into()), ..Default::default() };
+    let k = Kernel::boot(db, catalog, hooks, settings, None).await.expect("boot");
     let store = Arc::new(MemStore::default());
     k.set_file_store(store.clone());
     ferrum_domain::maintenance(&k).await.expect("partitions");
@@ -494,7 +495,9 @@ async fn scenario() {
     let e = t.no(&carol, "share", json!({"item": q3, "role": "Nonexistent"})).await;
     assert_eq!(code(&e), "forbidden");
     assert_eq!(code(&t.no(&alice, "share", json!({"item": q3, "role": "No Such Role"})).await), "validation_failed");
-    assert_eq!(code(&t.no(&alice, "share", json!({"item": q3, "email": "nobody@acme.test"})).await), "validation_failed");
+    let gone = k.create_user(&admin, "gone@acme.test", "Gone", Some("Correct-Horse-9"), &[], false).await.unwrap();
+    k.set_user_active(&admin, gone, false).await.unwrap();
+    assert_eq!(code(&t.no(&alice, "share", json!({"item": q3, "email": "gone@acme.test"})).await), "validation_failed", "a former colleague is no guest");
     assert_eq!(code(&t.no(&alice, "share", json!({"item": q3, "email": "alice@acme.test"})).await), "validation_failed");
     k.set_user_roles(&admin, carol.id, &["Drive User".to_string()]).await.unwrap();
     t.refresh(&mut carol).await;
@@ -767,6 +770,7 @@ async fn scenario() {
     let link = t.ok(&alice, "create_link", json!({"item": report_id})).await;
     let token = link["token"].as_str().unwrap().to_string();
     assert_eq!(link["url"], json!(format!("/api/site/acme/drive/links/{token}")));
+    assert_eq!(link["page"], json!(format!("/app/s/acme/{token}")), "the page people open");
     let stored: (String, i64) = {
         let mut tx = k.db.tenant_tx(tenant).await.unwrap();
         let row = sqlx::query_as(
@@ -795,6 +799,36 @@ async fn scenario() {
     let malformed = t.site(None, "GET", &tok("not-a-token"), &[], &[], vec![]).await.expect_err("malformed token");
     assert_eq!((refused.to_string(), code(&refused)), (unknown.to_string(), code(&unknown)));
     assert_eq!(malformed.to_string(), unknown.to_string());
+    // A guest: someone outside the workspace gets a link for them alone, by mail. Sharing with them
+    // again replaces it; they can only be Viewers.
+    let shared = t.ok(&alice, "share", json!({"item": report_id, "email": "Pat@Partner.test", "permission": "View"})).await;
+    assert_eq!((shared["guest"].clone(), shared["mailed"].clone(), shared["email"].clone()), (json!(true), json!(true), json!("pat@partner.test")));
+    let pats_mail = || async {
+        let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+        let content: String =
+            sqlx::query_scalar("select content from e_communication where tenant_id = $1 and recipients = 'pat@partner.test' order by created_at desc limit 1")
+                .bind(tenant)
+                .fetch_one(&mut *tx)
+                .await
+                .unwrap();
+        tx.commit().await.unwrap();
+        content
+    };
+    let mail = pats_mail().await;
+    let page =
+        |mail: &str| mail.split("https://erp.acme.test/app/s/acme/").nth(1).map(|rest| rest[..43].to_string()).unwrap_or_else(|| panic!("a link in {mail}"));
+    let pats = page(&mail);
+    assert!(mail.contains("shared &quot;report.pdf&quot; with you"), "{mail}");
+    let seen = t.json(t.site(None, "GET", &tok(&pats), &[], &[], vec![]).await.unwrap());
+    assert_eq!((seen["item"]["name"].as_str(), seen["link"]["access"].as_str()), (Some("report.pdf"), Some("Download")));
+    let listed = t.ok(&alice, "list_links", json!({"item": report_id})).await;
+    assert!(listed["links"].as_array().unwrap().iter().any(|l| l["email"] == json!("pat@partner.test") && l["active"] == json!(true)), "{listed}");
+    t.ok(&alice, "share", json!({"item": report_id, "email": "pat@partner.test"})).await;
+    t.site(None, "GET", &tok(&pats), &[], &[], vec![]).await.expect_err("the first link stops when a new one is sent");
+    assert!(t.site(None, "GET", &tok(&page(&pats_mail().await)), &[], &[], vec![]).await.is_ok());
+    let editor = t.no(&alice, "share", json!({"item": report_id, "email": "pat@partner.test", "permission": "Edit"})).await;
+    assert!(matches!(editor, Error::Validation(_)), "{editor:?}");
+
     // A download cap holds under concurrency.
     let capped = t.ok(&alice, "create_link", json!({"item": uid(&notes), "access": "Download", "max_downloads": 3})).await;
     let capped_token = capped["token"].as_str().unwrap().to_string();
@@ -963,8 +997,12 @@ async fn scenario() {
     assert_eq!(largest["rows"][0]["name"], json!("spec.txt"));
     assert_eq!(largest["rows"][0]["owner"], json!("Engineering"));
     let public = ferrum_domain::reports::run(&k, &erin.ctx, "drive_shared_externally", &none).await.unwrap();
-    let active: Vec<&str> = public["rows"].as_array().unwrap().iter().map(|r| r["item"].as_str().unwrap()).collect();
-    assert_eq!(active, ["Secret", "Secret"], "the capped, expired and revoked links are not active; the two Secret links are");
+    let active: Vec<(&str, Option<&str>)> = public["rows"].as_array().unwrap().iter().map(|r| (r["item"].as_str().unwrap(), r["sent_to"].as_str())).collect();
+    assert_eq!(
+        active,
+        [("Secret", None), ("Secret", None), ("report.pdf", Some("pat@partner.test"))],
+        "the capped, expired and revoked links are not active; the two Secret links and the one sent to Pat are"
+    );
     t.consistent().await;
 
     // ── online editing over WOPI (src/office.rs) ──

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- Guests (Ferrum docs/plan/collaboration.md, C5). Sharing with someone outside the workspace makes a Download link for them alone and mails it to them, under the workspace's rules for public links. Sharing with them again replaces it; deactivated colleagues are refused. Links carry the `email` they were sent to, and the report Drive Public Links shows it.
+- `create_link` answers the address of the web app's page for the link (`page`), which people open, beside the API address (`url`).
+
 ## 0.4.1
 
 - Working together (Ferrum docs/plan/collaboration.md, C1).

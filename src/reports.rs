@@ -161,11 +161,12 @@ async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
         chrono::DateTime<chrono::Utc>,
         Option<chrono::DateTime<chrono::Utc>>,
         bool,
+        Option<String>,
     );
     let rows: Vec<R> = sqlx::query_as(
         "select l.id, coalesce(f.name, d.name), case when l.file is null then 'Folder' else 'File' end, l.access, coalesce(l.has_password, false), l.expires_at, \
          l.max_downloads, coalesce(l.download_count, 0), l.revoked, l.shared_by, l.created_at, l.last_accessed_at, \
-         (not l.revoked and (l.expires_at is null or l.expires_at > now()) and (coalesce(l.max_downloads, 0) = 0 or coalesce(l.download_count, 0) < l.max_downloads)) \
+         (not l.revoked and (l.expires_at is null or l.expires_at > now()) and (coalesce(l.max_downloads, 0) = 0 or coalesce(l.download_count, 0) < l.max_downloads)), l.email::text \
          from e_drive_link l left join e_drive_file f on f.tenant_id = l.tenant_id and f.id = l.file \
          left join e_drive_folder d on d.tenant_id = l.tenant_id and d.id = l.folder where l.tenant_id = $1 order by l.created_at desc limit 5000",
     )
@@ -175,15 +176,16 @@ async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
     let rows: Vec<Value> = rows
         .into_iter()
         .filter(|r| all || r.12)
-        .map(|(id, name, kind, access, pw, exp, max, count, revoked, by, at, last, active)| {
+        .map(|(id, name, kind, access, pw, exp, max, count, revoked, by, at, last, active, email)| {
             json!({"id": id, "item": name, "kind": kind, "access": access, "password": pw, "expires_at": exp, "max_downloads": max, "downloads": count,
-                   "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active})
+                   "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "sent_to": email})
         })
         .collect();
     Ok(json!({
         "columns": [col("item", "Item", "data"), col("kind", "Kind", "data"), col("access", "Access", "data"), col("password", "Password", "check"),
                     col("expires_at", "Expires", "datetime"), col("downloads", "Downloads", "int"), col("max_downloads", "Download Limit", "int"),
-                    col("shared_by", "Created By", "data"), col("created_at", "Created", "datetime"), col("last_accessed_at", "Last Opened", "datetime"),
+                    col("shared_by", "Created By", "data"), col("sent_to", "Sent To", "data"), col("created_at", "Created", "datetime"),
+                    col("last_accessed_at", "Last Opened", "datetime"),
                     col("active", "Active", "check")],
         "totals": {"links": rows.len()},
         "rows": rows,
