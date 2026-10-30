@@ -64,8 +64,9 @@ is set in two places:
 * **Largest Upload** (Drive Settings, at most 1024 MB) is the workspace's own limit, within the
   server's.
 
-Behind the web app's proxy, also raise its `FERRUM_MAX_UPLOAD` (e.g. `200m`). Other Drive routes
-take at most 1 MB.
+Behind the web app's proxy, also raise its `FERRUM_MAX_UPLOAD` (e.g. `200m`). A request must also
+arrive within the server's `FERRUM_REQUEST_TIMEOUT_MS` (2 minutes unless raised), so for large
+files over slow links raise that too. Other Drive routes take at most 1 MB.
 
 ## Develop
 
