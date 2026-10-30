@@ -509,7 +509,7 @@ pub async fn settings(tx: &mut Tx, tenant: Uuid) -> Result<Settings> {
     .await?;
     let r = r.unwrap_or_default();
     Ok(Settings {
-        max_upload_bytes: r.0.unwrap_or(25).clamp(1, 32) * MB,
+        max_upload_bytes: (r.0.unwrap_or(25).clamp(1, 1024) * MB).min(crate::site::max_file_bytes() as i64),
         user_quota_mb: r.1.unwrap_or(5120).max(0),
         team_quota_mb: r.2.unwrap_or(51200).max(0),
         trash_days: r.3.unwrap_or(30).clamp(1, 3650),
