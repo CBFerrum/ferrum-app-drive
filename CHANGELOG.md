@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- Large files. Uploads, new versions and the editor's saves take files up to the operator's
+  `FERRUM_DRIVE_MAX_FILE_MB` (32 MB unless set, at most 1 GiB). The workspace's Largest Upload
+  goes up to 1024 MB, and the operator's limit caps it. Drive's other routes accept at most 1 MB
+  each. The server reads no request body past its route's limit (Ferrum 0.3 with per-route body
+  reading).
+
 ## 0.2.1
 
 - WOPI proof keys: when the editor server publishes a proof key, every WOPI call must carry a valid
