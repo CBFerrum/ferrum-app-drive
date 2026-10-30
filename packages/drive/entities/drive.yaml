@@ -5,8 +5,8 @@
   module: drive
   description: "Upload limits, default quotas, trash retention, version history and public-link policy for the whole workspace."
   fields:
-    - {name: max_upload_mb, type: int, label: Largest Upload (MB), default: 25, min: 1, max: 32, required: true,
-       description: "Largest file accepted per upload or new version; the server accepts at most 32 MB per request"}
+    - {name: max_upload_mb, type: int, label: Largest Upload (MB), default: 25, min: 1, max: 1024, required: true,
+       description: "Largest file accepted per upload, new version or online edit; the server's own limit (32 MB unless its operator raised it) applies too"}
     - {name: user_quota_mb, type: int, label: Personal Quota (MB), default: 5120, min: 0, required: true,
        description: "Storage of a new personal space, including versions and trash; 0 = unlimited. Change a person's quota on their Drive Space"}
     - {name: team_quota_mb, type: int, label: Team Folder Quota (MB), default: 51200, min: 0, required: true,

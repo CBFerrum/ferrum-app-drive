@@ -47,11 +47,26 @@ signature (current or previous key, at most 20 minutes old), so a token alone op
 stock Collabora image publishes no key until one is mounted, and Collabora can make one:
 `ssh-keygen -t rsa -N "" -m PEM -f proof_key`, mounted at `/etc/coolwsd/proof_key`. Without a key,
 keep the WOPI endpoints to the editor with `FERRUM_OFFICE_IPS` or network policy. Saves are limited
-by Drive's upload limit (at most 32 MB).
+by Drive's upload limit.
+
 
 `POST /api/app/drive/new?kind=docx|xlsx|pptx|odt|ods|odp&folder=<id>` makes a blank file for the
 editor to fill. `POST /api/app/drive/editor/<file>` returns the editor page and the token to post
 to it.
+
+## File size
+
+A file travels in one request: an upload, a new version or an editor save. How large it may be
+is set in two places:
+* **`FERRUM_DRIVE_MAX_FILE_MB`** (server, default 32, at most 1024) is the largest the server
+  accepts. Each replica holds a file in memory while storing it, so size replicas for the
+  uploads that may run at once.
+* **Largest Upload** (Drive Settings, at most 1024 MB) is the workspace's own limit, within the
+  server's.
+
+Behind the web app's proxy, also raise its `FERRUM_MAX_UPLOAD` (e.g. `200m`). A request must also
+arrive within the server's `FERRUM_REQUEST_TIMEOUT_MS` (2 minutes unless raised), so for large
+files over slow links raise that too. Other Drive routes take at most 1 MB.
 
 ## Develop
 

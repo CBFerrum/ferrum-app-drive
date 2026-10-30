@@ -17,10 +17,19 @@ pub struct DriveSite;
 
 #[async_trait]
 impl Site for DriveSite {
-    /// Uploads arrive as the raw request body; the server caps every body at 32 MB and the
-    /// workspace setting (at most that) decides per upload.
+    /// The JSON routes; files take [`max_file_bytes`] (`max_body_for`).
     fn max_body(&self) -> usize {
-        32 << 20
+        1 << 20
+    }
+
+    /// Uploads, new versions and the editor's saves arrive as the raw request body, up to the
+    /// operator's file limit; the workspace setting (at most that) decides per upload.
+    fn max_body_for(&self, method: &str, path: &str) -> usize {
+        let p: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        match (method, p.as_slice()) {
+            ("POST", ["upload"] | ["files", _, "versions"] | ["wopi", "files", _, "contents"]) => max_file_bytes(),
+            _ => self.max_body(),
+        }
     }
 
     async fn handle(&self, k: &Kernel, req: SiteRequest) -> Result<SiteResponse> {
@@ -31,6 +40,17 @@ impl Site for DriveSite {
             Some(ctx) => app(k, ctx, &req, &path).await,
         }
     }
+}
+
+/// The largest file a request may carry (upload, new version, editor save): the operator's
+/// `FERRUM_DRIVE_MAX_FILE_MB`, 32 MB unless set, at most 1 GiB. Replicas hold a file in memory
+/// while it is stored, so their memory bounds it.
+pub fn max_file_bytes() -> usize {
+    file_limit(std::env::var("FERRUM_DRIVE_MAX_FILE_MB").ok().as_deref())
+}
+
+fn file_limit(mb: Option<&str>) -> usize {
+    mb.and_then(|v| v.trim().parse::<usize>().ok()).unwrap_or(32).clamp(1, 1024) << 20
 }
 
 fn id(seg: &str) -> Result<Uuid> {
@@ -142,4 +162,24 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
         headers.push(("etag".into(), format!("\"{sha}\"")));
     }
     Ok(SiteResponse { status: 200, content_type: ctype, headers, body: data })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_file_routes_take_large_bodies() {
+        assert_eq!(
+            (file_limit(None), file_limit(Some(" 200 ")), file_limit(Some("0")), file_limit(Some("5000")), file_limit(Some("x"))),
+            (32 << 20, 200 << 20, 1 << 20, 1 << 30, 32 << 20)
+        );
+        let file = max_file_bytes();
+        for (method, path) in [("POST", "upload"), ("POST", "/files/abc/versions"), ("POST", "wopi/files/abc/contents")] {
+            assert_eq!(DriveSite.max_body_for(method, path), file, "{method} {path}");
+        }
+        for (method, path) in [("POST", "list_folder"), ("GET", "wopi/files/abc/contents"), ("POST", "files/abc"), ("POST", "upload/x")] {
+            assert_eq!(DriveSite.max_body_for(method, path), 1 << 20, "{method} {path}");
+        }
+    }
 }
