@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.11.1
+
+- Saving templates takes turns within a workspace, so its limit of 200 holds even when two
+  administrators save at the same moment.
+
 ## 0.11.0
 
 - Templates for new documents, spreadsheets and presentations (Ferrum platform.md, Office): New
