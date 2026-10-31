@@ -279,9 +279,9 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
-| **0.11.0** | Templates for new documents, spreadsheets and presentations : New offers "From a template…" beside the blank files, and Sheets and Slides offer … |
-| **0.10.0** | Comments on a live document's text and in threads : `add_comment` takes an `anchor` (Yjs relative positions) and a `quote` for documents edited … |
-| **0.9.0** | Images in documents edited live : uploaded to the document (`POST /files/<document>/images`, Edit), shown to whoever may view it, kept and paid … |
+| **0.11.0** | Templates for new documents, spreadsheets and presentations: New offers "From a template…" beside the blank files, and Sheets and Slides offer … |
+| **0.10.0** | Comments on a live document's text and in threads: `add_comment` takes an `anchor` (Yjs relative positions) and a `quote` for documents edited … |
+| **0.9.0** | Images in documents edited live: uploaded to the document (`POST /files/<document>/images`, Edit), shown to whoever may view it, kept and paid for … |
 | **0.8.1** | The list is drawn with the suite's components: each item shows what it is (a folder, a document, a spreadsheet, a presentation, a PDF, an image, a … |
 
 Every version is in [CHANGELOG.md](CHANGELOG.md).
