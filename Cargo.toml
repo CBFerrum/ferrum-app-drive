@@ -27,6 +27,9 @@ hmac = "0.12"
 rand = "0.9"
 ring = "0.17"
 sha2 = "0.10"
+# Drive's own templates: spreadsheets (rust_xlsxwriter) and presentations (zip).
+rust_xlsxwriter = "0.102"
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 ferrum-apps = { git = "https://github.com/CBFerrum/Ferrum", branch = "main" }

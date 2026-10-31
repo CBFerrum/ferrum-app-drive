@@ -13,7 +13,7 @@ use uuid::Uuid;
 const DIRECT: &str = "Drive records change only through Drive's actions: run them on your Drive Space";
 
 /// Refuses direct writes and deletes of folders, files, versions, shares, links, comments,
-/// stars and activity.
+/// stars, templates and activity.
 pub struct Guard;
 
 #[async_trait]

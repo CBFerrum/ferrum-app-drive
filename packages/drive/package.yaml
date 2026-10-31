@@ -9,7 +9,7 @@ modules:
     label: Drive
     icon: hard-drive
     order: 47
-    items: [DriveSpace, DriveFolder, DriveFile, DriveFileVersion, DriveShare, DriveLink, DriveActivity, DriveComment, DriveSettings,
+    items: [DriveSpace, DriveFolder, DriveFile, DriveFileVersion, DriveShare, DriveLink, DriveActivity, DriveComment, DriveTemplate, DriveSettings,
             report:drive_storage_by_user, report:drive_storage_by_team, report:drive_storage_by_type, report:drive_largest_files, report:drive_shared_externally]
 
 roles:
@@ -22,8 +22,8 @@ roles:
       - {entity: DriveSettings, read: true}
   - name: Drive Administrator
     description: >-
-      Manages Drive: settings, quotas, team folders, and full access to every space, folder, file, share, link, comment and activity record;
-      runs the storage reports.
+      Manages Drive: settings, quotas, team folders, the workspace's templates for new files, and full access to every space, folder,
+      file, share, link, comment and activity record; runs the storage reports.
     permissions:
       - {entity: DriveSettings, read: true, write: true, create: true}
       - {entity: DriveSpace, read: true, write: true, create: true, export: true}
@@ -35,3 +35,4 @@ roles:
       - {entity: DriveActivity, read: true, export: true}
       - {entity: DriveComment, read: true, export: true}
       - {entity: DriveStar, read: true}
+      - {entity: DriveTemplate, read: true, export: true}

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Templates for new documents, spreadsheets and presentations (Ferrum platform.md, Office): New
+  offers "From a template…" beside the blank files, and Sheets and Slides offer their own. Drive
+  comes with Word documents (Meeting notes, Project brief, Report, Letter), Excel workbooks (Budget,
+  Expense report, Task tracker) and PowerPoint presentations (Project update, Team meeting), and a
+  Drive administrator saves any Office file as one of the workspace's templates from its menu,
+  where they can also delete them. A template keeps its own copy of the file.
+- Actions for people and AI agents: `list_templates`, `create_from_template`, `save_as_template` and
+  `delete_template`; `POST /new` takes a `template`. A new file's name keeps an extension it already
+  has (`Plan.xlsx`, not `Plan.xlsx.xlsx`).
+
 ## 0.10.0
 
 - Comments on a live document's text and in threads (Ferrum collaboration.md, C3): `add_comment`

@@ -54,14 +54,20 @@ pub(crate) async fn put_object(k: &Kernel, ctx: &Ctx, c: &Content<'_>) -> Result
 
 /// Attaches a freshly stored object to its Drive file (inside the transaction creating the version).
 pub(crate) async fn attach(tx: &mut Tx, tenant: Uuid, object: Uuid, file: Uuid) -> Result<()> {
-    let n =
-        sqlx::query("update file_object set entity = 'DriveFile', record_id = $3 where tenant_id = $1 and id = $2 and entity is null and record_id is null")
-            .bind(tenant)
-            .bind(object)
-            .bind(file)
-            .execute(&mut **tx)
-            .await?
-            .rows_affected();
+    attach_to(tx, tenant, object, "DriveFile", file).await
+}
+
+/// Attaches a freshly stored object to a record of Drive's (a file, a template), so the platform's
+/// file endpoints apply that entity's access rules to it.
+pub(crate) async fn attach_to(tx: &mut Tx, tenant: Uuid, object: Uuid, entity: &str, record: Uuid) -> Result<()> {
+    let n = sqlx::query("update file_object set entity = $4, record_id = $3 where tenant_id = $1 and id = $2 and entity is null and record_id is null")
+        .bind(tenant)
+        .bind(object)
+        .bind(record)
+        .bind(entity)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
     if n != 1 {
         return Err(Error::internal(format!("stored object {object} could not be attached")));
     }

@@ -44,6 +44,7 @@ pub const READS: &[&str] = &[
     "activity",
     "list_comments",
     "read_document",
+    "list_templates",
 ];
 
 const B64: GeneralPurpose =
@@ -165,6 +166,10 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "add_comment" => add_comment(k, ctx, tx, g, &p).await,
         "resolve_comment" => resolve_comment(ctx, tx, g, &p).await,
         "delete_comment" => delete_comment(k, ctx, tx, g, &p).await,
+        "list_templates" => crate::templates::list(tx, ctx, &p).await,
+        "create_from_template" => crate::templates::create(k, ctx, tx, g, space, &p).await,
+        "save_as_template" => crate::templates::save(k, ctx, tx, g, &p).await,
+        "delete_template" => crate::templates::delete(k, ctx, tx, &p).await,
         "request_access" => crate::collab::request_access(k, ctx, tx, g, p.req_uuid("item")?, p.str("message")).await,
         _ => Err(Error::NotFound(format!("action {name}"))),
     }

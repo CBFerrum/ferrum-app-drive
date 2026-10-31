@@ -26,6 +26,7 @@ mod ops;
 mod reports;
 mod sharing;
 mod site;
+mod templates;
 mod tree;
 mod upkeep;
 
@@ -52,7 +53,7 @@ pub fn packages() -> std::result::Result<Vec<ferrum_meta::Package>, ferrum_meta:
 /// Registers this app's document hooks (and web endpoints).
 pub fn register(hooks: &mut HookRegistry) {
     hooks.register("DriveSpace", Arc::new(hooks::SpaceHook));
-    for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar"] {
+    for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar", "DriveTemplate"] {
         hooks.register(entity, Arc::new(hooks::Guard));
     }
     hooks.add_site("drive", Arc::new(site::DriveSite));
