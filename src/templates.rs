@@ -605,6 +605,8 @@ pub async fn save(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>
     if size as usize > MAX_TEMPLATE {
         return Err(Error::field("file", format!("templates are limited to {} MB", MAX_TEMPLATE >> 20)));
     }
+    // One save at a time per workspace, so the limit holds exactly.
+    sqlx::query("select pg_advisory_xact_lock(hashtextextended('drive-templates:' || $1::text, 0))").bind(ctx.tenant).execute(&mut **tx).await?;
     let count: i64 = sqlx::query_scalar("select count(*) from e_drive_template where tenant_id = $1").bind(ctx.tenant).fetch_one(&mut **tx).await?;
     if count >= MAX_TEMPLATES {
         return Err(Error::invalid(format!("a workspace keeps at most {MAX_TEMPLATES} templates: delete one first")));
