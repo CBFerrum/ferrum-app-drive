@@ -9,8 +9,11 @@ use crate::files::{self, Content, OnConflict};
 use crate::ops::{self, Params};
 use crate::tree;
 use async_trait::async_trait;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use ferrum_kernel::{Ctx, Error, Kernel, Result, Site, SiteRequest, SiteResponse, with_retry};
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 pub struct DriveSite;
@@ -233,6 +236,9 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             return Ok(SiteResponse::json(201, &res?));
         }
         ("GET", ["files", file, "content"]) => return download(k, ctx, id(file)?, &p).await,
+        // Images in a live document: the bytes go up as the body; they come back by their id.
+        ("POST", ["files", file, "images"]) => return Ok(SiteResponse::json(201, &crate::images::upload(k, ctx, id(file)?, &req.body).await?)),
+        ("GET", ["files", file, "images", image]) => return crate::images::serve(k, ctx, id(file)?, id(image)?).await,
         _ => return Err(Error::NotFound("endpoint".into())),
     };
     Ok(SiteResponse::json(200, &out))
@@ -240,8 +246,8 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
 
 /// `GET /files/{id}/content?version=&inline=1`: images and PDFs may be shown inline; everything
 /// else downloads, and types a browser could run arrive as opaque bytes. A live document serves
-/// its current content (or a version's) as `format=html`, `pdf` or `txt`; without a format, its
-/// state for Ferrum.
+/// its current content (or a version's) as `format=html`, `pdf`, `docx` or `txt`, its images
+/// inside; without a format, its state for Ferrum.
 async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<SiteResponse> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
@@ -256,8 +262,10 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
     if live && let Some(format) = p.str("format") {
         let mut tx = k.db.tenant_tx(ctx.tenant).await?;
         files::logged(&mut tx, ctx, &d).await?;
+        let g = Grants::load(&mut tx, ctx).await?;
         tx.commit().await?;
-        return export(k, &d.file.name, &data, format, p.flag("inline")).await;
+        let images = if format == "txt" { HashMap::new() } else { crate::images::for_export(k, ctx, Some(&g), d.file.id, &data).await? };
+        return export(k, &d.file.name, &data, format, p.flag("inline"), &images).await;
     }
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     files::logged(&mut tx, ctx, &d).await?;
@@ -277,15 +285,25 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
     Ok(SiteResponse { status: 200, content_type: ctype, headers, body: data })
 }
 
-/// A live document as a page (`html`), a PDF (`pdf`) or its words (`txt`). Pages run nothing.
-pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: bool) -> Result<SiteResponse> {
-    let doc = ferrum_kernel::coedit::decode(state);
+/// A live document as a page (`html`), a PDF (`pdf`), a Word file (`docx`) or its words
+/// (`txt`), carrying the `images` it shows. Pages run nothing.
+pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: bool, images: &HashMap<String, crate::images::Image>) -> Result<SiteResponse> {
+    use ferrum_kernel::coedit;
+    let doc = coedit::decode(state);
     let stem = crate::content::stem(name, false);
+    // Pages and PDFs carry images as data: addresses, so nothing is fetched to show them.
+    let inline_src = |id: &str| images.get(id).map(|i| format!("data:{};base64,{}", i.content_type, STANDARD.encode(&i.bytes)));
     let (body, ctype, ext) = match format {
-        "html" => (ferrum_kernel::coedit::html_page(stem, &doc).into_bytes(), "text/html; charset=utf-8", "html"),
-        "pdf" => (k.html_to_pdf(&ferrum_kernel::coedit::html_page(stem, &doc)).await?, "application/pdf", "pdf"),
-        "txt" => (ferrum_kernel::coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt"),
-        other => return Err(Error::field("format", format!("must be html, pdf or txt, not {other}"))),
+        "html" => (coedit::html_page_with(stem, &doc, &inline_src).into_bytes(), "text/html; charset=utf-8", "html"),
+        "pdf" => (k.html_to_pdf(&coedit::html_page_with(stem, &doc, &inline_src)).await?, "application/pdf", "pdf"),
+        "docx" => {
+            let picture = |id: &str| {
+                images.get(id).map(|i| coedit::ImageData { bytes: i.bytes.clone(), content_type: i.content_type.clone(), width: i.width, height: i.height })
+            };
+            (coedit::docx(&doc, stem, &picture)?, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx")
+        }
+        "txt" => (coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt"),
+        other => return Err(Error::field("format", format!("must be html, pdf, docx or txt, not {other}"))),
     };
     let headers = vec![
         ("content-disposition".to_string(), crate::content::disposition(inline, &format!("{stem}.{ext}"))),

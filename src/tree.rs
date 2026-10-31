@@ -459,7 +459,8 @@ fn mb(bytes: i64) -> String {
     format!("{}.{}", tenths / 10, tenths % 10)
 }
 
-/// Bytes of every version of the files in a subtree (or of one file), for moving usage between payers.
+/// Bytes of every version of the files in a subtree (or of one file), and of their documents'
+/// images, for moving usage between payers.
 pub async fn subtree_bytes(tx: &mut Tx, tenant: Uuid, item: &Item) -> Result<i64> {
     let bytes: Option<i64> = match item.kind {
         Kind::File => {
@@ -480,7 +481,7 @@ pub async fn subtree_bytes(tx: &mut Tx, tenant: Uuid, item: &Item) -> Result<i64
             .await?
         }
     };
-    Ok(bytes.unwrap_or(0))
+    Ok(bytes.unwrap_or(0) + crate::images::bytes_in(tx, tenant, item).await?)
 }
 
 // ───────────────────────────── settings and spaces ─────────────────────────────

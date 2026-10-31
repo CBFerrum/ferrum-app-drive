@@ -20,6 +20,7 @@ mod content;
 mod docs;
 mod files;
 mod hooks;
+mod images;
 mod office;
 mod ops;
 mod reports;

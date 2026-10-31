@@ -1068,11 +1068,13 @@ pub async fn purge(ctx: &Ctx, tx: &mut Tx, item: &Item) -> Result<i64> {
                 .await?
         }
     };
-    let bytes: i64 = sqlx::query_scalar("select coalesce(sum(size), 0)::bigint from e_drive_file_version where tenant_id = $1 and file = any($2)")
+    let versions: i64 = sqlx::query_scalar("select coalesce(sum(size), 0)::bigint from e_drive_file_version where tenant_id = $1 and file = any($2)")
         .bind(ctx.tenant)
         .bind(&files)
         .fetch_one(&mut **tx)
         .await?;
+    // Documents' images go with them (their bytes are the files' stored objects).
+    let bytes = versions + crate::images::forget(tx, ctx.tenant, &files).await?;
     tree::log(tx, ctx, item, "Delete", json!({"files": files.len(), "folders": folders.len(), "bytes": bytes})).await?;
     files::drop_objects(tx, ctx.tenant, &files, &[]).await?;
     ferrum_kernel::coedit::forget(tx, ctx.tenant, crate::docs::PACKAGE, &files).await?;

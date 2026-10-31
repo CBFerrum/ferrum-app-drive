@@ -155,6 +155,11 @@ impl T {
         sqlx::query(sqlx::AssertSqlSafe(sql.to_string())).bind(self.tenant).bind(id).execute(&mut *tx).await.unwrap();
         tx.commit().await.unwrap();
     }
+    async fn exec_with(&self, sql: &str, id: Uuid, data: &[u8]) {
+        let mut tx = self.k.db.tenant_tx(self.tenant).await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(sql.to_string())).bind(self.tenant).bind(id).bind(data).execute(&mut *tx).await.unwrap();
+        tx.commit().await.unwrap();
+    }
     async fn used(&self, space_or_team: Uuid) -> i64 {
         self.scalar(
             "select coalesce((select used_bytes from e_drive_space where tenant_id = $1 and id = $2), \
@@ -170,20 +175,22 @@ impl T {
     async fn consistent(&self) {
         let off = self
             .scalar(
-                "select count(*) from (select coalesce(s.used_bytes, 0) as used, coalesce((select sum(v.size) from e_drive_file_version v \
+                "with kept as (select v.tenant_id, v.file, v.size from e_drive_file_version v union all select i.tenant_id, i.file, i.size from drive_doc_image i) \
+                 select count(*) from (select coalesce(s.used_bytes, 0) as used, coalesce((select sum(v.size) from kept v \
                  join e_drive_file f on f.tenant_id = v.tenant_id and f.id = v.file where v.tenant_id = s.tenant_id and f.root = s.root_folder), 0) as stored \
                  from e_drive_space s where s.tenant_id = $1 and $2::uuid is null union all \
-                 select coalesce(t.used_bytes, 0), coalesce((select sum(v.size) from e_drive_file_version v join e_drive_file f on f.tenant_id = v.tenant_id \
+                 select coalesce(t.used_bytes, 0), coalesce((select sum(v.size) from kept v join e_drive_file f on f.tenant_id = v.tenant_id \
                  and f.id = v.file where v.tenant_id = t.tenant_id and f.root = t.id), 0) from e_drive_folder t where t.tenant_id = $1 and t.is_team) x \
                  where used <> stored",
                 None,
             )
             .await;
-        assert_eq!(off, 0, "usage counters match stored versions");
+        assert_eq!(off, 0, "usage counters match stored versions and documents' images");
         let orphans = self
             .scalar(
                 "select count(*) from file_object fo where fo.tenant_id = $1 and $2::uuid is null and (fo.entity is null or (fo.entity = 'DriveFile' \
-                 and not exists (select 1 from e_drive_file_version v where v.tenant_id = fo.tenant_id and v.stored_file = fo.id::text)))",
+                 and not exists (select 1 from e_drive_file_version v where v.tenant_id = fo.tenant_id and v.stored_file = fo.id::text) \
+                 and not exists (select 1 from drive_doc_image i where i.tenant_id = fo.tenant_id and i.object = fo.id and i.file = fo.record_id)))",
                 None,
             )
             .await;
@@ -196,6 +203,14 @@ impl T {
             )
             .await;
         assert_eq!(missing, 0, "every version's object exists and is attached to its file");
+        let lost = self
+            .scalar(
+                "select count(*) from drive_doc_image i where i.tenant_id = $1 and $2::uuid is null and not exists \
+                 (select 1 from file_object fo where fo.tenant_id = i.tenant_id and fo.id = i.object and fo.entity = 'DriveFile' and fo.record_id = i.file)",
+                None,
+            )
+            .await;
+        assert_eq!(lost, 0, "every document image's object exists and is attached to its document");
         let misplaced = self
             .scalar(
                 "select count(*) from (select c.id from e_drive_folder c join e_drive_folder p on p.tenant_id = c.tenant_id and p.id = c.parent \
@@ -1316,7 +1331,7 @@ async fn scenario() {
 
     // ── documents edited live (src/docs.rs; Ferrum docs/plan/collaboration.md, C3) ──
     use ferrum_kernel::{DocAccess, coedit};
-    use yrs::{Transact, XmlElementPrelim, XmlFragment, XmlTextPrelim};
+    use yrs::{Transact, Xml, XmlElementPrelim, XmlFragment, XmlTextPrelim};
     let host = k.hooks.doc_host("drive").expect("Drive hosts live documents").clone();
     let made = t.json(t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "fdoc"), ("name", "Brief")], &[], vec![]).await.unwrap());
     let brief = uid(&made);
@@ -1397,6 +1412,86 @@ async fn scenario() {
     let copied = t.ok(&alice, "copy", json!({"item": brief, "to": alice.root})).await;
     let copy_text = t.ok(&alice, "download", json!({"file": uid(&copied)})).await;
     assert_eq!(copy_text["text"], json!(words), "a copy takes what its editors typed, not the last version");
+
+    // Images in a document: kept by the document, shown to whoever may view it, carried by its
+    // copies and by the files that travel (src/images.rs).
+    let picture = |w: u32, h: u32, pad: usize| {
+        let mut b = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        b.extend_from_slice(&w.to_be_bytes());
+        b.extend_from_slice(&h.to_be_bytes());
+        b.extend_from_slice(&[8, 6, 0, 0, 0]);
+        b.resize(b.len() + pad, 3);
+        b
+    };
+    let before = t.used(alice.space).await;
+    let up = t.json(t.site(Some(&alice.ctx), "POST", &format!("/files/{brief}/images"), &[], &[], picture(640, 360, 1000)).await.unwrap());
+    let image = uid(&up);
+    assert_eq!((up["width"].as_i64(), up["height"].as_i64(), up["content_type"].as_str()), (Some(640), Some(360), Some("image/png")));
+    let size = up["size"].as_i64().unwrap();
+    assert_eq!(t.used(alice.space).await, before + size, "its space pays for it");
+    let e = t.site(Some(&bob.ctx), "POST", &format!("/files/{brief}/images"), &[], &[], picture(10, 10, 10)).await.unwrap_err();
+    assert_eq!(code(&e), "forbidden", "commenters add no images: {e}");
+    let e =
+        t.site(Some(&alice.ctx), "POST", &format!("/files/{brief}/images"), &[], &[], b"<svg xmlns='http://www.w3.org/2000/svg'/>".to_vec()).await.unwrap_err();
+    assert_eq!(code(&e), "validation_failed", "{e}");
+    let e = t.site(Some(&alice.ctx), "POST", &format!("/files/{notes}/images"), &[], &[], picture(10, 10, 10)).await.unwrap_err();
+    assert!(e.to_string().contains("images belong in documents"), "{e}");
+    let shown = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/images/{image}"), &[], &[], vec![]).await.unwrap();
+    assert_eq!((shown.content_type.as_str(), shown.body.len() as i64), ("image/png", size), "a viewer sees it");
+    assert!(header(&shown, "cache-control").unwrap().contains("immutable") && header(&shown, "content-security-policy").unwrap().contains("sandbox"));
+    assert!(t.site(Some(&frank.ctx), "GET", &format!("/files/{brief}/images/{image}"), &[], &[], vec![]).await.is_err(), "not frank's document");
+    assert!(t.site(Some(&alice.ctx), "GET", &format!("/files/{brief}/images/{}", Uuid::new_v4()), &[], &[], vec![]).await.is_err());
+    // The editors put it in the document, described.
+    let with_image = {
+        let fragment = live.get_or_insert_xml_fragment(coedit::FRAGMENT);
+        let mut txn = live.transact_mut();
+        let node = fragment.push_back(&mut txn, XmlElementPrelim::empty(coedit::IMAGE));
+        node.insert_attribute(&mut txn, "image", image.to_string());
+        node.insert_attribute(&mut txn, "alt", "Launch timeline");
+        txn.encode_update_v1()
+    };
+    t.exec_with("insert into coedit_update (tenant_id, package, doc, seq, data) values ($1, 'drive', $2, 2, $3)", brief, &with_image).await;
+    let page = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "html")], &[], vec![]).await.unwrap();
+    let html = String::from_utf8(page.body).unwrap();
+    assert!(
+        html.contains("<img src=\"data:image/png;base64,") && html.contains("alt=\"Launch timeline\""),
+        "the page carries it: {}",
+        &html[..html.len().min(600)]
+    );
+    let word = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "docx")], &[], vec![]).await.unwrap();
+    assert_eq!(word.content_type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    assert!(header(&word, "content-disposition").unwrap().contains("Brief.docx"));
+    assert!(word.body.starts_with(b"PK") && word.body.windows(21).any(|w| w == b"word/media/image1.png"), "the Word file carries it");
+    let txt = t.site(Some(&bob.ctx), "GET", &format!("/files/{brief}/content"), &[("format", "txt")], &[], vec![]).await.unwrap();
+    assert!(String::from_utf8(txt.body).unwrap().ends_with("Risks\nLaunch timeline"), "its description is among the words");
+    // A copy shows it from a copy of its own; deleted for good, the copy's images are refunded.
+    let second = t.ok(&alice, "copy", json!({"item": brief, "to": alice.root})).await;
+    let second = uid(&second);
+    let from_copy = t.site(Some(&alice.ctx), "GET", &format!("/files/{second}/images/{image}"), &[], &[], vec![]).await.unwrap();
+    assert_eq!(from_copy.body.len() as i64, size);
+    assert_eq!(t.scalar("select count(*) from drive_doc_image where tenant_id = $1 and id = $2", Some(image)).await, 2, "the copy keeps its own");
+    // Pasted into another document, it shows there to those who may view the first, and a save
+    // gives that document its own copy.
+    let other = uid(&t.json(t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "fdoc"), ("name", "Pasted")], &[], vec![]).await.unwrap()));
+    assert!(t.site(Some(&alice.ctx), "GET", &format!("/files/{other}/images/{image}"), &[], &[], vec![]).await.is_ok(), "from where it is kept");
+    let pasted = {
+        let doc = coedit::new_doc();
+        let fragment = doc.get_or_insert_xml_fragment(coedit::FRAGMENT);
+        let mut txn = doc.transact_mut();
+        let node = fragment.push_back(&mut txn, XmlElementPrelim::empty(coedit::IMAGE));
+        node.insert_attribute(&mut txn, "image", image.to_string());
+        drop(txn);
+        coedit::encode(&doc)
+    };
+    host.saved(&k, tenant, other, &pasted, "", &[alice.id]).await.unwrap();
+    assert_eq!(t.scalar("select count(*) from drive_doc_image where tenant_id = $1 and file = $2", Some(other)).await, 1, "adopted at the save");
+    t.ok(&alice, "trash", json!({"item": second})).await;
+    let before_purge = t.used(alice.space).await;
+    t.ok(&alice, "delete_forever", json!({"item": second})).await;
+    let after_purge = t.used(alice.space).await;
+    assert!(before_purge - after_purge >= size, "its images are refunded with it: {before_purge} → {after_purge}");
+    assert_eq!(t.scalar("select count(*) from drive_doc_image where tenant_id = $1 and file = $2", Some(second)).await, 0);
+    t.consistent().await;
 
     // Nothing changes its content around the editor; it is never checked out.
     let e = t.no(&alice, "upload_version", json!({"file": brief, "text": "plain"})).await;
