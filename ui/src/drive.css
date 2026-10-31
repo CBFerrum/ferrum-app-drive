@@ -315,3 +315,21 @@ a.drive-name:focus-visible > span {
   max-height: none;
   border: 0;
 }
+
+/* Threads: a document's words a comment is on, its replies, and threads that are done. */
+.drive-comment-quote {
+  margin: 0 0 4px;
+  padding-left: 8px;
+  border-left: 3px solid #eab308;
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+}
+.drive-comment-reply {
+  margin: 6px 0 0 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.drive-comment.is-resolved {
+  opacity: 0.75;
+}

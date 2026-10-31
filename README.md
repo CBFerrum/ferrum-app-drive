@@ -105,6 +105,13 @@ is never overwritten. The person saves a copy or replaces it.
 
 * **Comments** can mention people: `add_comment` with `mentions` (emails). Those who may see the
   file are told in the bell and by mail, and the file's owner hears of comments by others.
+  * On a live document's text: `anchor` (`{from, to}`, Yjs relative positions; the Docs editor makes
+    them) and `quote` (the words as they read). The place moves with everyone's typing.
+  * In threads: `reply_to` names the comment starting the thread (on the same file); its author
+    hears of replies. Deleting that comment deletes its replies.
+  * `resolve_comment` with `comment` and `resolved` (true, or false to reopen), by anyone who may
+    comment: `list_comments` then says `resolved_by` and `resolved_at`, and the editor stops marking
+    its text.
 * **Presence.**
   * Open pages report who has a file open: `POST /api/app/drive/presence/<file>?mode=view|edit|gone`,
     every 30 seconds.
