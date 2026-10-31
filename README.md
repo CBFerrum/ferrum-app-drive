@@ -5,7 +5,7 @@
   <img alt="Ferrum Drive" src="docs/assets/banner-light.svg" width="100%">
 </picture>
 
-[![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml) ![Version](https://img.shields.io/badge/version-0.11.0-ca8a04?style=flat-square) ![Ferrum](https://img.shields.io/badge/Ferrum-%3E%3D0.3.2%2C%20%3C0.4-2f5bea?style=flat-square) ![License](https://img.shields.io/badge/license-AGPL--3.0-3b82f6?style=flat-square) ![Rust](https://img.shields.io/badge/Rust-native%20app-b7410e?style=flat-square&logo=rust&logoColor=white) ![Interface](https://img.shields.io/badge/interface-React%20%2B%20Vite-0ea5e9?style=flat-square&logo=react&logoColor=white) ![MCP](https://img.shields.io/badge/AI%20agents-MCP-8b5cf6?style=flat-square)
+[![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml) ![Version](https://img.shields.io/badge/version-0.11.1-ca8a04?style=flat-square) ![Ferrum](https://img.shields.io/badge/Ferrum-%3E%3D0.3.2%2C%20%3C0.4-2f5bea?style=flat-square) ![License](https://img.shields.io/badge/license-AGPL--3.0-3b82f6?style=flat-square) ![Rust](https://img.shields.io/badge/Rust-native%20app-b7410e?style=flat-square&logo=rust&logoColor=white) ![Interface](https://img.shields.io/badge/interface-React%20%2B%20Vite-0ea5e9?style=flat-square&logo=react&logoColor=white) ![MCP](https://img.shields.io/badge/AI%20agents-MCP-8b5cf6?style=flat-square)
 
 **A native app for [Ferrum](https://github.com/CBFerrum/Ferrum), the open-source, AI-first business platform.**
 
@@ -26,7 +26,7 @@ own sharing rules.
 
 | At a glance | |
 |---|---|
-| 📦 Version | `0.11.0` |
+| 📦 Version | `0.11.1` |
 | 🧱 Platform | Ferrum `>=0.3.2, <0.4` |
 | 🔗 Requires | nothing else |
 | 🖥️ Interface | its own, at `/drive/`, `/sheets/`, `/slides/`, `/pdf/` |
@@ -279,10 +279,10 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.11.1** | Saving templates takes turns within a workspace, so its limit of 200 holds even when two administrators save at the same moment. |
 | **0.11.0** | Templates for new documents, spreadsheets and presentations: New offers "From a template…" beside the blank files, and Sheets and Slides offer … |
 | **0.10.0** | Comments on a live document's text and in threads: `add_comment` takes an `anchor` (Yjs relative positions) and a `quote` for documents edited … |
 | **0.9.0** | Images in documents edited live: uploaded to the document (`POST /files/<document>/images`, Edit), shown to whoever may view it, kept and paid for … |
-| **0.8.1** | The list is drawn with the suite's components: each item shows what it is (a folder, a document, a spreadsheet, a presentation, a PDF, an image, a … |
 
 Every version is in [CHANGELOG.md](CHANGELOG.md).
 

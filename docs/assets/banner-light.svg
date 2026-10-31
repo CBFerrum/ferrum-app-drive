@@ -28,7 +28,7 @@
   <text x="262" y="198" font-size="58" font-weight="750" fill="#0f172a" letter-spacing="-1">Ferrum Drive</text>
   <text x="264" y="244" font-size="23" fill="#475569">Files and folders for every person and team: versions,</text>
   <text x="264" y="278" font-size="23" fill="#475569">sharing, live documents and templates.</text>
-  <g><rect x="264" y="310" width="78" height="30" rx="15" fill="#f8efdc"/><text x="303.1" y="330" font-size="14.5" font-weight="600" fill="#986803" text-anchor="middle">v0.11.0</text></g>
+  <g><rect x="264" y="310" width="78" height="30" rx="15" fill="#f8efdc"/><text x="303.1" y="330" font-size="14.5" font-weight="600" fill="#986803" text-anchor="middle">v0.11.1</text></g>
   <g><rect x="352.2" y="310" width="130" height="30" rx="15" fill="#f8efdc"/><text x="417.1" y="330" font-size="14.5" font-weight="600" fill="#986803" text-anchor="middle">Own interface</text></g>
   <g><rect x="492" y="310" width="87" height="30" rx="15" fill="#f8efdc"/><text x="535.4" y="330" font-size="14.5" font-weight="600" fill="#986803" text-anchor="middle">AGPL-3.0</text></g>
 </svg>
