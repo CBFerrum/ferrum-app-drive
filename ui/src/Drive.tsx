@@ -1,7 +1,7 @@
 // Drive (the drive app's /api/app/drive endpoints): your files, what others shared with you, recent,
 // starred and trashed items, and search; Sheets, Slides and PDF (Drive's files of one kind); upload
 // (handed to the shell, so it goes on in other apps' pages), new folders and blank documents,
-// spreadsheets or presentations; sharing, comments, versions and activity in a panel beside the
+// spreadsheets or presentations, or ones from a template (Templates.tsx); sharing, comments, versions and activity in a panel beside the
 // list (Details.tsx, Share.tsx); who has a file open now (presence.ts). Files open in the editor
 // server the operator runs (Collabora Online or ONLYOFFICE, over WOPI), in a browser editor that an
 // add-on offers on Drive's `drive.editor` point (BrowserEdit.tsx), or, for documents edited live,
@@ -43,6 +43,7 @@ import {
   Folder,
   FolderPlus,
   Info,
+  LayoutTemplate,
   type LucideIcon,
   MoreHorizontal,
   Pencil,
@@ -59,6 +60,7 @@ import { type EditorView, applyViews, hostMessage, inkOn, othersOf, parseMessage
 import { DetailsPanel, type ItemInfo, allows } from "./Details";
 import { joinable, presenceLabel, useFilesPresence, usePresence } from "./presence";
 import { type Shareable, ShareDialog } from "./Share";
+import { SaveTemplateDialog, TemplateDialog, templatable, useTemplates } from "./Templates";
 
 interface Item {
   id: string;
@@ -277,6 +279,9 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState<Shareable | null>(null);
   const [naming, setNaming] = useState<{ title: string; label: string; initial: string; done: (name: string) => Promise<unknown> } | null>(null);
+  const [gallery, setGallery] = useState(false);
+  const [saving, setSaving] = useState<Item | null>(null);
+  const templates = useTemplates();
   const view: View = VIEWS.find((v) => v.id === params.get("view"))?.id ?? "mine";
   const query = params.get("q") ?? "";
   const selected = params.get("item");
@@ -380,6 +385,15 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       toast(errorMessage(e), "error");
     }
   };
+  // A file from a template opens in its editor; with none for it, it waits in the list.
+  const fromTemplate = (made: { id: string; name: string; size: number | null }) => {
+    setGallery(false);
+    const open = defaultEditor(editorsFor(made, editors), narrow);
+    if (open) return openChoice(open, navigate);
+    toast(`Made “${made.name}”`);
+    void refresh();
+    pick({ item: made.id });
+  };
   const newFolder = () =>
     setNaming({ title: "New folder", label: "Name", initial: "", done: (name) => attempt(() => act("create_folder", { parent: id, name }), `Folder “${name}” made`) });
   const rename = (it: Item) =>
@@ -437,9 +451,14 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             <div className="flex flex-wrap items-center gap-2">
               {kind ? (
                 fresh.map((n) => (
-                  <UiButton key={n.kind} size="sm" variant="outline" onClick={() => void create(n.kind)}>
-                    <Plus /> {n.label}
-                  </UiButton>
+                  <span key={n.kind} className="contents">
+                    <UiButton size="sm" variant="outline" onClick={() => void create(n.kind)}>
+                      <Plus /> {n.label}
+                    </UiButton>
+                    <UiButton size="sm" variant="outline" onClick={() => setGallery(true)}>
+                      <LayoutTemplate /> From a template
+                    </UiButton>
+                  </span>
                 ))
               ) : (
                 <DropdownMenu>
@@ -454,6 +473,9 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                         <FileGlyph kind="file" name={`new.${n.kind}`} size={16} /> {n.label}
                       </DropdownMenuItem>
                     ))}
+                    <DropdownMenuItem onSelect={() => setGallery(true)}>
+                      <LayoutTemplate /> From a template…
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={newFolder}>
                       <FolderPlus /> Folder
@@ -639,6 +661,11 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                                   <Download /> Download
                                 </DropdownMenuItem>
                               )}
+                              {it.kind === "file" && templatable(it.name) && templates.data?.manage && (
+                                <DropdownMenuItem onSelect={() => setSaving(it)}>
+                                  <LayoutTemplate /> Save as a template
+                                </DropdownMenuItem>
+                              )}
                               {allows(it.permission, "Edit") && (
                                 <>
                                   <DropdownMenuSeparator />
@@ -662,6 +689,16 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       {selected && space.data && <DetailsPanel id={selected} space={space.data.id} onClose={() => pick({ item: null })} onShare={setSharing} />}
       {sharing && space.data && <ShareDialog item={sharing} space={space.data.id} onClose={() => setSharing(null)} />}
       {naming && <NameDialog {...naming} onClose={() => setNaming(null)} />}
+      {gallery && target && space.data && (
+        <TemplateDialog
+          folder={target}
+          space={space.data.id}
+          only={kind === "Spreadsheet" ? "sheet" : kind === "Presentation" ? "slides" : undefined}
+          onMade={fromTemplate}
+          onClose={() => setGallery(false)}
+        />
+      )}
+      {saving && space.data && <SaveTemplateDialog file={saving} space={space.data.id} onClose={() => setSaving(null)} />}
     </div>
   );
 }

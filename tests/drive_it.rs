@@ -1632,6 +1632,82 @@ async fn scenario() {
     assert_eq!(t.scalar("select count(*) from coedit_doc where tenant_id = $1 and id = $2", Some(brief)).await, 0);
     assert_eq!(t.scalar("select count(*) from drive_doc_words where tenant_id = $1 and file = $2", Some(brief)).await, 0, "its words go too");
 
+    // Templates for new Office files: Drive's own, built here, and the workspace's, which a Drive
+    // administrator saves from a file as it was then.
+    let listed = t.ok(&alice, "list_templates", json!({})).await;
+    let builtins = listed["templates"].as_array().unwrap().clone();
+    assert!(builtins.len() >= 9 && builtins.iter().all(|t| t["builtin"] == json!(true)), "{listed}");
+    for kind in ["docx", "xlsx", "pptx"] {
+        assert!(builtins.iter().any(|t| t["kind"] == kind), "{kind}");
+    }
+    assert_eq!(listed["manage"], json!(false), "alice does not manage templates");
+    assert_eq!(t.ok(&erin, "list_templates", json!({})).await["manage"], json!(true));
+    let sheets = t.ok(&alice, "list_templates", json!({"kind": "xlsx"})).await;
+    assert!(sheets["templates"].as_array().unwrap().iter().all(|t| t["kind"] == "xlsx"), "{sheets}");
+    assert_eq!(code(&t.no(&alice, "list_templates", json!({"kind": "exe"})).await), "validation_failed");
+    // A file from one is a real file of its kind, named after the template unless named, its
+    // space paying for it.
+    let used_before = t.used(alice.space).await;
+    let budget = t.ok(&alice, "create_from_template", json!({"template": "expense-report"})).await;
+    assert_eq!(
+        (budget["name"].as_str(), budget["content_type"].as_str()),
+        (Some("Expense report.xlsx"), Some("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+    );
+    assert!(t.used(alice.space).await > used_before, "her space pays for it");
+    let named = t.ok(&alice, "create_from_template", json!({"template": "budget", "name": "Q3 plan.xlsx"})).await;
+    assert_eq!(named["name"], "Q3 plan.xlsx", "a name already ending in the kind keeps it");
+    assert_eq!(t.ok(&alice, "create_from_template", json!({"template": "budget", "name": "Q3 plan"})).await["name"], "Q3 plan (2).xlsx");
+    let made = t.site(Some(&alice.ctx), "POST", "/new", &[("template", "meeting-notes"), ("name", "Standup")], &[], vec![]).await.unwrap();
+    assert_eq!(made.status, 201);
+    let standup = t.json(made);
+    assert_eq!(standup["name"], "Standup.docx", "the Site makes one too, as the web app does");
+    let word = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&standup)), &[], &[], vec![]).await.unwrap();
+    assert!(word.body.starts_with(b"PK") && word.body.windows(17).any(|w| w == b"word/document.xml"), "a Word file");
+    let e = t.site(Some(&alice.ctx), "POST", "/new", &[("template", "budget"), ("kind", "docx")], &[], vec![]).await.unwrap_err();
+    assert!(format!("{e:?}").contains("the template makes a xlsx file"), "{e:?}");
+    assert_eq!(code(&t.no(&alice, "create_from_template", json!({"template": "no-such"})).await), "not_found");
+    t.hidden(&frank, "create_from_template", json!({"template": "budget", "folder": alice.root})).await;
+    // Saving one: Drive administrators, from documents, spreadsheets and presentations.
+    let e = t.no(&alice, "save_as_template", json!({"file": uid(&budget)})).await;
+    assert_eq!(code(&e), "forbidden", "{e}");
+    let text = t.upload(&alice, alice.root, "plain.txt", b"just words").await;
+    let e = t.no(&erin, "save_as_template", json!({"file": uid(&text)})).await;
+    assert!(format!("{e:?}").contains("a template is a document, spreadsheet or presentation"), "{e:?}");
+    let e = t.no(&erin, "save_as_template", json!({"file": launch})).await;
+    assert!(format!("{e:?}").contains("a template is a document"), "live documents have Docs' own templates: {e:?}");
+    let original = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&budget)), &[], &[], vec![]).await.unwrap().body;
+    let saved = t.ok(&erin, "save_as_template", json!({"file": uid(&budget), "title": " Quarterly budget ", "category": "Finance", "description": "  "})).await;
+    let template = uid(&saved);
+    assert_eq!((saved["title"].as_str(), saved["kind"].as_str()), (Some("Quarterly budget"), Some("xlsx")));
+    // Later versions of the file change nothing: the template kept its own copy.
+    t.site(Some(&alice.ctx), "POST", &format!("/files/{}/versions", uid(&budget)), &[], &[], b"PK\x03\x04 not the budget any more".to_vec()).await.unwrap();
+    let ours = t.ok(&frank, "list_templates", json!({"kind": "xlsx"})).await;
+    let entry = ours["templates"].as_array().unwrap().iter().find(|t| t["id"] == json!(template)).cloned().expect("everyone sees it");
+    assert_eq!(
+        (entry["builtin"].clone(), entry["category"].clone(), entry["description"].clone(), entry["size"].clone()),
+        (json!(false), json!("Finance"), Value::Null, json!(original.len()))
+    );
+    let copy = t.ok(&frank, "create_from_template", json!({"template": template})).await;
+    assert_eq!(copy["name"], "Quarterly budget.xlsx", "frank uses it without access to alice's file");
+    let got = t.site(Some(&frank.ctx), "GET", &format!("/files/{}/content", uid(&copy)), &[], &[], vec![]).await.unwrap().body;
+    assert_eq!(got, original, "as the file was when it was saved");
+    assert_eq!(t.scalar("select count(*) from file_object where tenant_id = $1 and entity = 'DriveTemplate' and record_id = $2", Some(template)).await, 1);
+    let e = k.insert(&admin, "DriveTemplate", obj(json!({"title": "forged", "file_kind": "docx"}))).await.expect_err("direct write");
+    assert_eq!(code(&e), "forbidden", "templates change only through Drive's actions");
+    // Deleting one: Drive administrators, the workspace's only; files made from it stay.
+    assert_eq!(code(&t.no(&alice, "delete_template", json!({"template": template})).await), "forbidden");
+    assert_eq!(code(&t.no(&erin, "delete_template", json!({"template": "budget"})).await), "invalid", "Drive's own stay");
+    t.ok(&erin, "delete_template", json!({"template": template})).await;
+    assert!(!t.ok(&frank, "list_templates", json!({})).await["templates"].as_array().unwrap().iter().any(|t| t["id"] == json!(template)));
+    assert_eq!(
+        t.scalar("select count(*) from file_object where tenant_id = $1 and entity = 'DriveTemplate' and record_id = $2", Some(template)).await,
+        0,
+        "its bytes go"
+    );
+    assert_eq!(code(&t.no(&erin, "delete_template", json!({"template": template})).await), "not_found");
+    assert_eq!(code(&t.no(&frank, "create_from_template", json!({"template": template})).await), "not_found");
+    assert_eq!(t.site(Some(&frank.ctx), "GET", &format!("/files/{}/content", uid(&copy)), &[], &[], vec![]).await.unwrap().body, original);
+
     // An upload sent again with its Idempotency-Key (its page went away before it heard back) gets
     // the file the first made: one file, its bytes stored once; the same key for other bytes is refused.
     let key = [("idempotency-key", "upload-0b4f8a5e-9d1c-4c7e-8f00-1234567890ab")];

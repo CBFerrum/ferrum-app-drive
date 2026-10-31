@@ -113,6 +113,32 @@
       params:
         - {name: file, label: Document, required: true, description: "A document edited live (Edit access)"}
         - {name: markdown, label: Content, type: text, required: true, description: "Markdown, added at the end; everyone with the document open sees it at once"}
+    - name: list_templates
+      label: Templates
+      permission: read
+      params:
+        - {name: kind, label: Kind, type: select, options: [docx, xlsx, pptx, odt, ods, odp], description: "Only templates making this kind of file; all by default"}
+    - name: create_from_template
+      label: New File from Template
+      permission: read
+      params:
+        - {name: template, label: Template, required: true, description: "A template's id from list_templates (Drive's own are names, such as budget)"}
+        - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+        - {name: name, label: Name, description: "The template's title by default; a taken name gets a number"}
+    - name: save_as_template
+      label: Save as Template
+      permission: read
+      params:
+        - {name: file, label: File, required: true, description: "A document, spreadsheet or presentation (docx, xlsx, pptx, odt, ods, odp); Drive administrators only"}
+        - {name: title, label: Title, description: "The file's name by default"}
+        - {name: category, label: Category, description: "Groups templates in the gallery, such as Finance"}
+        - {name: description, label: Description, description: "What it is for, in a line"}
+    - name: delete_template
+      label: Delete Template
+      permission: read
+      confirm: "The template is deleted for everyone; files made from it stay as they are. Continue?"
+      params:
+        - {name: template, label: Template, required: true, description: "One of the workspace's templates (Drive's own stay); Drive administrators only"}
   list: {columns: [owner, full_name, quota_mb, used_bytes], sort: owner asc}
 
 - name: DriveTeamMember
@@ -287,3 +313,20 @@
     - {name: folder, type: link, to: DriveFolder, on_delete: cascade, in_list: true}
   unique: [[email, file], [email, folder]]
   list: {columns: [email, file, folder], sort: created_at desc}
+
+- name: DriveTemplate
+  label: Drive Template
+  kind: master
+  module: drive
+  title_field: title
+  search_fields: [title, category]
+  description: "A template for new documents, spreadsheets or presentations, saved by a Drive administrator from a file: a copy of the file as it was then. Changed only through Drive's actions."
+  fields:
+    - {name: title, type: data, required: true, max_length: 140, in_list: true}
+    - {name: file_kind, label: Kind, type: select, read_only: true, in_list: true, in_filter: true, options: [docx, xlsx, pptx, odt, ods, odp]}
+    - {name: category, type: data, max_length: 60, in_list: true, in_filter: true}
+    - {name: description, type: data, max_length: 280}
+    - {name: made_from, type: data, max_length: 255, read_only: true, description: "The name of the file it was saved from"}
+    - {name: stored_file, type: data, read_only: true, hidden: true, description: "The platform file holding the template's bytes"}
+    - {name: size, type: int, label: Size (Bytes), read_only: true, in_list: true}
+  list: {columns: [title, file_kind, category, size], sort: title asc}

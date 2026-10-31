@@ -94,6 +94,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `list_links` | `item` (Manage) → `{links: [{id, access, has_password, expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, active}]}` — tokens are never shown again |
 | `activity` | `item`, `limit?` (≤ 200, 50) → `{activity: [{id, at, action, item_name, actor, file, folder, details}]}`; for a folder, everything inside it too |
 | `list_comments` | `file` → `{comments: [{id, author, body, created_at, mine}]}` |
+| `list_templates` | `kind?` (docx, xlsx, pptx, odt, ods, odp) → `{templates: [{id, kind, title, category, description, builtin, size}], manage}`: Drive's own first, then the workspace's; `manage` when you may add and delete them |
 
 ### Changing
 
@@ -102,6 +103,9 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `upload` | `name`, `content_base64` (standard or URL-safe, padding optional) or `text`, `folder?`, `on_conflict?` keep_both (default: `name (2)`) / replace (new version of the same-named file) / fail, `comment?` → Item (Edit on the folder) |
 | `upload_version` | `file`, `content_base64` or `text`, `comment?` → Item (Edit; refused while someone else has it checked out, and for live documents) |
 | `create_document` | `title?` (Untitled), `markdown?`, `folder?` → Item: a new live document from Markdown (Edit on the folder; a taken name gets a number) |
+| `create_from_template` | `template` (an id from `list_templates`; Drive's own are names such as `budget`), `folder?`, `name?` (the template's title) → Item: a new Office file with the template's content (Edit on the folder; a taken name gets a number) |
+| `save_as_template` | `file` (a docx, xlsx, pptx, odt, ods or odp file you may view, ≤ 25 MB), `title?` (the file's name), `category?`, `description?` → `{id, kind, title}` (Drive administrators; at most 200 per workspace) |
+| `delete_template` | `template` → `{deleted}` (Drive administrators; Drive's own stay) |
 | `append_to_document` | `file`, `markdown` → `{file, name, appended, change}` (Edit): added at the end of a live document as a change everyone with it open sees at once; its next version includes it |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
 | `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators) |
@@ -141,7 +145,7 @@ parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, an
 | `GET /{action}` | a read action above, parameters as query → its JSON |
 | `POST /upload` | query `name`, `folder?`, `on_conflict?`, `comment?`; body: the raw bytes (≤ the workspace limit, within the server's `FERRUM_DRIVE_MAX_FILE_MB`) → `201` Item |
 | `POST /files/{id}/versions` | query `comment?`, `check_in=1?`; body: raw bytes → `201` Item |
-| `POST /new` | query `kind` (`fdoc`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`), `name?` (Untitled), `folder?` → `201` Item: an empty file for its editor |
+| `POST /new` | query `kind` (`fdoc`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`), `name?` (Untitled), `folder?` → `201` Item: an empty file for its editor; with `template` (as `create_from_template`; `kind` may be left out), a file with the template's content named after it |
 | `GET /files/{id}/content` | query `version?`, `inline=1?` → the bytes. `inline` applies to PNG, JPEG, GIF, WebP, BMP, AVIF and PDF; everything else is `attachment`, and HTML, SVG, XML and JavaScript are sent as `application/octet-stream`. Headers: `Content-Disposition` (UTF-8 name), `X-Content-Type-Options: nosniff`, `Content-Security-Policy: … sandbox`, `Cache-Control: private, no-store`, `ETag` (SHA-256), `X-Drive-Version` |
 
 Uploads are checked (name, access, size, quota) before any bytes are stored, stored holding no
@@ -166,6 +170,16 @@ added, so `search` finds documents by what they say; upkeep keeps the words of d
 before this, 20 a minute. `GET /files/{id}/content?format=html|pdf|txt` exports it (a page that runs
 nothing; a PDF through the server's PDF renderer; its words), also of a `version`; the `download`
 action answers its words as `text`. Deleting one for good also deletes its live content.
+
+**Templates.** New documents, spreadsheets and presentations start blank or from a template. Drive
+has its own, made when used: Word documents (Meeting notes, Project brief, Report, Letter, written
+by the platform's Word writer from Markdown), Excel workbooks (Budget with its formulas and totals,
+Expense report and Task tracker with drop-down lists) and PowerPoint presentations (Project update,
+Team meeting: 16:9, a title slide and titled lists). A Drive administrator saves any Office file as
+one of the workspace's templates (`DriveTemplate`, `save_as_template`): the template keeps a copy of
+the file's current version, attached to its record, so later edits to the file change nothing and
+whoever uses it needs no access to the file. Deleting a template deletes that copy; files made from
+it stay. Templates are records Drive alone writes; administrators read them through the generic API.
 
 **Guests.** Sharing with an email that is no user of the workspace makes a Download link for that
 person alone (`email` on the link) and mails it to them: `{id, item, email, guest: true, permission:

@@ -10,7 +10,8 @@ pub const FDOC: &str = "application/vnd.ferrum.doc";
 /// Types shown inline (previews); everything else is an attachment.
 const INLINE: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "application/pdf"];
 
-fn extension(name: &str) -> String {
+/// A name's extension, lower-case (`Plan.DOCX` → `docx`); empty when it has none.
+pub fn extension(name: &str) -> String {
     match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() && !ext.is_empty() && ext.len() <= 10 => ext.to_ascii_lowercase(),
         _ => String::new(),

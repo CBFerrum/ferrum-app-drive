@@ -143,21 +143,38 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             crate::collab::present(k, ctx, &ids).await?
         }
         ("POST", ["editor", file, "lock"]) => crate::office::browser_lock(k, ctx, id(file)?, p.req("lock")?, p.req("op")?).await?,
-        // A blank document, spreadsheet or presentation (the editor fills in an empty file); `fdoc`
-        // is a document edited live (`docs`), empty until someone types.
+        // A blank document, spreadsheet or presentation (the editor fills in an empty file), or one
+        // from a `template` ([`crate::templates`]); `fdoc` is a document edited live (`docs`), empty
+        // until someone types.
         ("POST", [verb @ ("upload" | "new")]) => {
             let space = tree::ensure_space(k, ctx).await?;
             let folder = p.uuid("folder")?.unwrap_or(space.root);
+            let mut made = Vec::new();
             let (name, on) = if *verb == "new" {
-                let kind = p.req("kind")?;
-                if !["fdoc", "docx", "xlsx", "pptx", "odt", "ods", "odp"].contains(&kind) {
-                    return Err(Error::invalid(format!("kind must be fdoc, docx, xlsx, pptx, odt, ods or odp, not {kind}")));
-                }
-                (format!("{}.{kind}", p.str("name").filter(|n| !n.trim().is_empty()).unwrap_or("Untitled")), OnConflict::KeepBoth)
+                let name = match p.str("template") {
+                    Some(t) => {
+                        let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+                        let t = crate::templates::find(&mut tx, ctx.tenant, t).await?;
+                        tx.commit().await?;
+                        if p.str("kind").is_some_and(|kind| kind != t.kind) {
+                            return Err(Error::field("kind", format!("the template makes a {} file", t.kind)));
+                        }
+                        made = t.bytes(k, ctx).await?;
+                        crate::templates::file_name(p.str("name"), &t.title, &t.kind)
+                    }
+                    None => {
+                        let kind = p.req("kind")?;
+                        if !["fdoc", "docx", "xlsx", "pptx", "odt", "ods", "odp"].contains(&kind) {
+                            return Err(Error::invalid(format!("kind must be fdoc, docx, xlsx, pptx, odt, ods or odp, not {kind}")));
+                        }
+                        crate::templates::file_name(p.str("name"), "Untitled", kind)
+                    }
+                };
+                (name, OnConflict::KeepBoth)
             } else {
                 (p.req("name")?.to_string(), OnConflict::parse(p.str("on_conflict"))?)
             };
-            let body: &[u8] = if *verb == "new" { &[] } else { &req.body };
+            let body: &[u8] = if *verb == "new" { &made } else { &req.body };
             let c = Content::new(&name, body);
             // An upload sent again (the page went away before it heard back, and the next page
             // sent the file once more) gets the file the first one made.
