@@ -124,8 +124,13 @@ impl DocHost for LiveDocs {
         .await;
         if res.is_err() {
             files::discard(k, &ctx, object).await;
+            return res;
         }
-        res
+        // Images pasted from other documents become this one's own.
+        if let Err(e) = crate::images::adopt(k, &ctx, doc, state).await {
+            tracing::warn!(%doc, "drive: keeping a document's pasted images failed: {e}");
+        }
+        Ok(())
     }
 }
 
@@ -149,6 +154,14 @@ pub async fn restore_as_copy(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, fil
             return Err(e);
         }
     };
+    // The version shows the images the document kept (a document keeps every image it was given).
+    let mut images = Vec::new();
+    if let Err(e) = crate::images::copy(k, ctx, tx, file.id, &item, &mut images).await {
+        for object in images {
+            files::discard(k, ctx, object).await;
+        }
+        return Err(e);
+    }
     tree::log(tx, ctx, file, "Restore Version", serde_json::json!({"from": no, "copy": item.id})).await?;
     Ok(item.json(item.level(g), false))
 }

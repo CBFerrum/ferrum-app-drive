@@ -47,13 +47,13 @@ pub struct Expect<'a> {
 }
 
 /// Stores bytes as a platform file that belongs to nobody yet.
-async fn put_object(k: &Kernel, ctx: &Ctx, c: &Content<'_>) -> Result<Uuid> {
+pub(crate) async fn put_object(k: &Kernel, ctx: &Ctx, c: &Content<'_>) -> Result<Uuid> {
     let stored = k.store_file(&sys(ctx), None, &c.name, c.content_type, c.data).await?;
     stored["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| Error::internal("the file store returned no id"))
 }
 
 /// Attaches a freshly stored object to its Drive file (inside the transaction creating the version).
-async fn attach(tx: &mut Tx, tenant: Uuid, object: Uuid, file: Uuid) -> Result<()> {
+pub(crate) async fn attach(tx: &mut Tx, tenant: Uuid, object: Uuid, file: Uuid) -> Result<()> {
     let n =
         sqlx::query("update file_object set entity = 'DriveFile', record_id = $3 where tenant_id = $1 and id = $2 and entity is null and record_id is null")
             .bind(tenant)
@@ -603,5 +603,10 @@ pub async fn copy_file(k: &Kernel, ctx: &Ctx, tx: &mut Tx, src: &Item, dest: &It
     let c = Content::new(name, &data);
     let copy = put_object(k, ctx, &c).await?;
     objects.push(copy);
-    create_file(k, ctx, tx, dest, name, copy, &c, Some(&format!("Copied from {}", src.name))).await
+    let item = create_file(k, ctx, tx, dest, name, copy, &c, Some(&format!("Copied from {}", src.name))).await?;
+    // A copy of a document shows the same images: copies of them, its own.
+    if crate::docs::is_live(src) {
+        crate::images::copy(k, ctx, tx, src.id, &item, objects).await?;
+    }
+    Ok(item)
 }

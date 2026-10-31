@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.0
+
+- Images in documents edited live (Ferrum collaboration.md, C3): uploaded to the document
+  (`POST /files/<document>/images`, Edit), shown to whoever may view it, kept and paid for by the
+  document, copied with its copies and restored versions, and adopted by a document they are pasted
+  into at its next save (when the editor saving it may view them). Deleting a document for good
+  refunds its images; moving it moves their usage.
+- Documents download as Word files (`format=docx`): headings, lists, checklists, tables with merged
+  cells, links, images and suggestions as tracked changes. Pages and PDFs carry their images; public
+  links' pages show them.
+
 ## 0.8.1
 
 - The list is drawn with the suite's components: each item shows what it is (a folder, a document, a

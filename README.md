@@ -116,6 +116,16 @@ is never overwritten. The person saves a copy or replaces it.
 * **Requests for access.** `request_access` with `item` and an optional `message` tells the item's
   owner, or a team folder's managers. A request counts once a day per item and person. The answer
   is the same whether or not the item exists, so it reveals nothing.
+* **Images in documents.** `POST /api/app/drive/files/<document>/images` with the image as the body
+  (PNG, JPEG, GIF or WebP, up to 10 MB and 20,000 pixels a side; Edit) answers
+  `{id, width, height, content_type, size}`; the document names the image by `id`, and
+  `GET /api/app/drive/files/<document>/images/<id>` shows it to anyone who may view the document.
+  Each document keeps its own images: its space pays for them, they go when it is deleted for good,
+  and a copy (or a version restored as one) gets copies. An image pasted from another document shows
+  to those who may view that one until the next save gives this document its own copy.
+* **Downloads of documents** (`GET /api/app/drive/files/<document>/content?format=`): `html` and
+  `pdf` carry their images inside, `docx` is a Word file (images, lists, tables, links, and
+  suggestions as tracked changes), `txt` the words. Public links with Download access offer the same.
 
 ## File size
 
