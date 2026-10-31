@@ -1508,6 +1508,48 @@ async fn scenario() {
     assert_eq!(restored["name"], json!("Brief (version 1).fdoc"));
     assert_eq!(t.ok(&alice, "list_versions", json!({"file": brief})).await["versions"][0]["version"], json!(2), "the live document is untouched");
 
+    // Comments on the text: anchored where they were made, in threads, resolved when done.
+    let at = |n: u32| json!({"type": {"client": 7, "clock": n}, "tname": null, "item": {"client": 7, "clock": n}, "assoc": 0});
+    let range = json!({"from": at(3), "to": at(9)});
+    let root = t.ok(&alice, "add_comment", json!({"file": brief, "body": "Can we say this sooner?", "anchor": range, "quote": "Goals"})).await;
+    let thread = uid(&root);
+    assert_eq!((root["anchor"].clone(), root["quote"].as_str()), (range.clone(), Some("Goals")));
+    let reply = t.ok(&bob, "add_comment", json!({"file": brief, "body": "Moved it up", "reply_to": thread})).await;
+    assert!(reply["mentioned"].as_array().unwrap().iter().any(|m| m == "alice@acme.test"), "the thread's author hears of replies: {reply}");
+    for (bad, why) in [
+        (json!({"file": brief, "body": "x", "reply_to": uid(&reply)}), "reply to the comment that starts the thread"),
+        (json!({"file": brief, "body": "x", "reply_to": thread, "anchor": range}), "a reply is on its thread's text"),
+        (json!({"file": notes, "body": "x", "reply_to": thread}), "is not a comment on this file"),
+        (json!({"file": notes, "body": "x", "anchor": range}), "documents edited live only"),
+        (json!({"file": brief, "body": "x", "anchor": {"from": at(1)}}), "must be {from, to}"),
+        (json!({"file": brief, "body": "x", "quote": "loose"}), "goes with an anchor"),
+    ] {
+        let e = t.no(&alice, "add_comment", bad).await;
+        assert!(format!("{e:?}").contains(why), "{why}: {e:?}");
+    }
+    let listed = t.ok(&bob, "list_comments", json!({"file": brief})).await;
+    let mine = |id: Uuid| listed["comments"].as_array().unwrap().iter().find(|c| uid(c) == id).cloned().unwrap();
+    assert_eq!((mine(thread)["anchor"].clone(), mine(uid(&reply))["reply_to"].as_str()), (range.clone(), Some(thread.to_string().as_str())));
+    assert_eq!(t.ok(&bob, "resolve_comment", json!({"comment": thread})).await["resolved"], json!(true), "commenters resolve threads");
+    let listed = t.ok(&alice, "list_comments", json!({"file": brief})).await;
+    let root_now = listed["comments"].as_array().unwrap().iter().find(|c| uid(c) == thread).unwrap().clone();
+    assert_eq!(root_now["resolved_by"].as_str(), Some("bob@acme.test"));
+    assert!(root_now["resolved_at"].is_string());
+    assert_eq!(t.ok(&alice, "resolve_comment", json!({"comment": thread, "resolved": false})).await["resolved"], json!(false));
+    assert!(
+        t.ok(&alice, "list_comments", json!({"file": brief})).await["comments"].as_array().unwrap().iter().all(|c| c["resolved_at"].is_null()),
+        "open again"
+    );
+    let e = t.no(&alice, "resolve_comment", json!({"comment": uid(&reply)})).await;
+    assert!(format!("{e:?}").contains("resolve the comment that starts the thread"), "{e:?}");
+    assert!(t.no(&frank, "resolve_comment", json!({"comment": thread})).await.to_string().contains("not found"));
+    t.ok(&alice, "delete_comment", json!({"comment": thread})).await;
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_comment where tenant_id = $1 and reply_to = $2", Some(thread)).await,
+        0,
+        "a thread goes with its replies"
+    );
+
     // Guests read it as a page, whatever link they have; only Download links get its words.
     let link = t.ok(&alice, "create_link", json!({"item": brief})).await;
     let token = link["token"].as_str().unwrap().to_string();

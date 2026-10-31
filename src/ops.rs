@@ -163,6 +163,7 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "star" => star(ctx, tx, g, &p, true).await,
         "unstar" => star(ctx, tx, g, &p, false).await,
         "add_comment" => add_comment(k, ctx, tx, g, &p).await,
+        "resolve_comment" => resolve_comment(ctx, tx, g, &p).await,
         "delete_comment" => delete_comment(k, ctx, tx, g, &p).await,
         "request_access" => crate::collab::request_access(k, ctx, tx, g, p.req_uuid("item")?, p.str("message")).await,
         _ => Err(Error::NotFound(format!("action {name}"))),
@@ -610,18 +611,23 @@ async fn activity(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     })).collect::<Vec<_>>()}))
 }
 
-/// `list_comments`: oldest first.
+/// `list_comments`: oldest first; a thread's replies name it (`reply_to`); comments on a live
+/// document's text carry their `anchor` and `quote`; resolved threads say who resolved them.
 async fn list_comments(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let f = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::View, false).await?;
-    let rows: Vec<(Uuid, Option<String>, String, DateTime<Utc>)> =
-        sqlx::query_as("select id, author, body, created_at from e_drive_comment where tenant_id = $1 and file = $2 order by created_at, id limit 1000")
-            .bind(ctx.tenant)
-            .bind(f.id)
-            .fetch_all(&mut **tx)
-            .await?;
+    type Row = (Uuid, Option<String>, String, DateTime<Utc>, Option<Uuid>, Option<Value>, Option<String>, Option<String>, Option<DateTime<Utc>>);
+    let rows: Vec<Row> = sqlx::query_as(
+        "select id, author, body, created_at, reply_to, anchor, quote, resolved_by, resolved_at from e_drive_comment \
+         where tenant_id = $1 and file = $2 order by created_at, id limit 1000",
+    )
+    .bind(ctx.tenant)
+    .bind(f.id)
+    .fetch_all(&mut **tx)
+    .await?;
     let me = files::actor(ctx);
-    Ok(json!({"file": f.id, "comments": rows.into_iter().map(|(id, author, body, at)| json!({
+    Ok(json!({"file": f.id, "comments": rows.into_iter().map(|(id, author, body, at, reply_to, anchor, quote, resolved_by, resolved_at)| json!({
         "id": id, "author": author, "body": body, "created_at": at, "mine": author.is_some() && author == me,
+        "reply_to": reply_to, "anchor": anchor, "quote": quote, "resolved_by": resolved_by, "resolved_at": resolved_at,
     })).collect::<Vec<_>>()}))
 }
 
@@ -1147,23 +1153,108 @@ async fn star(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>, on: bool) -> O
 
 /// `add_comment` (Comment access): `mentions` (emails, a list or comma-separated) tells those people,
 /// when they may see the file; the file's owner hears of comments by others.
+/// A comment's place in a live document's text: `{from, to}`, each a Yjs relative position as
+/// `Y.relativePositionToJSON` gives it. Checked for shape and size only (the document resolves it).
+fn anchor_param(p: &Params<'_>) -> Result<Option<Value>> {
+    let Some(a) = p.0.get("anchor").filter(|a| !a.is_null()) else { return Ok(None) };
+    let a = match a {
+        Value::String(s) => serde_json::from_str::<Value>(s).map_err(|_| Error::field("anchor", "is not JSON"))?,
+        other => other.clone(),
+    };
+    let ok = |v: Option<&Value>| v.is_some_and(|v| v.is_object() && v.to_string().len() <= 1024);
+    if !a.is_object() || !ok(a.get("from")) || !ok(a.get("to")) || a.as_object().is_some_and(|o| o.len() != 2) {
+        return Err(Error::field("anchor", "must be {from, to}: positions in the document"));
+    }
+    Ok(Some(a))
+}
+
 async fn add_comment(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
     let f = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::Comment, false).await?;
     let body = p.req("body")?;
     if body.chars().count() > 4000 {
         return Err(Error::field("body", "at most 4000 characters"));
     }
+    let anchor = anchor_param(p)?;
+    let quote: Option<String> = p.str("quote").map(|q| q.chars().take(500).collect());
+    // A reply joins a thread on the same file: no place of its own.
+    let reply_to = p.uuid("reply_to")?;
+    let mut thread_author = None;
+    if let Some(root) = reply_to {
+        let row: Option<(Uuid, Option<Uuid>, Option<String>)> =
+            sqlx::query_as("select file, reply_to, author from e_drive_comment where tenant_id = $1 and id = $2")
+                .bind(ctx.tenant)
+                .bind(root)
+                .fetch_optional(&mut **tx)
+                .await?;
+        match row {
+            Some((file, None, author)) if file == f.id => thread_author = author,
+            Some((file, Some(_), _)) if file == f.id => return Err(Error::field("reply_to", "reply to the comment that starts the thread")),
+            _ => return Err(Error::field("reply_to", "is not a comment on this file")),
+        }
+        if anchor.is_some() {
+            return Err(Error::field("anchor", "a reply is on its thread's text"));
+        }
+    }
+    if anchor.is_some() && !crate::docs::is_live(&f) {
+        return Err(Error::field("anchor", "comments sit in the text of documents edited live only"));
+    }
+    if anchor.is_none() && quote.is_some() {
+        return Err(Error::field("quote", "goes with an anchor"));
+    }
     let id = Uuid::now_v7();
-    let doc = entity_values(&[("id", json!(id)), ("file", json!(f.id)), ("author", json!(files::actor(ctx))), ("body", json!(body))]);
-    k.insert_tx(&elevated(ctx), tx, "DriveComment", doc).await?;
-    tree::log(tx, ctx, &f, "Comment", json!({"comment": id})).await?;
-    let mentions: Vec<String> = match p.0.get("mentions") {
+    let mut values = vec![("id", json!(id)), ("file", json!(f.id)), ("author", json!(files::actor(ctx))), ("body", json!(body))];
+    if let Some(root) = reply_to {
+        values.push(("reply_to", json!(root)));
+    }
+    if let Some(a) = &anchor {
+        values.push(("anchor", a.clone()));
+        values.push(("quote", json!(quote)));
+    }
+    k.insert_tx(&elevated(ctx), tx, "DriveComment", entity_values(&values)).await?;
+    tree::log(tx, ctx, &f, "Comment", json!({"comment": id, "reply_to": reply_to})).await?;
+    let mut mentions: Vec<String> = match p.0.get("mentions") {
         Some(Value::Array(list)) => list.iter().filter_map(Value::as_str).map(str::to_string).collect(),
         Some(Value::String(list)) => list.split(',').map(str::to_string).collect(),
         _ => Vec::new(),
     };
+    // Whoever started the thread hears of replies.
+    mentions.extend(thread_author);
     let mentioned = crate::collab::tell_about_comment(k, ctx, tx, &f, body, &mentions).await?;
-    Ok(json!({"id": id, "file": f.id, "author": files::actor(ctx), "body": body, "mentioned": mentioned}))
+    Ok(
+        json!({"id": id, "file": f.id, "author": files::actor(ctx), "body": body, "mentioned": mentioned, "reply_to": reply_to, "anchor": anchor, "quote": quote}),
+    )
+}
+
+/// `resolve_comment`: a thread is done (`resolved` true, the default) or open again (false); anyone
+/// who may comment on the file. Its text stops showing it; the thread is kept.
+async fn resolve_comment(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
+    let id = p.req_uuid("comment")?;
+    let row: Option<(Uuid, Option<Uuid>)> = sqlx::query_as("select file, reply_to from e_drive_comment where tenant_id = $1 and id = $2")
+        .bind(ctx.tenant)
+        .bind(id)
+        .fetch_optional(&mut **tx)
+        .await?;
+    let (file, reply_to) = row.ok_or_else(|| Error::NotFound("comment".into()))?;
+    let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Comment, false).await.map_err(|e| match e {
+        Error::Forbidden(_) => e,
+        _ => Error::NotFound("comment".into()),
+    })?;
+    if reply_to.is_some() {
+        return Err(Error::field("comment", "resolve the comment that starts the thread"));
+    }
+    let resolved = !matches!(p.0.get("resolved"), Some(Value::Bool(false))) && p.str("resolved") != Some("false");
+    sqlx::query(
+        "update e_drive_comment set resolved_by = case when $3 then $4 end, resolved_at = case when $3 then now() end, updated_at = now() \
+         where tenant_id = $1 and id = $2",
+    )
+    .bind(ctx.tenant)
+    .bind(id)
+    .bind(resolved)
+    .bind(files::actor(ctx))
+    .execute(&mut **tx)
+    .await?;
+    tree::log(tx, ctx, &f, if resolved { "Resolve Comment" } else { "Reopen Comment" }, json!({"comment": id})).await?;
+    Ok(json!({"comment": id, "resolved": resolved}))
 }
 
 /// `delete_comment`: its author, or someone with Manage access to the file.

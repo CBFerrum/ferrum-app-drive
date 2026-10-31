@@ -79,7 +79,17 @@
     - {name: revoke_link, label: Revoke Public Link, permission: read}
     - {name: star, label: Star, permission: read}
     - {name: unstar, label: Unstar, permission: read}
-    - {name: add_comment, label: Comment, permission: read}
+    - name: add_comment
+      label: Comment
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: body, label: Comment, type: text, required: true, description: "At most 4000 characters"}
+        - {name: mentions, label: Mentions, description: "Emails of people to tell (those who may see the file)"}
+        - {name: reply_to, label: In reply to, description: "A comment starting a thread on the same file"}
+        - {name: anchor, label: Anchor, type: json, description: "A live document's text the comment is on: {from, to}, Yjs relative positions (the Docs editor makes them)"}
+        - {name: quote, label: Quote, description: "The text commented on, as it read (500 characters at most)"}
+    - {name: resolve_comment, label: Resolve Comment, permission: read}
     - {name: delete_comment, label: Delete Comment, permission: read}
     - {name: request_access, label: Request Access, permission: read}
     - name: create_document
@@ -255,11 +265,16 @@
   label: Drive Comment
   kind: master
   module: drive
-  description: "A comment on a file, by someone with at least comment access."
+  description: "A comment on a file, by someone with at least comment access: on the file, on a range of a live document's text (anchor and quote), or a reply in a thread."
   fields:
     - {name: file, type: link, to: DriveFile, required: true, on_delete: cascade, in_list: true, in_filter: true}
     - {name: author, type: email, read_only: true, in_list: true}
     - {name: body, type: text, required: true, max_length: 4000}
+    - {name: reply_to, type: link, to: DriveComment, on_delete: cascade}
+    - {name: anchor, type: json}
+    - {name: quote, type: text, max_length: 500}
+    - {name: resolved_by, type: email, read_only: true}
+    - {name: resolved_at, type: datetime, read_only: true}
   list: {columns: [file, author, created_at], sort: created_at desc}
 
 - name: DriveStar

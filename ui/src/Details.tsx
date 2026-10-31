@@ -37,6 +37,12 @@ interface DriveComment {
   body: string;
   created_at: string;
   mine: boolean;
+  /** A reply: the comment starting its thread. */
+  reply_to?: string | null;
+  /** On a live document's text: the words, as they read. */
+  quote?: string | null;
+  resolved_by?: string | null;
+  resolved_at?: string | null;
 }
 interface Activity {
   id: string;
@@ -198,19 +204,39 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
     <div className="drive-comments">
       {!q.data?.length && <p className="faint">No comments yet.</p>}
       <ul className="drive-comment-list">
-        {q.data?.map((c) => (
-          <li key={c.id} className="drive-comment">
-            <div className="drive-comment-head">
-              <strong>{name(c.author)}</strong> <span className="faint">{relativeTime(c.created_at)}</span>
-              {(c.mine || allows(item.permission, "Manage")) && (
-                <Button size="sm" variant="ghost" aria-label="Delete comment" onClick={() => void remove(c)}>
-                  Delete
-                </Button>
-              )}
-            </div>
-            <p className="comment-text">{c.body}</p>
-          </li>
-        ))}
+        {/* Threads: replies under the comment they answer; comments on a document's text quote it. */}
+        {q.data
+          ?.filter((c) => !c.reply_to)
+          .map((c) => (
+            <li key={c.id} className={`drive-comment${c.resolved_at ? " is-resolved" : ""}`}>
+              {c.quote && <blockquote className="drive-comment-quote">{c.quote}</blockquote>}
+              <div className="drive-comment-head">
+                <strong>{name(c.author)}</strong> <span className="faint">{relativeTime(c.created_at)}</span>
+                {c.resolved_at && <span className="faint">· resolved by {name(c.resolved_by)}</span>}
+                {(c.mine || allows(item.permission, "Manage")) && (
+                  <Button size="sm" variant="ghost" aria-label="Delete comment" onClick={() => void remove(c)}>
+                    Delete
+                  </Button>
+                )}
+              </div>
+              <p className="comment-text">{c.body}</p>
+              {q.data
+                .filter((r) => r.reply_to === c.id)
+                .map((r) => (
+                  <div key={r.id} className="drive-comment-reply">
+                    <div className="drive-comment-head">
+                      <strong>{name(r.author)}</strong> <span className="faint">{relativeTime(r.created_at)}</span>
+                      {(r.mine || allows(item.permission, "Manage")) && (
+                        <Button size="sm" variant="ghost" aria-label="Delete reply" onClick={() => void remove(r)}>
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                    <p className="comment-text">{r.body}</p>
+                  </div>
+                ))}
+            </li>
+          ))}
       </ul>
       {allows(item.permission, "Comment") ? <Composer people={people} onPost={post} /> : <p className="faint">You can view this file but not comment on it.</p>}
     </div>

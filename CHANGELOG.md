@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- Comments on a live document's text and in threads (Ferrum collaboration.md, C3): `add_comment`
+  takes an `anchor` (Yjs relative positions) and a `quote` for documents edited live, and `reply_to`
+  for a reply, whose thread's author is told. `resolve_comment` resolves or reopens a thread for anyone
+  who may comment. `list_comments` returns all of it; the action declares its parameters for agents.
+- The details panel shows threads: replies under their comment, the words a comment is on, and who
+  resolved it.
+
 ## 0.9.0
 
 - Images in documents edited live (Ferrum collaboration.md, C3): uploaded to the document
