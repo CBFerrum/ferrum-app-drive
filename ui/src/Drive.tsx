@@ -215,7 +215,9 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   useShellTitle(title);
   const canAdd = (inFolder && !!current && allows(current.permission, "Edit")) || (!!kind && !query && !!space.data);
   const targetName = !target || target === root ? "My files" : (current?.name ?? "this folder");
-  const place: Place = kind || query ? null : inFolder ? (current?.team ? { team: current.team } : "mine") : view;
+  // A folder in someone else's space belongs to what is shared with the person, not to their own files.
+  const others = !!current?.owner && !!usage.data && current.owner.toLowerCase() !== usage.data.space.owner.toLowerCase();
+  const place: Place = kind || query ? null : inFolder ? (current?.team ? { team: current.team } : others ? "shared" : "mine") : view;
   const can = abilities(src, kind);
   const sort = q.sort ?? defaultSort(src);
   const order = q.order ?? (sort ? naturalOrder(sort) : "asc");
