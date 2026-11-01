@@ -1723,6 +1723,61 @@ async fn scenario() {
     assert_eq!(code(&e), "invalid");
     // Without a key, the same upload is a second file (people upload twice on purpose).
     t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "again.txt")], &[], b"same bytes".to_vec()).await.unwrap();
+    // ───────────── someone leaves ─────────────
+    let drain = || async { while t.k.dispatch_outbox_once().await.unwrap() > 0 {} };
+    let leaver = t.user("parting@acme.test", &["Drive User"]).await;
+    let heir = t.user("successor@acme.test", &["Drive User"]).await;
+    let kept = uid(&t.upload(&leaver, leaver.root, "handover notes.txt", b"what I was doing").await);
+    t.ok(&leaver, "check_out", json!({"file": kept})).await;
+    let link = uid(&t.ok(&leaver, "create_link", json!({"item": kept})).await);
+    let theirs = uid(&t.upload(&alice, alice.root, "for leaver.txt", b"a note").await);
+    t.ok(&alice, "share", json!({"item": theirs, "email": "parting@acme.test", "permission": "View"})).await;
+    t.no(&heir, "item_info", json!({"item": kept})).await;
+    t.k.deprovision_user(&admin, leaver.id, Some(heir.id), "left the company").await.expect("deprovisioned");
+    drain().await;
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_share where tenant_id = $1 and email = 'parting@acme.test' and file = $2", Some(theirs)).await,
+        0,
+        "what was shared with them ends"
+    );
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_file where tenant_id = $1 and id = $2 and locked_by is null and owner = 'successor@acme.test'", Some(kept))
+            .await,
+        1,
+        "their file opens up, and is the heir's"
+    );
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and not revoked and shared_by = 'successor@acme.test'", Some(link)).await,
+        1,
+        "their link has someone to answer for it"
+    );
+    assert!(t.act(&heir, "item_info", json!({"item": kept})).await.is_ok(), "and the heir reaches what they kept");
+    let again = t.k.hand_over_work(&admin, leaver.id, heir.id, "repeated").await;
+    assert!(again.is_ok(), "{again:?}");
+    drain().await;
+    assert_eq!(t.scalar("select count(*) from e_drive_share where tenant_id = $1 and folder = $2", Some(leaver.root)).await, 1, "repeating adds nothing");
+
+    // With nobody taking over, their links stop, unless the workspace keeps them.
+    let gone = t.user("departed@acme.test", &["Drive User"]).await;
+    let orphan = uid(&t.upload(&gone, gone.root, "public.txt", b"for the world").await);
+    let orphan_link = uid(&t.ok(&gone, "create_link", json!({"item": orphan})).await);
+    t.k.deprovision_user(&admin, gone.id, None, "left").await.unwrap();
+    drain().await;
+    assert_eq!(t.scalar("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and revoked", Some(orphan_link)).await, 1);
+    let keeps = t.user("staying-links@acme.test", &["Drive User"]).await;
+    let public = uid(&t.upload(&keeps, keeps.root, "brochure.txt", b"for the world").await);
+    let kept_link = uid(&t.ok(&keeps, "create_link", json!({"item": public})).await);
+    let mut tx = t.k.db.tenant_tx(t.tenant).await.unwrap();
+    sqlx::query("update e_drive_settings set links_after_leaving = 'Keep' where tenant_id = $1").bind(t.tenant).execute(&mut *tx).await.unwrap();
+    tx.commit().await.unwrap();
+    t.k.deprovision_user(&admin, keeps.id, None, "left").await.unwrap();
+    drain().await;
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and not revoked", Some(kept_link)).await,
+        1,
+        "the workspace chose to keep them"
+    );
+
     t.consistent().await;
 }
 

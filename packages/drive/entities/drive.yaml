@@ -19,6 +19,8 @@
     - {name: max_link_days, type: int, label: Public Links Expire Within (Days), default: 0, min: 0, max: 3650, required: true,
        description: "Every public link must expire within this many days; 0 = links may never expire"}
     - {name: link_password_required, type: check, description: "Public links must have a password"}
+    - {name: links_after_leaving, type: select, options: [Revoke, Keep], default: Revoke, label: Links of People Who Leave,
+       description: "With nobody taking over from someone who leaves, whether the public links they made stop working"}
   form:
     - {label: Uploads and Storage, fields: [max_upload_mb, user_quota_mb, team_quota_mb, max_versions, trash_days]}
     - {label: Public Links, fields: [allow_public_links, max_link_days, link_password_required]}
