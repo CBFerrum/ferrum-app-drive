@@ -50,3 +50,4 @@ handover:
   - {entity: DriveFile, field: owner}
   - {entity: DriveFolder, field: owner}
   - {entity: DriveFolder, field: members.member}
+export_tables: [drive_access_request, drive_doc_image]
