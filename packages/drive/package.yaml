@@ -36,3 +36,13 @@ roles:
       - {entity: DriveComment, read: true, export: true}
       - {entity: DriveStar, read: true}
       - {entity: DriveTemplate, read: true, export: true}
+personal_data:
+  - {entity: DriveSpace, match: owner, retain: "A space needs an owner: hand it over, then ask again"}
+  - {entity: DriveFolder, match: owner, retain: "A folder needs an owner: hand it over, then ask again"}
+  - {entity: DriveFile, match: owner, retain: "A file needs an owner: hand it over, then ask again"}
+  - {entity: DriveFileVersion, match: author, erase: [author]}
+  - {entity: DriveShare, match: email, erase: [email]}
+  - {entity: DriveLink, match: email, erase: [email]}
+  - {entity: DriveComment, match: author, erase: [author]}
+  - {entity: DriveActivity, match: actor, erase: [actor]}
+  - {entity: DriveStar, match: email, erase: [email]}
