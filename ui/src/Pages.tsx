@@ -9,9 +9,11 @@ import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, download, errorMessage, formatDateTime, shell, type IntentRequest } from "@ferrum/client";
 import { Button, EmptyState, Spinner, toast } from "@ferrum/kit";
-import { DetailsPanel, type ItemInfo } from "./Details";
-import { FileGlyph, isLiveDoc, shownName, sizeLabel } from "./Drive";
-import { type Shareable, ShareDialog } from "./Share";
+import { DetailsPanel } from "./Details";
+import { FileGlyph } from "./FileGlyph";
+import { type ItemInfo, type Shareable, isLiveDoc, shownName, sizeLabel } from "./files";
+import { ShareDialog } from "./Share";
+import { useSpace } from "./useDrive";
 
 interface Found {
   id: string;
@@ -34,13 +36,6 @@ export interface PickedFile {
 const contentUrl = (id: string) => `/api/app/drive/files/${encodeURIComponent(id)}/content`;
 const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(name);
 const isPdf = (name: string) => /\.pdf$/i.test(name);
-
-function useSpace() {
-  return useQuery({
-    queryKey: ["drive", "space"],
-    queryFn: ({ signal }) => api.get<{ id: string; root_folder: string }>("/api/app/drive/space", undefined, signal),
-  });
-}
 
 function useItem(id: string | undefined) {
   return useQuery({

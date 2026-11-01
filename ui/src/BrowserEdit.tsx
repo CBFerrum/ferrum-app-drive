@@ -9,7 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ApiError, bootstrap, download, errorMessage, fetchBlob, request } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, EmptyState, Spinner, confirmDialog, toast } from "@ferrum/kit";
-import { editable, useEditors } from "./Drive";
+import { useEditors } from "./editors";
+import { editable } from "./files";
 import { presenceLabel, usePresence } from "./presence";
 
 interface Session {

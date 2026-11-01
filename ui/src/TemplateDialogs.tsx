@@ -2,34 +2,14 @@
 // `save_as_template` and `delete_template`): Drive's own, and the workspace's, which Drive
 // administrators save from files people made.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
 import { api, errorMessage } from "@ferrum/client";
 import { Button, Dialog, Field, Spinner, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Button as UiButton } from "@ferrum/kit/primitives";
 import { Trash2 } from "lucide-react";
-import { FileGlyph } from "./Drive";
-
-export interface Template {
-  id: string;
-  kind: string;
-  title: string;
-  category: string | null;
-  description: string | null;
-  builtin: boolean;
-}
-
-/** The templates, and whether the person manages the workspace's (Drive administrators do). */
-export function useTemplates() {
-  return useQuery({
-    queryKey: ["drive-templates"],
-    queryFn: ({ signal }) => api.get<{ templates: Template[]; manage: boolean }>("/api/app/drive/list_templates", undefined, signal),
-    staleTime: 60_000,
-  });
-}
-
-/** Files a template can be saved from. */
-export const templatable = (name: string) => /\.(docx|xlsx|pptx|odt|ods|odp)$/i.test(name);
+import { FileGlyph } from "./FileGlyph";
+import { type Template, useTemplates } from "./templateList";
 
 const GROUPS = [
   { id: "all", label: "All", kinds: ["docx", "xlsx", "pptx", "odt", "ods", "odp"] },

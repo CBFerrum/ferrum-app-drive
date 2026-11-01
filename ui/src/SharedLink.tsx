@@ -3,13 +3,13 @@
 // for its password once and keeps the grant for this tab; a folder can be browsed; files preview
 // (images, PDFs) and download when the link allows it.
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, File, Folder, Lock } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError, errorMessage, formatDateTime } from "@ferrum/client";
 import { Button, Input, Label, Skeleton } from "@ferrum/kit/primitives";
-import { sizeLabel } from "./Drive";
+import { sizeLabel } from "./files";
 
 interface Entry {
   id: string;
@@ -20,7 +20,7 @@ interface Entry {
   modified_at?: string | null;
 }
 interface Shared {
-  link: { access: "View" | "Download"; expires_at?: string | null; downloads_left?: number | null; has_password: boolean };
+  link: { access: "View" | "Download"; expires_at?: string | null; downloads_left?: number | null; has_password: boolean; note?: string | null };
   item: Entry;
   folder?: Entry;
   breadcrumbs?: { id: string; name: string }[];
@@ -43,6 +43,9 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+/** How many entries of a shared folder one request brings (the server allows 200). */
+const PAGE = 100;
+
 /** A document edited live in Drive: guests read it as a page. */
 const live = (e: Entry) => e.content_type === "application/vnd.ferrum.doc";
 const previewable = (e: Entry) => !!e.content_type && (e.content_type.startsWith("image/") || e.content_type === "application/pdf" || live(e));
@@ -62,14 +65,20 @@ export function SharedLinkPage() {
       return null;
     }
   });
-  const shared = useQuery({
+  // A folder comes a page at a time: the next page begins where the last one ended.
+  const shared = useInfiniteQuery({
     queryKey: ["shared-link", tenant, link, folder, grant],
-    queryFn: ({ signal }) => {
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => {
       const q = new URLSearchParams();
       if (folder) q.set("folder", folder);
       if (grant) q.set("grant", grant);
-      return call<Shared>(`${base}?${q}`, { signal });
+      if (pageParam) q.set("offset", String(pageParam));
+      q.set("limit", String(PAGE));
+      return call<Shared & { offset: number }>(`${base}?${q}`, { signal }).then((r) => ({ ...r, offset: pageParam }));
     },
+    // A page that is full may be followed by another; one that is not is the last.
+    getNextPageParam: (last) => ((last.items?.length ?? 0) >= PAGE ? last.offset + PAGE : undefined),
     retry: false,
   });
   const content = (file: string, inline: boolean) => {
@@ -102,9 +111,13 @@ export function SharedLinkPage() {
             <p className="mt-1 text-muted-foreground">It may have expired or been turned off. Ask the person who shared it with you for a new one.</p>
           </div>
         ) : !shared.data ? (
-          <Skeleton className="h-48" />
+          <Skeleton className="h-48 motion-reduce:animate-none" />
         ) : (
-          <SharedItem s={shared.data} content={content} />
+          <SharedItem
+            s={{ ...shared.data.pages[0], items: shared.data.pages.flatMap((p) => p.items ?? []) }}
+            content={content}
+            more={shared.hasNextPage ? { loading: shared.isFetchingNextPage, load: () => void shared.fetchNextPage() } : undefined}
+          />
         )}
       </main>
     </div>
@@ -151,7 +164,7 @@ function Unlock({ base, onGrant }: { base: string; onGrant: (grant: string) => v
   );
 }
 
-function SharedItem({ s, content }: { s: Shared; content: (file: string, inline: boolean) => string }) {
+function SharedItem({ s, content, more }: { s: Shared; content: (file: string, inline: boolean) => string; more?: { loading: boolean; load: () => void } }) {
   const download = s.link.access === "Download";
   const footer = [
     s.link.expires_at ? `This link works until ${formatDateTime(s.link.expires_at)}.` : null,
@@ -176,9 +189,12 @@ function SharedItem({ s, content }: { s: Shared; content: (file: string, inline:
     </div>
   );
 
+  const note = s.link.note ? <p className="whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-sm">{s.link.note}</p> : null;
+
   if (s.item.kind === "file")
     return (
       <section className="grid gap-4 rounded-lg border bg-background p-6">
+        {note}
         <div className="flex flex-wrap items-center gap-3">
           <File className="size-5 text-muted-foreground" aria-hidden="true" />
           <div className="min-w-0 flex-1">
@@ -200,6 +216,7 @@ function SharedItem({ s, content }: { s: Shared; content: (file: string, inline:
   const crumbs = s.breadcrumbs ?? [];
   return (
     <section className="grid gap-3 rounded-lg border bg-background p-4 sm:p-6">
+      {note}
       <nav aria-label="Folders" className="flex flex-wrap items-center gap-1 text-sm">
         {crumbs.map((c, i) => (
           <span key={c.id} className="flex items-center gap-1">
@@ -233,6 +250,11 @@ function SharedItem({ s, content }: { s: Shared; content: (file: string, inline:
           </li>
         ))}
       </ul>
+      {more && (
+        <Button variant="outline" disabled={more.loading} onClick={more.load}>
+          {more.loading ? "Loading…" : "Show more"}
+        </Button>
+      )}
       {footer.length > 0 && <p className="text-xs text-muted-foreground">{footer.join(" ")}</p>}
     </section>
   );

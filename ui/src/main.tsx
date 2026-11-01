@@ -9,8 +9,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, Outlet, RouterProvider, useRouteError } from "react-router";
 import { isPublicPage, routeBase, shell } from "@ferrum/client";
 import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
-import { DrivePage, EditPage } from "./Drive";
-import { DetailsPanelPage, ItemPage, PickPage, PreviewPage, ShareIntentPage, ViewPage } from "./Pages";
+import { DrivePage } from "./Drive";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -45,6 +44,10 @@ function NotFound() {
   );
 }
 
+/** A page loaded when it is opened: the home page is the only one every visit needs. */
+const later = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) => () => load().then((m) => ({ Component: m[name] }));
+const pages = () => import("./Pages");
+
 const router = createBrowserRouter([
   {
     path: "/",
@@ -57,15 +60,15 @@ const router = createBrowserRouter([
         path: at("drive"),
         children: [
           { index: true, element: <DrivePage /> },
-          { path: "edit/:file", element: <EditPage /> },
-          { path: "edit/:file/:editor", lazy: () => import("./BrowserEdit").then((m) => ({ Component: m.BrowserEditPage })) },
-          { path: "view/:file", element: <ViewPage /> },
-          { path: "item/:id", element: <ItemPage /> },
-          { path: "s/:tenant/:link", lazy: () => import("./SharedLink").then((m) => ({ Component: m.SharedLinkPage })) },
-          { path: "_intent/pick", element: <PickPage /> },
-          { path: "_intent/preview", element: <PreviewPage /> },
-          { path: "_intent/share", element: <ShareIntentPage /> },
-          { path: "_panel/details", element: <DetailsPanelPage /> },
+          { path: "edit/:file", lazy: later(() => import("./Edit"), "EditPage") },
+          { path: "edit/:file/:editor", lazy: later(() => import("./BrowserEdit"), "BrowserEditPage") },
+          { path: "view/:file", lazy: later(pages, "ViewPage") },
+          { path: "item/:id", lazy: later(pages, "ItemPage") },
+          { path: "s/:tenant/:link", lazy: later(() => import("./SharedLink"), "SharedLinkPage") },
+          { path: "_intent/pick", lazy: later(pages, "PickPage") },
+          { path: "_intent/preview", lazy: later(pages, "PreviewPage") },
+          { path: "_intent/share", lazy: later(pages, "ShareIntentPage") },
+          { path: "_panel/details", lazy: later(pages, "DetailsPanelPage") },
           { path: ":folder", element: <DrivePage /> },
         ],
       },
