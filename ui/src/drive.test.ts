@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { copyName, readOnlyReason } from "./BrowserEdit";
-import { allows } from "./Details";
+import { type BrowserEditor, allows, defaultEditor, editable, editorsFor, extension, lookOf, shownName, sizeLabel } from "./files";
 import { joinable, presenceLabel } from "./presence";
-import { roleLabel } from "./Share";
-import { type BrowserEditor, defaultEditor, editable, editorsFor, extension, sizeLabel } from "./Drive";
+import { roleLabel } from "./roles";
 
 describe("drive", () => {
   it("knows which files the editor opens", () => {
@@ -75,6 +74,14 @@ describe("drive", () => {
     expect(allows("Comment", "View") && allows("Comment", "Comment") && !allows("Comment", "Edit")).toBe(true);
     expect(allows("Manage", "Edit") && !allows("View", "Comment")).toBe(true);
     expect(["View", "Comment", "Edit", "Manage", "Other"].map(roleLabel)).toEqual(["Viewer", "Commenter", "Editor", "Manager", "Other"]);
+  });
+
+  it("shows what a file is by its name, and a live document without its extension", () => {
+    expect([["plan.DOCX", "text"], ["budget.xlsx", "sheet"], ["deck.pptx", "slides"], ["a.pdf", "pdf"], ["p.PNG", "image"], ["v.mp4", "video"], ["s.mp3", "audio"], ["a.zip", "archive"], ["README", "file"]].map(([n, look]) => [lookOf("file", n!), look])).toEqual(
+      [["text", "text"], ["sheet", "sheet"], ["slides", "slides"], ["pdf", "pdf"], ["image", "image"], ["video", "video"], ["audio", "audio"], ["archive", "archive"], ["file", "file"]],
+    );
+    expect(lookOf("folder", "photo.png")).toBe("folder");
+    expect(["Plan.fdoc", "Plan.FDOC", "plan.docx", "fdoc"].map(shownName)).toEqual(["Plan", "Plan", "plan.docx", "fdoc"]);
   });
 
   it("opens live documents in Docs, or in Drive's viewer where Docs is not installed", () => {

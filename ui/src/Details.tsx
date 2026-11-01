@@ -6,23 +6,12 @@ import { useEffect, useId, useState } from "react";
 import { api, download, errorMessage, formatDateTime, relativeTime } from "@ferrum/client";
 import { Badge, Button, Spinner, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
-import { EditorLink, defaultEditor, editorsFor, isLiveDoc, shared, shownName, sizeLabel, useEditors } from "./Drive";
+import { EditorLink, useEditors } from "./editors";
+import { type ItemInfo, type Shareable, allows, defaultEditor, editorsFor, isLiveDoc, shared, shownName, sizeLabel } from "./files";
 import { joinable, presenceLabel, useFilesPresence } from "./presence";
-import { type Shareable, roleLabel } from "./Share";
+import { roleLabel } from "./roles";
 
-export interface ItemInfo extends Shareable {
-  parent: string | null;
-  owner?: string | null;
-  size?: number | null;
-  version?: number | null;
-  modified_at: string;
-  modified_by?: string | null;
-  created_at?: string;
-  permission: string;
-  locked_by?: string | null;
-  starred?: boolean;
-  path?: string | null;
-}
+export type { ItemInfo };
 interface Version {
   id: string;
   version: number;
@@ -51,9 +40,6 @@ interface Activity {
   actor?: string | null;
   name?: string | null;
 }
-
-const LEVELS = ["View", "Comment", "Edit", "Manage"];
-export const allows = (permission: string, needed: string) => LEVELS.indexOf(permission) >= LEVELS.indexOf(needed);
 
 /** `tab`: the tab to show first. `inEditor`: shown beside the file's own editor (no "Join them"). */
 export function DetailsPanel({
