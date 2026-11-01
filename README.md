@@ -33,7 +33,7 @@ own sharing rules.
 | 🗃️ Records | 12 entities in 1 package |
 | 👥 Roles | 2: Drive User, Drive Administrator |
 | 📊 Reports | 5 |
-| 🧪 Tests | 21 Rust tests, 12 interface test files |
+| 🧪 Tests | 21 Rust tests, 13 interface test files |
 
 
 ## Highlights

@@ -58,7 +58,7 @@ interface Page {
 const ACTIONS: Record<string, string> = Object.fromEntries(VIEWS.map((v) => [v.id, v.action]));
 
 /** The request for a page of a source: what to call and with what. */
-function request(src: Source, q: Query, today: string): [string, Record<string, string | number | undefined>] {
+export function request(src: Source, q: Query, today: string): [string, Record<string, string | number | undefined>] {
   switch (src.kind) {
     case "folder":
       return ["list_folder", { folder: src.folder, sort: q.sort ?? undefined, order: q.sort ? (q.order ?? naturalOrder(q.sort)) : undefined, limit: PAGE }];
