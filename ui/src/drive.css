@@ -65,7 +65,7 @@
 /* the rail: places, team folders, storage */
 .drive-rail {
   position: sticky;
-  top: 12px;
+  top: calc(var(--ferrum-bar-height, 48px) + 12px);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -290,6 +290,11 @@
 .drive-row:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+/* A row brought into view by the keys stops clear of the bar and of the bar of chosen items. */
+.drive-row {
+  scroll-margin-top: calc(var(--ferrum-bar-height, 48px) + 64px);
+  scroll-margin-bottom: 16px;
 }
 .drive-row[draggable="true"] {
   cursor: grab;
@@ -547,7 +552,7 @@ a.drive-name:focus-visible > span {
 }
 .drive-details {
   position: sticky;
-  top: 12px;
+  top: calc(var(--ferrum-bar-height, 48px) + 12px);
   display: grid;
   gap: 12px;
   padding: 12px 14px;

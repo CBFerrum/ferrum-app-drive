@@ -7,10 +7,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, Outlet, RouterProvider, useRouteError } from "react-router";
-import { isPublicPage, routeBase, shell } from "@ferrum/client";
+import { bootstrap, isPublicPage, routeBase, setTimeZone, shell } from "@ferrum/client";
 import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
 import { DrivePage } from "./Drive";
 import "./styles.css";
+
+// Days (a link's last day, "today") are counted in the workspace's time zone, as the server counts them.
+setTimeZone(bootstrap()?.locale.timezone);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 } },

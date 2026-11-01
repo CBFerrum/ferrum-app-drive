@@ -207,7 +207,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
           {actions(s.item)}
         </div>
         {s.item.content_type?.startsWith("image/") && <img src={content(s.item.id, true)} alt={s.item.name} className="max-h-[70vh] w-auto rounded border object-contain" />}
-        {live(s.item) && <iframe src={content(s.item.id, true)} title={s.item.name} sandbox="" className="h-[70vh] w-full rounded border bg-white" />}
+        {live(s.item) && <iframe src={content(s.item.id, true)} title={s.item.name} sandbox="" className="h-[70vh] w-full rounded border bg-background" />}
         {!download && !previewable(s.item) && <p className="text-sm text-muted-foreground">This link lets you see the file's details; it does not allow downloading.</p>}
         {footer.length > 0 && <p className="text-xs text-muted-foreground">{footer.join(" ")}</p>}
       </section>
