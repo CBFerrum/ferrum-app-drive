@@ -49,6 +49,9 @@ fn expiry(ctx: &Ctx, raw: Option<&str>, field: &str) -> Result<Option<DateTime<U
     Ok(Some(at))
 }
 
+/// The longest note a link carries.
+const NOTE_MAX: usize = 280;
+
 fn item_columns(item: &Item) -> (Option<Uuid>, Option<Uuid>) {
     match item.kind {
         Kind::File => (Some(item.id), None),
@@ -173,7 +176,7 @@ async fn share_with_guest(k: &Kernel, ctx: &Ctx, tx: &mut Tx, item: &Item, email
     .await?;
     let (token, hash) = new_token();
     let id = Uuid::now_v7();
-    insert_link(tx, ctx, id, file, folder, "Download", &hash, None, expires, None, Some(email)).await?;
+    insert_link(tx, ctx, id, file, folder, "Download", &hash, None, expires, None, Some(email), None).await?;
     tree::log(tx, ctx, item, "Shared With Guest", json!({"link": id, "email": email, "expires_at": expires})).await?;
     // Drive's public page (its interface's `drive/s`, Ferrum docs/plan/apps-ui.md §7.3).
     let page = format!("{page}/drive/s/{}/{token}", tenant_slug(tx, ctx.tenant).await?);
@@ -220,11 +223,12 @@ async fn insert_link(
     expires: Option<DateTime<Utc>>,
     max_downloads: Option<i64>,
     email: Option<&str>,
+    note: Option<&str>,
 ) -> Result<()> {
     sqlx::query(
         "insert into e_drive_link (tenant_id, id, file, folder, access, token_hash, password_hash, has_password, expires_at, max_downloads, \
-         download_count, revoked, shared_by, failed_attempts, email, created_by, updated_by) \
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $13, $13)",
+         download_count, revoked, shared_by, failed_attempts, email, note, created_by, updated_by) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $13, $14, $14)",
     )
     .bind(ctx.tenant)
     .bind(id)
@@ -238,6 +242,7 @@ async fn insert_link(
     .bind(max_downloads)
     .bind(actor(ctx))
     .bind(email)
+    .bind(note)
     .bind((!ctx.user.is_nil()).then_some(ctx.user))
     .execute(&mut **tx)
     .await?;
@@ -365,8 +370,8 @@ async fn tenant_slug(tx: &mut Tx, tenant: Uuid) -> Result<String> {
 }
 
 /// `create_link` (Manage access): `access` View or Download, optional `expires_at`, `password`
-/// (8+ characters) and `max_downloads`, within the workspace's link policy. The token is in the
-/// answer only.
+/// (8+ characters), `max_downloads` and a `note` the people who open the link read, within the
+/// workspace's link policy. The token is in the answer only.
 pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
     let s = tree::settings(tx, ctx.tenant).await?;
     if !s.allow_public_links {
@@ -395,6 +400,10 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
         Some(n) if n < 0 => return Err(Error::field("max_downloads", "must be 0 (unlimited) or more")),
         n => n.filter(|n| *n > 0),
     };
+    let note = p.str("note");
+    if note.is_some_and(|n| n.chars().count() > NOTE_MAX) {
+        return Err(Error::field("note", format!("at most {NOTE_MAX} characters")));
+    }
     let password_hash = match password {
         Some(pw) => Some(ferrum_kernel::auth::hash_password(pw.to_string()).await?),
         None => None,
@@ -402,19 +411,19 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     let (token, hash) = new_token();
     let id = Uuid::now_v7();
     let (file, folder) = item_columns(&item);
-    insert_link(tx, ctx, id, file, folder, access, &hash, password_hash.as_deref(), expires, max_downloads, None).await?;
+    insert_link(tx, ctx, id, file, folder, access, &hash, password_hash.as_deref(), expires, max_downloads, None, note).await?;
     tree::log(
         tx,
         ctx,
         &item,
         "Link Created",
-        json!({"link": id, "access": access, "expires_at": expires, "password": password.is_some(), "max_downloads": max_downloads}),
+        json!({"link": id, "access": access, "expires_at": expires, "password": password.is_some(), "max_downloads": max_downloads, "note": note.is_some()}),
     )
     .await?;
     let slug = tenant_slug(tx, ctx.tenant).await?;
     Ok(
         json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "page": format!("/drive/s/{slug}/{token}"), "access": access,
-              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads}),
+              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads, "note": note}),
     )
 }
 
@@ -448,12 +457,27 @@ pub async fn revoke_link(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> 
     Ok(json!({"link": id, "revoked": true}))
 }
 
-/// `list_links` (Manage access): every link of the item, newest first, without tokens.
+/// `list_links` (Manage access): every link of the item, newest first, without tokens; with the
+/// workspace's link policy, which the next link must meet.
 pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let item = tree::open(tx, ctx, g, p.req_uuid("item")?, Level::Manage, false).await?;
-    type R = (Uuid, String, bool, Option<DateTime<Utc>>, Option<i64>, Option<i64>, bool, Option<String>, DateTime<Utc>, Option<DateTime<Utc>>, Option<String>);
+    let policy = tree::settings(tx, ctx.tenant).await?;
+    type R = (
+        Uuid,
+        String,
+        bool,
+        Option<DateTime<Utc>>,
+        Option<i64>,
+        Option<i64>,
+        bool,
+        Option<String>,
+        DateTime<Utc>,
+        Option<DateTime<Utc>>,
+        Option<String>,
+        Option<String>,
+    );
     let rows: Vec<R> = sqlx::query_as(
-        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, email::text \
+        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, email::text, note \
          from e_drive_link where tenant_id = $1 and (file = $2 or folder = $2) order by created_at desc",
     )
     .bind(ctx.tenant)
@@ -461,11 +485,13 @@ pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> O
     .fetch_all(&mut **tx)
     .await?;
     let now = Utc::now();
-    Ok(json!({"item": item.id, "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last, email)| {
+    Ok(json!({"item": item.id,
+        "policy": {"allow_public_links": policy.allow_public_links, "max_link_days": policy.max_link_days, "link_password_required": policy.link_password_required},
+        "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last, email, note)| {
         let count = count.unwrap_or(0);
         let active = !revoked && exp.is_none_or(|t| t > now) && max.is_none_or(|m| m == 0 || count < m);
         json!({"id": id, "access": access, "has_password": pw, "expires_at": exp, "max_downloads": max, "download_count": count,
-               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "email": email})
+               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "email": email, "note": note})
     }).collect::<Vec<_>>()}))
 }
 
@@ -483,6 +509,7 @@ struct Link {
     download_count: Option<i64>,
     revoked: bool,
     locked_until: Option<DateTime<Utc>>,
+    note: Option<String>,
 }
 
 /// The single answer for unknown, revoked, expired, exhausted and out-of-reach links.
@@ -496,7 +523,7 @@ async fn active_link(tx: &mut Tx, tenant: Uuid, token: &str) -> Result<(Link, It
         return Err(gone());
     }
     let link: Option<Link> = sqlx::query_as(
-        "select id, file, folder, access, password_hash, expires_at, max_downloads, download_count, revoked, locked_until \
+        "select id, file, folder, access, password_hash, expires_at, max_downloads, download_count, revoked, locked_until, note \
          from e_drive_link where tenant_id = $1 and token_hash = $2",
     )
     .bind(tenant)
@@ -612,7 +639,7 @@ async fn view(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteResponse
     gate(&mut tx, req, &link).await?;
     let left = link.max_downloads.filter(|m| *m > 0).map(|m| m - link.download_count.unwrap_or(0));
     let mut out = json!({
-        "link": {"access": link.access, "expires_at": link.expires_at, "downloads_left": left, "has_password": link.password_hash.is_some()},
+        "link": {"access": link.access, "expires_at": link.expires_at, "downloads_left": left, "has_password": link.password_hash.is_some(), "note": link.note},
         "item": guest_json(&item),
     });
     if item.kind == Kind::Folder {

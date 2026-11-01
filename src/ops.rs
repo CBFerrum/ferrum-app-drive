@@ -413,6 +413,48 @@ async fn search(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     Ok(json!({"items": out, "has_more": more, "limit": limit, "offset": offset}))
 }
 
+/// `GET /find?q=&limit=`: the bar's search (`shell.search` in app.yaml): files and folders by name,
+/// documents edited live also by their words, each opening where Drive shows it. At least two
+/// characters, like the bar.
+pub(crate) async fn find(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Out {
+    let q = p.str("q").unwrap_or_default();
+    if q.chars().count() < 2 {
+        return Err(Error::field("q", "type at least two characters"));
+    }
+    let limit = p.int("limit")?.unwrap_or(8).clamp(1, 20);
+    let g = Grants::load(tx, ctx).await?;
+    let found = search(tx, ctx, &g, &Params(&json!({"query": q, "limit": limit}))).await?;
+    let results: Vec<Value> = found["items"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|i| {
+            let folder = i["kind"] == "folder";
+            let name = i["name"].as_str().unwrap_or_default();
+            // People never see the `.fdoc` of a live document.
+            let title = if !folder && content::extension(name) == "fdoc" { content::stem(name, false) } else { name };
+            let what = if folder { if i["is_team"] == true { "Team folder" } else { "Folder" } } else { i["file_type"].as_str().unwrap_or("File") };
+            let subtitle = match (i["snippet"].as_str(), i["path"].as_str().filter(|p| !p.is_empty())) {
+                (Some(snippet), _) => snippet.replace(['«', '»'], ""),
+                (None, Some(path)) => format!("{what} · {path}"),
+                (None, None) => what.to_string(),
+            };
+            let icon = match (folder, i["file_type"].as_str()) {
+                (true, _) => "folder",
+                (_, Some("Spreadsheet")) => "sheet",
+                (_, Some("Presentation")) => "presentation",
+                _ => "file-text",
+            };
+            json!({
+                "title": title, "subtitle": subtitle, "icon": icon, "updated_at": i["modified_at"],
+                "url": format!("/open/{}/{}", if folder { "DriveFolder" } else { "DriveFile" }, i["id"].as_str().unwrap_or_default()),
+            })
+        })
+        .collect();
+    Ok(json!({"results": results}))
+}
+
 /// Keeps the visible, live items of `ids` in that order.
 pub(crate) async fn visible_in_order(tx: &mut Tx, tenant: Uuid, g: &Grants, ids: &[Uuid]) -> Result<Vec<Item>> {
     let mut found = tree::load_many(tx, tenant, Kind::Folder, ids).await?;
@@ -529,10 +571,15 @@ async fn usage(tx: &mut Tx, ctx: &Ctx, g: &Grants, space: &Space) -> Out {
     qb.push(" order by lower(a.name) limit 500");
     let teams: Vec<(Uuid, String, Option<i64>, Option<i64>)> = qb.build_query_as().fetch_all(&mut **tx).await?;
     let mb = |q: Option<i64>| q.filter(|q| *q > 0).map(|q| q << 20);
+    let s = tree::settings(tx, ctx.tenant).await?;
     Ok(json!({
         "space": {"id": space.id, "owner": space.owner, "root": space.root, "quota_bytes": mb(quota), "used_bytes": used.unwrap_or(0)},
         "teams": teams.into_iter().map(|(id, name, q, u)| json!({"id": id, "name": name, "quota_bytes": mb(q), "used_bytes": u.unwrap_or(0),
             "permission": g.level(id, None, &[]).name()})).collect::<Vec<_>>(),
+        // Whether the caller administers Drive (makes team folders, sets their quotas), and the
+        // limits screens tell people about before they run into them.
+        "admin": g.admin,
+        "limits": {"max_upload_bytes": s.max_upload_bytes, "trash_days": s.trash_days},
     }))
 }
 

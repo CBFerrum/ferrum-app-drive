@@ -39,6 +39,10 @@ contributes:
     - {id: share, action: share, type: file, path: drive/_intent/share, title: Share}
   shell.sidepanel:
     - {id: details, title: Comments and history, path: drive/_panel/details, contextual: true}
+  # The bar's search (⌘K) asks Drive for the files and folders the person may open, by name, and
+  # live documents by their words (Ferrum docs/plan/apps-ui.md §12.8).
+  shell.search:
+    - {id: files, title: Files, endpoint: /api/app/drive/find}
   shell.public:
     - {id: link, path: drive/s, title: Shared file}
 # Editors for file types, opened from Drive in the person's browser (Ferrum
