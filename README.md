@@ -5,7 +5,7 @@
   <img alt="Ferrum Drive" src="docs/assets/banner-light.svg" width="100%">
 </picture>
 
-[![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml) ![Version](https://img.shields.io/badge/version-0.11.1-ca8a04?style=flat-square) ![Ferrum](https://img.shields.io/badge/Ferrum-%3E%3D0.3.2%2C%20%3C0.4-2f5bea?style=flat-square) ![License](https://img.shields.io/badge/license-AGPL--3.0-3b82f6?style=flat-square) ![Rust](https://img.shields.io/badge/Rust-native%20app-b7410e?style=flat-square&logo=rust&logoColor=white) ![Interface](https://img.shields.io/badge/interface-React%20%2B%20Vite-0ea5e9?style=flat-square&logo=react&logoColor=white) ![MCP](https://img.shields.io/badge/AI%20agents-MCP-8b5cf6?style=flat-square)
+[![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml) ![Version](https://img.shields.io/badge/version-0.12.0-ca8a04?style=flat-square) ![Ferrum](https://img.shields.io/badge/Ferrum-%3E%3D0.3.2%2C%20%3C0.4-2f5bea?style=flat-square) ![License](https://img.shields.io/badge/license-AGPL--3.0-3b82f6?style=flat-square) ![Rust](https://img.shields.io/badge/Rust-native%20app-b7410e?style=flat-square&logo=rust&logoColor=white) ![Interface](https://img.shields.io/badge/interface-React%20%2B%20Vite-0ea5e9?style=flat-square&logo=react&logoColor=white) ![MCP](https://img.shields.io/badge/AI%20agents-MCP-8b5cf6?style=flat-square)
 
 **A native app for [Ferrum](https://github.com/CBFerrum/Ferrum), the open-source, AI-first business platform.**
 
@@ -26,14 +26,14 @@ own sharing rules.
 
 | At a glance | |
 |---|---|
-| 📦 Version | `0.11.1` |
+| 📦 Version | `0.12.0` |
 | 🧱 Platform | Ferrum `>=0.3.2, <0.4` |
 | 🔗 Requires | nothing else |
 | 🖥️ Interface | its own, at `/drive/`, `/sheets/`, `/slides/`, `/pdf/` |
 | 🗃️ Records | 12 entities in 1 package |
 | 👥 Roles | 2: Drive User, Drive Administrator |
 | 📊 Reports | 5 |
-| 🧪 Tests | 21 Rust tests, 2 interface test files |
+| 🧪 Tests | 21 Rust tests, 12 interface test files |
 
 
 ## Highlights
@@ -43,7 +43,7 @@ own sharing rules.
 <td width="50%" valign="top">
 
 ### 📁 Spaces and team folders
-Members as Viewer, Commenter, Editor or Manager; colours, breadcrumbs, sorting and paging.
+Members as Viewer, Commenter, Editor or Manager; colours, breadcrumbs, sorting, filter chips and folders of any size, loaded as you scroll. Drag to move, drop files and folders to upload, choose several to act on all of them.
 
 </td>
 <td width="50%" valign="top">
@@ -57,7 +57,7 @@ History with comments, restore as a new version, check-out and check-in.
 <td width="50%" valign="top">
 
 ### 🔗 Sharing and links
-People or roles, inherited by folders, optional expiry; public links with passwords and limits.
+People or roles, inherited by folders, optional expiry; public links with passwords, end dates, limits and a note, set up under the workspace's rules.
 
 </td>
 <td width="50%" valign="top">
@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.12.0** | Folders of any size load as you scroll; the share dialog sets a link's password, end date, limit and note under the workspace's rules and shows inherited access; several items move, copy, share, download and trash at once, by dragging or a destination picker; files and folders upload by dropping them; team folders and storage on screen; sort and filter chips, keyboard shortcuts and the bar's search. |
 | **0.11.1** | Saving templates takes turns within a workspace, so its limit of 200 holds even when two administrators save at the same moment. |
 | **0.11.0** | Templates for new documents, spreadsheets and presentations: New offers "From a template…" beside the blank files, and Sheets and Slides offer … |
 | **0.10.0** | Comments on a live document's text and in threads: `add_comment` takes an `anchor` (Yjs relative positions) and a `quote` for documents edited … |

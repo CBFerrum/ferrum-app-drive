@@ -1,7 +1,46 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
 
+- A folder with more than 200 items shows all of them. The list loads a hundred at a time as you
+  scroll, says how many there are ("Showing 300 of 1,340"), and has a Show more button for those who
+  prefer to press. Search results, the trash, the Sheets, Slides and PDF pages and a folder opened
+  from a public link page the same way.
+- The share dialog sets a link up before it is made: who may do what with it, when it ends, a
+  password (with one made for you to read out), a limit on uses, and a note the people who open it
+  read. It shows the workspace's rules first ("Links in this workspace need a password and end within
+  7 days"), asks for what they require and says so before a link is refused. It lists the links made,
+  how they stand (working, ended, used up), their uses and when each was last opened. Sharing with
+  someone outside the workspace says at once when the rules do not allow it.
+- Who has access reads in groups: the owner, the team folder, people given the item, and, under the
+  folder each comes down from, those who have it through a folder above. A person's role changes in
+  place.
+- Several items at once: choose them with the boxes (Shift for a stretch), then move, copy, share,
+  download or trash them all. Items move by dragging them onto a folder in the list, the path above it
+  or the places beside it (Ctrl or Option copies), and from a menu and a destination picker by
+  keyboard or touch. A move shows at once and comes back with the server's reason if it is refused.
+- Files and folders dropped on the page are uploaded, folders with the folders in them; Upload has
+  Files and Folder. The page says what it will do while they are held over it, leaves out what Drive
+  would refuse (too large, a folder it cannot make) and tells why.
+- Team folders on screen: the places beside the list show each team folder with how full it is.
+  Anyone who manages one sees its members, changes their roles, removes them and adds several people
+  at once; Drive administrators make team folders and set how much space each may use. Everyone sees
+  their own storage, amber near the limit.
+- Sort and filter chips: sort by name, date, size or type, either way, and filter by type, when it
+  changed and who owns it. They are kept in the address. Keys: j and k or the arrows move through the
+  list, x chooses, m moves, c copies, h shares, s stars, F2 renames, Delete trashes (after asking), n
+  makes a folder, u uploads, / searches and ? lists them.
+- New documents, spreadsheets and presentations open in the editor the workspace has: a workspace with
+  only browser editors no longer lands on "cannot be opened online".
+- Files and folders are found in the bar's search (⌘K and Ctrl+K): `GET /api/app/drive/find`, Drive's
+  provider for it, answers by name and, for live documents, by their words.
+- Links carry a note (`note` on `create_link`, up to 280 characters), which `list_links` returns and
+  the link's page shows. `list_links` also returns the workspace's link rules (`policy`); `usage`
+  tells whether the person administers Drive and the largest upload and the days the trash keeps
+  things.
+- A live document downloads from its menu as a web page, not as its inner state. Colours in the
+  interface come from the theme, so dark mode and high contrast follow; places that were left
+  without a loading, empty or error message have them.
 - Personal data: a person's request now reaches what Drive keeps of them. An erasure blanks their name on versions, shares, links, comments, activity and stars; files, folders and spaces they own are exported and kept until they are handed over.
 
 ## 0.11.1

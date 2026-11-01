@@ -86,12 +86,12 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `shared_with_me` | `live?` → items shared with you or your roles (not your own), with `shared_by`, `share_expires_at` |
 | `read_document` | `file` (a live document), `format?` markdown (default)/text/html, `version?` → `{file, name, version, format, content}`: as its editors left it, or that version |
 | `list_trash` | `root?` (a top folder) → `{items, total}`: what was trashed itself and you may restore (Edit) |
-| `usage` | → `{space: {id, owner, root, quota_bytes, used_bytes}, teams: [{id, name, quota_bytes, used_bytes, permission}]}` (quota null = unlimited) |
+| `usage` | → `{space: {id, owner, root, quota_bytes, used_bytes}, teams: [{id, name, quota_bytes, used_bytes, permission}], admin, limits: {max_upload_bytes, trash_days}}` (quota null = unlimited; `admin` when the caller administers Drive) |
 | `item_info` | `item` → Item with `breadcrumbs`, `path`; files: `versions`, `comments`; folders: `folders`, `files` |
 | `list_versions` | `file` → `{versions: [{id, version, size, sha256, content_type, author, comment, created_at, current}]}`, newest first |
 | `download` | `file`, `version?` → `{name, version, content_type, size, sha256, content_base64, text}` (`text` for text files); up to 5 MB — larger files through `GET /files/{id}/content` |
 | `list_shares` | `item` → `{owner, team: {id, name, members} \| null, shares: [{id, email, role, permission, expires_at, shared_by, created_at, inherited_from}]}` |
-| `list_links` | `item` (Manage) → `{links: [{id, access, has_password, expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, active}]}` — tokens are never shown again |
+| `list_links` | `item` (Manage) → `{policy: {allow_public_links, max_link_days, link_password_required}, links: [{id, access, has_password, expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, active, email, note}]}` — tokens are never shown again; `policy` is what the next link must meet |
 | `activity` | `item`, `limit?` (≤ 200, 50) → `{activity: [{id, at, action, item_name, actor, file, folder, details}]}`; for a folder, everything inside it too |
 | `list_comments` | `file` → `{comments: [{id, author, body, created_at, mine}]}` |
 | `list_templates` | `kind?` (docx, xlsx, pptx, odt, ods, odp) → `{templates: [{id, kind, title, category, description, builtin, size}], manage}`: Drive's own first, then the workspace's; `manage` when you may add and delete them |
@@ -124,7 +124,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `restore_version` | `file`, `version` → Item (Edit): the old content becomes the newest version; for a live document, a new document beside it, `Name (version N).fdoc` |
 | `share` | `item`, `email` or `role`, `permission?` (View), `expires_at?` → `{id, item, email, role, permission, expires_at}` (Manage); sharing again replaces the grant; the person is notified in the app and, with the Mail app, by email (the email names no item). An email outside the workspace (a guest): see below |
 | `unshare` | `item`, `share?` / `email?` / `role?` → `{removed}` (Manage; anyone may remove their own share) |
-| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?` → `{id, item, token, url, page, access, expires_at, has_password, max_downloads}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
+| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?`, `note?` (280 characters, shown to whoever opens the link) → `{id, item, token, url, page, access, expires_at, has_password, max_downloads, note}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
 | `revoke_link` | `link` → `{link, revoked}` (Manage on its item, even in the trash) |
 | `star` / `unstar` | `item` → `{item, starred}` (View) |
 | `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
@@ -143,6 +143,7 @@ parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, an
 |---|---|
 | `GET /space` | → `{id, owner, root_folder}`; creates your space on first use |
 | `GET /{action}` | a read action above, parameters as query → its JSON |
+| `GET /find` | query `q` (two characters or more), `limit?` (≤ 20, 8) → `{results: [{title, subtitle, url, icon, updated_at}]}`: files and folders by name, live documents also by their words, each with the address that opens it (`/open/DriveFile/{id}`, `/open/DriveFolder/{id}`). Drive's provider for the bar's search (`shell.search` in `app.yaml`) |
 | `POST /upload` | query `name`, `folder?`, `on_conflict?`, `comment?`; body: the raw bytes (≤ the workspace limit, within the server's `FERRUM_DRIVE_MAX_FILE_MB`) → `201` Item |
 | `POST /files/{id}/versions` | query `comment?`, `check_in=1?`; body: raw bytes → `201` Item |
 | `POST /new` | query `kind` (`fdoc`, `docx`, `xlsx`, `pptx`, `odt`, `ods`, `odp`), `name?` (Untitled), `folder?` → `201` Item: an empty file for its editor; with `template` (as `create_from_template`; `kind` may be left out), a file with the template's content named after it |
@@ -194,7 +195,7 @@ made a guest. `list_links` shows each link's `email`; `revoke_link` removes a gu
 
 | Method & path | Request → response |
 |---|---|
-| `GET /links/{token}` | query `folder?` (a folder inside a shared folder), `limit?` (≤ 200, 100), `offset?`; password-protected links need a grant (`X-Drive-Grant` header or `grant` query) → `{link: {access, expires_at, downloads_left, has_password}, item, folder?, breadcrumbs?, items?}` (names, sizes, types and dates only) |
+| `GET /links/{token}` | query `folder?` (a folder inside a shared folder), `limit?` (≤ 200, 100), `offset?`; password-protected links need a grant (`X-Drive-Grant` header or `grant` query) → `{link: {access, expires_at, downloads_left, has_password, note}, item, folder?, breadcrumbs?, items?}` (names, sizes, types and dates only) |
 | `POST /links/{token}/unlock` | `{password}` → `{grant, expires_at}` (one hour). Ten wrong passwords lock the link for 15 minutes (`429`) |
 | `GET /links/{token}/content` | query `file?` (a file inside a shared folder), `inline=1?`, grant → the current version's bytes. View links serve only inline previews of images and PDFs; each delivery counts against `max_downloads`, claimed atomically. A live document is shown as a page (`inline=1`, any link) and downloads as `format=html`, `pdf` or `txt` (Download links; html unless asked) |
 
