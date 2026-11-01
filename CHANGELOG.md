@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Personal data: a person's request now reaches what Drive keeps of them. An erasure blanks their name on versions, shares, links, comments, activity and stars; files, folders and spaces they own are exported and kept until they are handed over.
+
 ## 0.11.1
 
 - Saving templates takes turns within a workspace, so its limit of 200 holds even when two
