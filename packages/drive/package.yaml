@@ -46,3 +46,7 @@ personal_data:
   - {entity: DriveComment, match: author, erase: [author]}
   - {entity: DriveActivity, match: actor, erase: [actor]}
   - {entity: DriveStar, match: email, erase: [email]}
+handover:
+  - {entity: DriveFile, field: owner}
+  - {entity: DriveFolder, field: owner}
+  - {entity: DriveFolder, field: members.member}

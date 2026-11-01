@@ -21,6 +21,7 @@ mod docs;
 mod files;
 mod hooks;
 mod images;
+mod leaver;
 mod office;
 mod ops;
 mod reports;
@@ -57,6 +58,7 @@ pub fn register(hooks: &mut HookRegistry) {
         hooks.register(entity, Arc::new(hooks::Guard));
     }
     hooks.add_site("drive", Arc::new(site::DriveSite));
+    hooks.add_event_sink(Arc::new(leaver::Departures));
     hooks.add_doc_host(docs::PACKAGE, Arc::new(docs::LiveDocs));
 }
 
