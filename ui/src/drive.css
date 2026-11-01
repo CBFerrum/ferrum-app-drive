@@ -414,7 +414,7 @@
   color: var(--chart-8);
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 1180px) {
   .drive-shell[data-details] {
     grid-template-columns: 15.5rem minmax(0, 1fr);
   }
@@ -460,6 +460,10 @@
   }
   .drive-place {
     min-height: 44px;
+  }
+  .drive-row [data-slot="dropdown-menu-trigger"] {
+    width: 44px;
+    height: 44px;
   }
 }
 
@@ -624,9 +628,9 @@ a.drive-name:focus-visible > span {
   display: grid;
   gap: 8px;
 }
-@media (max-width: 1000px) {
+@media (max-width: 1180px) {
   /* Beside the list there is no room: the details slide over it, from the right. */
-  .drive-details {
+  .drive-shell .drive-details {
     position: fixed;
     top: calc(var(--ferrum-bar-height, 48px) + 8px);
     right: 8px;
