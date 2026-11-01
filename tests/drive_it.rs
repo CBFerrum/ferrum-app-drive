@@ -617,6 +617,12 @@ async fn scenario() {
     assert_eq!(usage["teams"][0]["name"], json!("Engineering"));
     assert_eq!(usage["teams"][0]["permission"], json!("Edit"));
     assert_eq!(usage["teams"][0]["used_bytes"], json!(400_000));
+    // Screens learn whether to offer administration, and the limits to tell people about.
+    assert_eq!(
+        (usage["admin"].clone(), usage["limits"]["max_upload_bytes"].clone(), usage["limits"]["trash_days"].clone()),
+        (json!(false), json!(2 << 20), json!(30))
+    );
+    assert_eq!(t.ok(&erin, "usage", json!({})).await["admin"], json!(true));
     let who = t.ok(&carol, "list_shares", json!({"item": uid(&spec)})).await;
     assert_eq!(who["team"]["members"].as_array().unwrap().len(), 3);
 
@@ -849,6 +855,18 @@ async fn scenario() {
     let editor = t.no(&alice, "share", json!({"item": report_id, "email": "pat@partner.test", "permission": "Edit"})).await;
     assert!(matches!(editor, Error::Validation(_)), "{editor:?}");
 
+    // A link carries a note for whoever opens it, and list_links says what the workspace asks of the next one.
+    let noted = t.ok(&alice, "create_link", json!({"item": report_id, "note": "  For the audit  "})).await;
+    assert_eq!(noted["note"], json!("For the audit"));
+    let seen = t.json(t.site(None, "GET", &tok(noted["token"].as_str().unwrap()), &[], &[], vec![]).await.unwrap());
+    assert_eq!(seen["link"]["note"], json!("For the audit"));
+    assert!(view["link"]["note"].is_null(), "a link made without one has none");
+    let listed = t.ok(&alice, "list_links", json!({"item": report_id})).await;
+    assert!(listed["links"].as_array().unwrap().iter().any(|l| l["note"] == json!("For the audit")), "{listed}");
+    assert_eq!(listed["policy"], json!({"allow_public_links": true, "max_link_days": 0, "link_password_required": false}));
+    assert_eq!(code(&t.no(&alice, "create_link", json!({"item": report_id, "note": "x".repeat(281)})).await), "validation_failed");
+    t.ok(&alice, "revoke_link", json!({"link": uid(&noted)})).await;
+
     // A download cap holds under concurrency.
     let capped = t.ok(&alice, "create_link", json!({"item": uid(&notes), "access": "Download", "max_downloads": 3})).await;
     let capped_token = capped["token"].as_str().unwrap().to_string();
@@ -927,6 +945,11 @@ async fn scenario() {
     )
     .await
     .unwrap();
+    assert_eq!(
+        t.ok(&alice, "list_links", json!({"item": secret})).await["policy"],
+        json!({"allow_public_links": true, "max_link_days": 7, "link_password_required": true}),
+        "the dialog shows the rules before they fail"
+    );
     assert_eq!(code(&t.no(&alice, "create_link", json!({"item": secret, "password": "long enough"})).await), "validation_failed", "must expire within 7 days");
     assert_eq!(
         code(&t.no(&alice, "create_link", json!({"item": secret, "expires_at": (chrono::Utc::now() + chrono::Duration::days(3)).to_rfc3339()})).await),
@@ -989,6 +1012,22 @@ async fn scenario() {
     assert_eq!(t.ok(&erin, "search", json!({"owner": "bob@acme.test", "type": "PDF"})).await["items"], json!([]));
     assert_eq!(code(&t.no(&alice, "search", json!({})).await), "validation_failed");
     assert_eq!(code(&t.no(&alice, "search", json!({"type": "Spaceship"})).await), "validation_failed");
+    // The bar's search (`shell.search`) asks for the same, as results that open them.
+    let bar = |u: &U, q: &'static str| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move { t.json(t.site(Some(&ctx), "GET", "/find", &[("q", q)], &[], vec![]).await.expect("find")) }
+    };
+    let found = bar(&bob, "engin").await;
+    let team = found["results"].as_array().unwrap().iter().find(|r| r["title"] == json!("Engineering")).expect("a team folder, found by name");
+    assert_eq!((team["icon"].as_str(), team["url"].as_str().unwrap().starts_with("/open/DriveFolder/")), (Some("folder"), true));
+    assert!(team["subtitle"].as_str().unwrap().starts_with("Team folder"), "{team}");
+    let found = bar(&alice, "report").await;
+    let pdf = found["results"].as_array().unwrap().iter().find(|r| r["title"] == json!("report (2).pdf")).expect("a file, found by name");
+    assert_eq!((pdf["icon"].as_str(), pdf["url"].as_str().unwrap().starts_with("/open/DriveFile/")), (Some("file-text"), true));
+    assert!(!bar(&alice, "salary").await["results"].as_array().unwrap().is_empty(), "alice's own");
+    assert!(bar(&bob, "salary").await["results"].as_array().unwrap().is_empty(), "only what bob may open");
+    let short = t.site(Some(&alice.ctx), "GET", "/find", &[("q", "r")], &[], vec![]).await.expect_err("the bar asks with two characters or more");
+    assert_eq!(code(&short), "validation_failed");
     let recent = names(&t.ok(&alice, "recent", json!({})).await["items"]);
     assert!(recent.contains(&"notes.md".to_string()), "{recent:?}");
     t.ok(&alice, "star", json!({"item": uid(&notes)})).await;
@@ -1598,6 +1637,16 @@ async fn scenario() {
     let every = t.ok(&alice, "search", json!({"live": true})).await;
     let doc_names: Vec<String> = names(&every["items"]);
     assert!(doc_names.contains(&"Launch notes.fdoc".to_string()) && doc_names.iter().all(|n| n.ends_with(".fdoc")), "{doc_names:?}");
+    let hit = bar(&alice, "venue").await;
+    let hit = hit["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["url"] == json!(format!("/open/DriveFile/{launch}")))
+        .expect("a document, found by its words")
+        .clone();
+    assert_eq!(hit["title"], json!("Launch notes"), "without .fdoc");
+    assert!(hit["subtitle"].as_str().unwrap().contains("The venue may move") && !hit["subtitle"].as_str().unwrap().contains('«'), "{hit}");
     assert!(t.ok(&bob, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "shared with bob");
     assert!(!t.ok(&frank, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "not frank's");
     t.ok(&alice, "star", json!({"item": launch})).await;

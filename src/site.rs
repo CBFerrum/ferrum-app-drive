@@ -132,6 +132,16 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             })
             .await?
         }
+        // The bar's search asks here (`shell.search` in app.yaml).
+        ("GET", ["find"]) => {
+            with_retry(|| async {
+                let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+                let out = ops::find(&mut tx, ctx, &p).await?;
+                tx.commit().await?;
+                Ok(out)
+            })
+            .await?
+        }
         ("POST", ["editor", file]) if p.str("kind") == Some("browser") => {
             crate::office::launch_browser(k, ctx, id(file)?, p.str("action") != Some("view"), p.flag("take_over"), p.str("session")).await?
         }
