@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.12.1** | Rebuilt with Ferrum-Frontend 80ff179: labels name their fields, and linked titles show their titles. |
 | **0.12.0** | Folders of any size load as you scroll; the share dialog sets a link's password, end date, limit and note under the workspace's rules and shows inherited access; several items move, copy, share, download and trash at once, by dragging or a destination picker; files and folders upload by dropping them; team folders and storage on screen; sort and filter chips, keyboard shortcuts and the bar's search. |
 | **0.11.1** | Saving templates takes turns within a workspace, so its limit of 200 holds even when two administrators save at the same moment. |
 | **0.11.0** | Templates for new documents, spreadsheets and presentations: New offers "From a template…" beside the blank files, and Sheets and Slides offer … |
