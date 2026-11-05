@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13.0
+
+Downloads stream: a file's content, or a version's, and a guest's download through a shared link, are sent by the server straight from storage, whatever their size, instead of being read whole into memory first (Ferrum's SiteResponse::file, FERRUM-OPS-006). A live document's current content is still made from the document itself.
+
 ## 0.12.3
 
 Rebuilt with Ferrum-Frontend 00dea07: in a workflow state that names what may change, the other fields show read-only, and the fields the state needs show required.

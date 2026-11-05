@@ -121,7 +121,27 @@ impl T {
         assert_eq!(e.to_string(), "Drive item not found", "{} {action} {params}: {e:?}", u.email);
     }
 
+    /// A request to Drive's site, answered as the server sends it: a stored file the answer names
+    /// (`SiteResponse::file`) becomes its body, as the server streams it from storage.
     async fn site(
+        &self,
+        user: Option<&Ctx>,
+        method: &str,
+        path: &str,
+        query: &[(&str, &str)],
+        headers: &[(&str, &str)],
+        body: Vec<u8>,
+    ) -> ferrum_kernel::Result<SiteResponse> {
+        let mut r = self.site_raw(user, method, path, query, headers, body).await?;
+        if let Some(i) = r.headers.iter().position(|(k, _)| k == ferrum_kernel::hooks::STREAM_FILE_HEADER) {
+            let id: Uuid = r.headers.remove(i).1.parse().expect("a file id");
+            r.body = self.k.read_file(&Ctx::system(self.tenant, self.k.registry.schema(self.tenant).await?), id).await?.2;
+        }
+        Ok(r)
+    }
+
+    /// Drive's own answer, before the server streams a file it names.
+    async fn site_raw(
         &self,
         user: Option<&Ctx>,
         method: &str,
@@ -645,6 +665,11 @@ async fn scenario() {
     assert_eq!(t.used(alice.space).await, used0 + 3 + 5 + 3 - 3, "the pruned version is refunded");
     let r = t.site(Some(&alice.ctx), "GET", &format!("/files/{plan}/content"), &[("version", "2")], &[], vec![]).await.unwrap();
     assert_eq!(r.body, b"two");
+    let raw = t.site_raw(Some(&alice.ctx), "GET", &format!("/files/{plan}/content"), &[("version", "2")], &[], vec![]).await.unwrap();
+    assert!(
+        raw.body.is_empty() && raw.headers.iter().any(|(k, _)| k == ferrum_kernel::hooks::STREAM_FILE_HEADER),
+        "a stored version is streamed, never read whole here"
+    );
     assert_eq!(code(&t.no(&alice, "download", json!({"file": plan, "version": 1})).await), "not_found");
     // Check-out: bob reserves the file; nobody else changes it until he checks it in.
     let co = t.ok(&bob, "check_out", json!({"file": plan})).await;
@@ -880,7 +905,8 @@ async fn scenario() {
     for task in tasks {
         match task.await.unwrap() {
             Ok(r) => {
-                assert_eq!(r.body, b"# Plan\nship it");
+                // The guest's download names the stored version, which the server streams.
+                assert!(r.body.is_empty() && r.headers.iter().any(|(h, _)| h == ferrum_kernel::hooks::STREAM_FILE_HEADER));
                 served += 1;
             }
             Err(e) => assert_eq!(e.to_string(), unknown.to_string()),
