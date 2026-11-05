@@ -17,7 +17,7 @@
 use crate::acl::{Grants, Level};
 use crate::content;
 use crate::day_start;
-use crate::files::{self, actor};
+use crate::files::actor;
 use crate::ops::{Out, Params};
 use crate::tree::{self, FILE_COLS, FOLDER_COLS, Item, Kind};
 use base64::Engine as _;
@@ -772,12 +772,12 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
         resp.headers.extend(guest_headers());
         return Ok(resp);
     }
-    let data = files::read(k, &guest, object).await?;
     let mut headers = guest_headers();
     headers.push(("content-disposition".into(), content::disposition(preview, &file.name)));
     headers.push(("x-content-type-options".into(), "nosniff".into()));
     headers.push(("content-security-policy".into(), "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox".into()));
-    Ok(SiteResponse { status: 200, content_type: if preview { ctype } else { content::served_type(&ctype).to_string() }, headers, body: data })
+    // The server streams the stored version from storage, whatever its size.
+    Ok(SiteResponse::file(200, if preview { &ctype } else { content::served_type(&ctype) }, headers, object))
 }
 
 #[cfg(test)]
