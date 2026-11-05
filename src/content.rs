@@ -138,6 +138,44 @@ pub fn sniff(data: &[u8], name: &str) -> &'static str {
     "application/octet-stream"
 }
 
+/// A type from a name alone, for a file whose bytes Drive does not read (one the platform stored
+/// in parts): the common kinds of media, documents and archives by their extension, and bytes for
+/// anything else (text included: without its bytes, text cannot be told from the rest).
+pub fn by_name(name: &str) -> &'static str {
+    match extension(name).as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "heic" => "image/heic",
+        "tif" | "tiff" => "image/tiff",
+        "pdf" => "application/pdf",
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "flac" => "audio/flac",
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        "7z" => "application/x-7z-compressed",
+        "rar" => "application/vnd.rar",
+        "tar" => "application/x-tar",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "odt" => "application/vnd.oasis.opendocument.text",
+        "ods" => "application/vnd.oasis.opendocument.spreadsheet",
+        "odp" => "application/vnd.oasis.opendocument.presentation",
+        "fdoc" => FDOC,
+        _ => "application/octet-stream",
+    }
+}
+
 /// UTF-8 (or UTF-16 with a byte-order mark) without NUL bytes in the first 8 KB.
 fn is_text(data: &[u8]) -> bool {
     if starts(data, b"\xff\xfe") || starts(data, b"\xfe\xff") {

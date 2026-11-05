@@ -67,4 +67,18 @@ describe("uploading what was dropped", () => {
     expect(sent).toEqual(["root:small.txt"]);
     expect(done.left).toEqual([{ name: "disk.iso", reason: "it is 5.0 MB and the most Drive takes is 2.0 MB" }]);
   });
+
+  it("sends a file past it in parts, to be adopted, when that is offered", async () => {
+    const { deps, sent } = fake();
+    const large: string[] = [];
+    const big: Tree = { dirs: [], files: [{ path: [], file: file("small.txt", 1024) }, { path: [], file: file("disk.iso", 5 * 1024 * 1024) }] };
+    const done = await uploadTree(big, "root", 2 * 1024 * 1024, {
+      ...deps,
+      sendLarge: (f, folder) => {
+        large.push(`${folder}:${f.name}`);
+        return { done: Promise.resolve() };
+      },
+    });
+    expect([sent, large, done.left, done.sent.map((s) => s.name)]).toEqual([["root:small.txt"], ["root:disk.iso"], [], ["small.txt", "disk.iso"]]);
+  });
 });
