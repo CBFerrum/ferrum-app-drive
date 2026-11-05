@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.12.3** | Rebuilt with Ferrum-Frontend 00dea07: a workflow state's kept fields are read-only, its needed ones required. |
 | **0.12.2** | Rebuilt with Ferrum-Frontend daeadda: actions say what they did. |
 | **0.12.1** | Rebuilt with Ferrum-Frontend 80ff179: labels name their fields, and linked titles show their titles. |
 | **0.12.0** | Folders of any size load as you scroll; the share dialog sets a link's password, end date, limit and note under the workspace's rules and shows inherited access; several items move, copy, share, download and trash at once, by dragging or a destination picker; files and folders upload by dropping them; team folders and storage on screen; sort and filter chips, keyboard shortcuts and the bar's search. |
