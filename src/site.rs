@@ -282,11 +282,11 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
     let live = crate::docs::is_live(&d.file);
     let current = if live && p.int("version")?.is_none() { Some(crate::docs::current(k, ctx, &mut tx, &d.file).await?) } else { None };
     tx.commit().await?;
-    let data = match current {
-        Some(state) => state,
-        None => files::read(k, ctx, d.object).await?,
-    };
     if live && let Some(format) = p.str("format") {
+        let data = match current {
+            Some(state) => state,
+            None => files::read(k, ctx, d.object).await?,
+        };
         let mut tx = k.db.tenant_tx(ctx.tenant).await?;
         files::logged(&mut tx, ctx, &d).await?;
         let g = Grants::load(&mut tx, ctx).await?;
@@ -309,7 +309,12 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
     if let Some(sha) = &d.sha256 {
         headers.push(("etag".into(), format!("\"{sha}\"")));
     }
-    Ok(SiteResponse { status: 200, content_type: ctype, headers, body: data })
+    Ok(match current {
+        // A live document's state, as the document holds it now.
+        Some(state) => SiteResponse { status: 200, content_type: ctype, headers, body: state },
+        // A stored version: the server streams it from storage, whatever its size.
+        None => SiteResponse::file(200, &ctype, headers, d.object),
+    })
 }
 
 /// A live document as a page (`html`), a PDF (`pdf`), a Word file (`docx`) or its words
