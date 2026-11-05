@@ -406,11 +406,7 @@ async fn scenario() {
         "a type from its name alone: text cannot be told without its bytes"
     );
     let back = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&adopted)), &[], &[], vec![]).await.expect("its content");
-    assert_eq!(
-        back.headers.iter().find(|(h, _)| h == ferrum_kernel::STREAM_FILE_HEADER).map(|(_, v)| v.as_str()),
-        Some(stored_id.as_str()),
-        "the stored file itself"
-    );
+    assert_eq!(back.headers.iter().find(|(h, _)| h == "x-ferrum-stream-file").map(|(_, v)| v.as_str()), Some(stored_id.as_str()), "the stored file itself");
     assert_eq!(code(&adopt("again.txt", stored_id.clone(), "keep_both").await.expect_err("adopted once")), "not_found");
     let bobs = t.k.store_file(&bob.ctx, None, "b.txt", "text/plain", b"bob's").await.expect("stored");
     assert_eq!(code(&adopt("b.txt", bobs["id"].as_str().unwrap().to_string(), "keep_both").await.expect_err("not hers")), "not_found");
