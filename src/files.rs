@@ -20,20 +20,27 @@ use uuid::Uuid;
 /// Largest content handed back inline by the `download` action (agents and the generic API).
 const INLINE_DOWNLOAD: usize = 5 << 20;
 
-/// What a new version is made of.
+/// What a new version is made of: its bytes, or a file the platform stored already (an upload in
+/// parts), whose bytes stay where they are.
 pub struct Content<'a> {
     pub name: String,
     pub data: &'a [u8],
     pub content_type: &'static str,
     pub sha256: String,
+    size: i64,
 }
 
 impl<'a> Content<'a> {
     pub fn new(name: &str, data: &'a [u8]) -> Content<'a> {
-        Content { name: name.to_string(), data, content_type: content::sniff(data, name), sha256: hex::encode(Sha256::digest(data)) }
+        Content { name: name.to_string(), data, content_type: content::sniff(data, name), sha256: hex::encode(Sha256::digest(data)), size: data.len() as i64 }
+    }
+    /// A stored file's: its type from its name alone ([`content::by_name`]), its size and hash as
+    /// the platform recorded them.
+    pub fn stored(name: &str, size: i64, sha256: &str) -> Content<'static> {
+        Content { name: name.to_string(), data: &[], content_type: content::by_name(name), sha256: sha256.to_string(), size }
     }
     fn size(&self) -> i64 {
-        self.data.len() as i64
+        self.size
     }
 }
 

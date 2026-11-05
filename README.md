@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.14.0** | Files past the request limit go in parts that survive a dropped connection, and Drive adopts them. |
 | **0.13.0** | Downloads stream from storage, whatever their size, instead of being read whole first. |
 | **0.12.3** | Rebuilt with Ferrum-Frontend 00dea07: a workflow state's kept fields are read-only, its needed ones required. |
 | **0.12.2** | Rebuilt with Ferrum-Frontend daeadda: actions say what they did. |

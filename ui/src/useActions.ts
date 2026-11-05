@@ -2,7 +2,7 @@
 // upload. Each acts on a list one item after another, shows the result at once and takes it back,
 // with the server's reason, for an item the server refused; then the lists are fetched again.
 
-import { api, download, errorMessage, shell } from "@ferrum/client";
+import { api, download, errorMessage, shell, uploadInParts } from "@ferrum/client";
 import { confirmDialog, toast } from "@ferrum/kit";
 import { type Outcome, each, items as count, told } from "./bulk";
 import { type Tree, describe } from "./dropped";
@@ -117,6 +117,11 @@ export function useActions(o: {
         const made = await uploadTree(tree, to.id, o.most, {
           makeFolder: (parent, name) => act("create_folder", { parent, name }) as Promise<{ id: string }>,
           send: (file, folder, label) => shell().uploads.start({ file, url: `/api/app/drive/upload?${new URLSearchParams({ folder, name: file.name })}`, label }),
+          // Past the most a request carries: in parts that survive a dropped connection (and, chosen
+          // again after a reload, go on from where they stood), then adopted into the folder.
+          sendLarge: (file, folder) => ({
+            done: uploadInParts(file).then((stored) => api.post(`/api/app/drive/adopt?${new URLSearchParams({ folder, name: file.name, file: stored.id })}`)),
+          }),
           reason: errorMessage,
         });
         if (made.left.length) {

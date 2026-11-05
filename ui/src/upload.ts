@@ -1,7 +1,9 @@
 // Putting what was dropped or chosen into Drive: the folders first, outermost first, then each file
 // into the folder it sat in, handed to the shell, which carries on with it if the person moves to
-// another page. What cannot be uploaded is left out with the reason. Pure apart from the two things
-// it is given to do, so it is tested without a browser.
+// another page. A file past the most a request carries goes to the platform in parts that survive a
+// dropped connection, and Drive adopts it, when that is offered. What cannot be uploaded is left
+// out with the reason. Pure apart from the things it is given to do, so it is tested without a
+// browser.
 
 import { type Tree, creationOrder, keyOf } from "./dropped";
 import { sizeLabel } from "./files";
@@ -12,6 +14,8 @@ export interface UploadDeps {
   /** Hands a file to the shell for the folder. It answers when the file is taken; `done` settles
    *  when it is stored. (Not a promise of a promise: that would wait for the file to be stored.) */
   send: (file: File, folder: string, label: string) => Promise<{ done: Promise<unknown> }>;
+  /** Sends a file past `most` in parts and has Drive adopt it; without it such a file is left out. */
+  sendLarge?: (file: File, folder: string, label: string) => { done: Promise<unknown> };
   /** An error in words. */
   reason: (e: unknown) => string;
 }
@@ -49,6 +53,7 @@ export async function uploadTree(tree: Tree, to: string, most: number | null, de
     const folder = ids.get(keyOf(path));
     const label = [...path, file.name].join("/");
     if (!folder) left.push({ name: label, reason: failed.get(keyOf(path)) ?? "its folder could not be made" });
+    else if (most && file.size > most && deps.sendLarge) sent.push({ name: label, done: deps.sendLarge(file, folder, label).done });
     else if (most && file.size > most) left.push({ name: label, reason: `it is ${sizeLabel(file.size)} and the most Drive takes is ${sizeLabel(most)}` });
     else sent.push({ name: label, done: (await deps.send(file, folder, label)).done });
   }
