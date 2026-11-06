@@ -1853,6 +1853,40 @@ async fn scenario() {
         "the workspace chose to keep them"
     );
 
+    // A file past the most one request carries goes to the platform in parts that survive a
+    // dropped connection, and Drive adopts it: the caller's own, not yet anyone's, once, within the
+    // workspace's limit on a file.
+    let adopt = |name: &'static str, file: String, on: &'static str| {
+        let (t, ctx) = (&t, alice.ctx.clone());
+        async move { t.site(Some(&ctx), "POST", "/adopt", &[("name", name), ("file", file.as_str()), ("on_conflict", on)], &[], vec![]).await }
+    };
+    let stored_id = |v: Value| v["id"].as_str().unwrap().to_string();
+    let parts = t.k.store_file(&alice.ctx, None, "adopted.bin", "text/plain", &vec![b'p'; 300_000]).await.expect("stored in parts");
+    let adopted = t.json(adopt("adopted.bin", stored_id(parts.clone()), "keep_both").await.expect("adopted"));
+    assert_eq!(
+        (adopted["name"].clone(), adopted["size"].clone(), adopted["content_type"].clone()),
+        (json!("adopted.bin"), json!(300_000), json!("application/octet-stream")),
+        "a type from its name alone: text cannot be told without its bytes"
+    );
+    let path = format!("/files/{}/content", uid(&adopted));
+    let raw = t.site_raw(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content");
+    let named = raw.headers.iter().find(|(h, _)| h == ferrum_kernel::hooks::STREAM_FILE_HEADER).map(|(_, v)| v.clone());
+    assert_eq!(named, Some(stored_id(parts.clone())), "the stored file itself, streamed");
+    assert_eq!(t.site(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content").body, vec![b'p'; 300_000]);
+    assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
+    let past = stored_id(t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored"));
+    let e = adopt("big.txt", past.clone(), "keep_both").await.expect_err("past the workspace's limit");
+    assert!(code(&e) == "validation_failed" && format!("{e:?}").contains("limited to 2 MB"), "{e:?}");
+    let bobs = stored_id(t.k.store_file(&bob.ctx, None, "b.txt", "text/plain", b"bob's").await.expect("stored"));
+    assert_eq!(code(&adopt("b.txt", bobs.clone(), "keep_both").await.expect_err("not hers")), "not_found");
+    let live = stored_id(t.k.store_file(&alice.ctx, None, "n.txt", "text/plain", b"x").await.expect("stored"));
+    assert_eq!(code(&adopt("notes.fdoc", live.clone(), "keep_both").await.expect_err("a live document")), "validation_failed");
+    assert_eq!(code(&adopt("adopted.bin", live.clone(), "fail").await.expect_err("the name is taken")), "conflict");
+    // Stored files no one adopted are their uploaders' to remove.
+    for (ctx, id) in [(&alice.ctx, past), (&bob.ctx, bobs), (&alice.ctx, live)] {
+        t.k.remove_file(ctx, id.parse().unwrap()).await.expect("removed");
+    }
+
     t.consistent().await;
 }
 
