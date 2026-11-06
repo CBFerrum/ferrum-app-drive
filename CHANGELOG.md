@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1
+
+Rebuilt with Ferrum-Frontend bb60115: a record page reads an empty number or check as the server does, so an action whose condition needs one shows, and a workspace's settings open as their one record.
+
 ## 0.14.0
 
 Uploads past the most a request carries (FERRUM_DRIVE_MAX_FILE_MB, 32 MB unless set) used to be left out. Now they go to the platform in parts that survive a dropped connection (Ferrum's uploads in parts, FERRUM-OPS-006), up to the platform's 2 GiB, and Drive adopts the stored file into the folder with `POST /adopt?folder&name&file&on_conflict`.
