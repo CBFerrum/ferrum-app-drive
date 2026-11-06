@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.14.4** | Rebuilt with Ferrum-Frontend 922fcfb: action dialogs say every refusal and ask once. |
 | **0.14.3** | Rebuilt with Ferrum-Frontend a76295e: times on a person's own clock when they chose one. |
 | **0.14.2** | Times on the workspace's clock; rebuilt with Ferrum-Frontend 24c3951. |
 | **0.14.1** | Rebuilt with Ferrum-Frontend bb60115: empty numbers read as the server reads them; settings open as their record. |
