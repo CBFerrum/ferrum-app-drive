@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14.0
+
+Uploads past the most a request carries (FERRUM_DRIVE_MAX_FILE_MB, 32 MB unless set) used to be left out. Now they go to the platform in parts that survive a dropped connection (Ferrum's uploads in parts, FERRUM-OPS-006), up to the platform's 2 GiB, and Drive adopts the stored file into the folder with `POST /adopt?folder&name&file&on_conflict`.
+- Only the caller's own stored file is adopted, one that is not yet anyone's and not public, and only once.
+- Its type comes from its name alone: common media, documents and archives, else bytes, because Drive does not read it whole.
+- A live document is uploaded whole.
+- Chosen again after a reload, the same file goes on from where its upload stood.
+- The workspace's own limit on a file (`max_upload_mb`, up to 1024) now holds by itself. It is no longer capped by what one request carries, which `limits.request_bytes` now reports.
+- Files up to the request limit still go through the shell, which carries on with them across pages. Built with Ferrum-Frontend 4a3681c.
+
 ## 0.13.0
 
 Downloads stream: a file's content, or a version's, and a guest's download through a shared link, are sent by the server straight from storage, whatever their size, instead of being read whole into memory first (Ferrum's SiteResponse::file, FERRUM-OPS-006). A live document's current content is still made from the document itself.

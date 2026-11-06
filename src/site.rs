@@ -237,6 +237,42 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
                 }
             }
         }
+        // A file the caller uploaded to the platform already, in parts that survive a dropped
+        // connection (`POST /api/files/uploads` with `parts`), becomes a file in `folder`: one past
+        // the most a request may carry. Only the caller's own, not yet anyone's, and never public.
+        ("POST", ["adopt"]) => {
+            let space = tree::ensure_space(k, ctx).await?;
+            let folder = p.uuid("folder")?.unwrap_or(space.root);
+            let object = p.uuid("file")?.ok_or_else(|| Error::field("file", "is required"))?;
+            let on = OnConflict::parse(p.str("on_conflict"))?;
+            let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+            let row: Option<(i64, String)> = sqlx::query_as(
+                "select size_bytes, sha256 from file_object where tenant_id = $1 and id = $2 and created_by = $3 \
+                 and entity is null and record_id is null and not is_public",
+            )
+            .bind(ctx.tenant)
+            .bind(object)
+            .bind(ctx.user)
+            .fetch_optional(&mut *tx)
+            .await?;
+            let (size, sha256) = row.ok_or_else(|| Error::NotFound("stored file".into()))?;
+            let c = Content::stored(p.req("name")?, size, &sha256);
+            if c.content_type == crate::content::FDOC {
+                return Err(Error::field("name", "a live document is uploaded whole, not adopted"));
+            }
+            let g = Grants::load(&mut tx, ctx).await?;
+            files::check_upload(&mut tx, ctx, &g, folder, &c, on).await?;
+            tx.commit().await?;
+            let out = with_retry(|| async {
+                let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+                let g = Grants::load(&mut tx, ctx).await?;
+                let out = files::commit_upload(k, ctx, &mut tx, &g, folder, &c, object, on, p.str("comment")).await?;
+                tx.commit().await?;
+                Ok(out)
+            })
+            .await?;
+            return Ok(SiteResponse::json(201, &out));
+        }
         ("POST", ["files", file, "versions"]) => {
             let file = id(file)?;
             let check_in = p.flag("check_in");
