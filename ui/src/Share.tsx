@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, relativeTime, todayIso } from "@ferrum/client";
+import { api, errorMessage, formatMoment, relativeTime, todayIso } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, Field, Spinner, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { type Share, type Shares, groupShares, shareFor } from "./access";
@@ -27,7 +27,7 @@ import {
 } from "./linkPolicy";
 import { ROLES, itemLink, roleLabel } from "./roles";
 
-const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
+const day = (iso: string) => formatMoment(iso, { dateStyle: "medium" });
 
 /** How a link reads in a list: what it allows, what it asks for, how it has been used. */
 function facts(l: PublicLink, ended: boolean): string[] {

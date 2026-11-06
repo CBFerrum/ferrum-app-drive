@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.14.2** | Times on the workspace's clock; rebuilt with Ferrum-Frontend 24c3951. |
 | **0.14.1** | Rebuilt with Ferrum-Frontend bb60115: empty numbers read as the server reads them; settings open as their record. |
 | **0.14.0** | Files past the request limit go in parts that survive a dropped connection, and Drive adopts them. |
 | **0.13.0** | Downloads stream from storage, whatever their size, instead of being read whole first. |
