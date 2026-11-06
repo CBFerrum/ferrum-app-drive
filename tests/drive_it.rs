@@ -406,12 +406,11 @@ async fn scenario() {
         (json!("plan.txt"), json!(300_000), json!("application/octet-stream")),
         "a type from its name alone: text cannot be told without its bytes"
     );
-    let back = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&adopted)), &[], &[], vec![]).await.expect("its content");
-    assert_eq!(
-        back.headers.iter().find(|(h, _)| h == "x-ferrum-stream-file").map(|(_, v)| v.clone()),
-        Some(stored_id(parts.clone())),
-        "the stored file itself"
-    );
+    let path = format!("/files/{}/content", uid(&adopted));
+    let raw = t.site_raw(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content");
+    let named = raw.headers.iter().find(|(h, _)| h == ferrum_kernel::hooks::STREAM_FILE_HEADER).map(|(_, v)| v.clone());
+    assert_eq!(named, Some(stored_id(parts.clone())), "the stored file itself, streamed");
+    assert_eq!(t.site(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content").body, vec![b'p'; 300_000]);
     assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
     let past = t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored");
     let e = adopt("big.txt", stored_id(past), "keep_both").await.expect_err("past the workspace's limit");
