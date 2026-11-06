@@ -1874,14 +1874,18 @@ async fn scenario() {
     assert_eq!(named, Some(stored_id(parts.clone())), "the stored file itself, streamed");
     assert_eq!(t.site(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content").body, vec![b'p'; 300_000]);
     assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
-    let past = t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored");
-    let e = adopt("big.txt", stored_id(past), "keep_both").await.expect_err("past the workspace's limit");
+    let past = stored_id(t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored"));
+    let e = adopt("big.txt", past.clone(), "keep_both").await.expect_err("past the workspace's limit");
     assert!(code(&e) == "validation_failed" && format!("{e:?}").contains("limited to 2 MB"), "{e:?}");
-    let bobs = t.k.store_file(&bob.ctx, None, "b.txt", "text/plain", b"bob's").await.expect("stored");
-    assert_eq!(code(&adopt("b.txt", stored_id(bobs), "keep_both").await.expect_err("not hers")), "not_found");
-    let live = t.k.store_file(&alice.ctx, None, "n.txt", "text/plain", b"x").await.expect("stored");
-    assert_eq!(code(&adopt("notes.fdoc", stored_id(live.clone()), "keep_both").await.expect_err("a live document")), "validation_failed");
-    assert_eq!(code(&adopt("adopted.bin", stored_id(live), "fail").await.expect_err("the name is taken")), "conflict");
+    let bobs = stored_id(t.k.store_file(&bob.ctx, None, "b.txt", "text/plain", b"bob's").await.expect("stored"));
+    assert_eq!(code(&adopt("b.txt", bobs.clone(), "keep_both").await.expect_err("not hers")), "not_found");
+    let live = stored_id(t.k.store_file(&alice.ctx, None, "n.txt", "text/plain", b"x").await.expect("stored"));
+    assert_eq!(code(&adopt("notes.fdoc", live.clone(), "keep_both").await.expect_err("a live document")), "validation_failed");
+    assert_eq!(code(&adopt("adopted.bin", live.clone(), "fail").await.expect_err("the name is taken")), "conflict");
+    // Stored files no one adopted are their uploaders' to remove.
+    for (ctx, id) in [(&alice.ctx, past), (&bob.ctx, bobs), (&alice.ctx, live)] {
+        t.k.remove_file(ctx, id.parse().unwrap()).await.expect("removed");
+    }
 
     t.consistent().await;
 }
