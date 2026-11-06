@@ -9,7 +9,7 @@ export interface Usage {
   teams: { id: string; name: string; quota_bytes: number | null; used_bytes: number; permission: string }[];
   /** Whether the person administers Drive: makes team folders and sets their quotas. */
   admin: boolean;
-  limits: { max_upload_bytes: number; trash_days: number };
+  limits: { max_upload_bytes: number; request_bytes?: number; trash_days: number };
 }
 
 export interface Space {

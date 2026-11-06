@@ -14,7 +14,9 @@ export interface UploadDeps {
   /** Hands a file to the shell for the folder. It answers when the file is taken; `done` settles
    *  when it is stored. (Not a promise of a promise: that would wait for the file to be stored.) */
   send: (file: File, folder: string, label: string) => Promise<{ done: Promise<unknown> }>;
-  /** Sends a file past `most` in parts and has Drive adopt it; without it such a file is left out. */
+  /** The most one upload request carries: a file past it goes through `sendLarge`, or is left out. */
+  carries?: number | null;
+  /** Sends a file in parts and has Drive adopt it, for one past `carries`. */
   sendLarge?: (file: File, folder: string, label: string) => { done: Promise<unknown> };
   /** An error in words. */
   reason: (e: unknown) => string;
@@ -53,8 +55,9 @@ export async function uploadTree(tree: Tree, to: string, most: number | null, de
     const folder = ids.get(keyOf(path));
     const label = [...path, file.name].join("/");
     if (!folder) left.push({ name: label, reason: failed.get(keyOf(path)) ?? "its folder could not be made" });
-    else if (most && file.size > most && deps.sendLarge) sent.push({ name: label, done: deps.sendLarge(file, folder, label).done });
     else if (most && file.size > most) left.push({ name: label, reason: `it is ${sizeLabel(file.size)} and the most Drive takes is ${sizeLabel(most)}` });
+    else if (deps.carries && file.size > deps.carries && deps.sendLarge) sent.push({ name: label, done: deps.sendLarge(file, folder, label).done });
+    else if (deps.carries && file.size > deps.carries) left.push({ name: label, reason: `it is ${sizeLabel(file.size)} and one upload carries at most ${sizeLabel(deps.carries)}` });
     else sent.push({ name: label, done: (await deps.send(file, folder, label)).done });
   }
   return { sent, left, folders: ids.size - 1 };
