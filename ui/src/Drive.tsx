@@ -206,7 +206,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       these.forEach((i) => left.delete(i));
       return left;
     });
-  const actions = useActions({ space: space.data?.id, hide, show, after: refresh, most: usage.data?.limits.max_upload_bytes ?? null });
+  const actions = useActions({ space: space.data?.id, hide, show, after: refresh, most: usage.data?.limits.max_upload_bytes ?? null, carries: usage.data?.limits.request_bytes ?? null });
 
   // Finished anywhere (this page, another tab, an earlier page): the lists show it.
   useEffect(() => shell().uploads.on("done", (u) => void (u.app === "drive" && qc.invalidateQueries({ queryKey: ["drive"] }))), [qc]);

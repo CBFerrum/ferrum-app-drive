@@ -391,28 +391,36 @@ async fn scenario() {
     let e = t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "big.txt")], &[], big.clone()).await.expect_err("over the upload limit");
     assert_eq!(code(&e), "validation_failed");
     assert_eq!(store.0.lock().unwrap().len(), objects_before, "a refused upload never reaches storage");
-    // Past that limit a file goes to the platform in parts that survive a dropped connection, and
-    // Drive adopts it: the caller's own, not yet anyone's, once.
-    let stored = t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored in parts");
-    let stored_id = stored["id"].as_str().unwrap().to_string();
+    // A file past the most one request carries goes to the platform in parts that survive a
+    // dropped connection, and Drive adopts it: the caller's own, not yet anyone's, once, within the
+    // workspace's limit on a file.
     let adopt = |name: &'static str, file: String, on: &'static str| {
         let (t, ctx) = (&t, alice.ctx.clone());
         async move { t.site(Some(&ctx), "POST", "/adopt", &[("name", name), ("file", file.as_str()), ("on_conflict", on)], &[], vec![]).await }
     };
-    let adopted = t.json(adopt("big.txt", stored_id.clone(), "keep_both").await.expect("adopted"));
+    let stored_id = |v: Value| v["id"].as_str().unwrap().to_string();
+    let parts = t.k.store_file(&alice.ctx, None, "plan.txt", "text/plain", &vec![b'p'; 300_000]).await.expect("stored in parts");
+    let adopted = t.json(adopt("plan.txt", stored_id(parts.clone()), "keep_both").await.expect("adopted"));
     assert_eq!(
         (adopted["name"].clone(), adopted["size"].clone(), adopted["content_type"].clone()),
-        (json!("big.txt"), json!(big.len()), json!("application/octet-stream")),
+        (json!("plan.txt"), json!(300_000), json!("application/octet-stream")),
         "a type from its name alone: text cannot be told without its bytes"
     );
     let back = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&adopted)), &[], &[], vec![]).await.expect("its content");
-    assert_eq!(back.headers.iter().find(|(h, _)| h == "x-ferrum-stream-file").map(|(_, v)| v.as_str()), Some(stored_id.as_str()), "the stored file itself");
-    assert_eq!(code(&adopt("again.txt", stored_id.clone(), "keep_both").await.expect_err("adopted once")), "not_found");
+    assert_eq!(
+        back.headers.iter().find(|(h, _)| h == "x-ferrum-stream-file").map(|(_, v)| v.clone()),
+        Some(stored_id(parts.clone())),
+        "the stored file itself"
+    );
+    assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
+    let past = t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored");
+    let e = adopt("big.txt", stored_id(past), "keep_both").await.expect_err("past the workspace's limit");
+    assert!(code(&e) == "validation_failed" && format!("{e:?}").contains("limited to 2 MB"), "{e:?}");
     let bobs = t.k.store_file(&bob.ctx, None, "b.txt", "text/plain", b"bob's").await.expect("stored");
-    assert_eq!(code(&adopt("b.txt", bobs["id"].as_str().unwrap().to_string(), "keep_both").await.expect_err("not hers")), "not_found");
+    assert_eq!(code(&adopt("b.txt", stored_id(bobs), "keep_both").await.expect_err("not hers")), "not_found");
     let live = t.k.store_file(&alice.ctx, None, "n.txt", "text/plain", b"x").await.expect("stored");
-    assert_eq!(code(&adopt("notes.fdoc", live["id"].as_str().unwrap().to_string(), "keep_both").await.expect_err("a live document")), "validation_failed");
-    assert_eq!(code(&adopt("big.txt", live["id"].as_str().unwrap().to_string(), "fail").await.expect_err("the name is taken")), "conflict");
+    assert_eq!(code(&adopt("notes.fdoc", stored_id(live.clone()), "keep_both").await.expect_err("a live document")), "validation_failed");
+    assert_eq!(code(&adopt("plan.txt", stored_id(live), "fail").await.expect_err("the name is taken")), "conflict");
     // Raw-body uploads and downloads through the Site, with safe headers.
     let photo = t.json(t.site(Some(&alice.ctx), "POST", "/upload", &[("name", "photo.jpg")], &[], b"\xff\xd8\xff\xe0 a jpeg".to_vec()).await.unwrap());
     let r = t.site(Some(&alice.ctx), "GET", &format!("/files/{}/content", uid(&photo)), &[("inline", "1")], &[], vec![]).await.unwrap();

@@ -579,7 +579,8 @@ async fn usage(tx: &mut Tx, ctx: &Ctx, g: &Grants, space: &Space) -> Out {
         // Whether the caller administers Drive (makes team folders, sets their quotas), and the
         // limits screens tell people about before they run into them.
         "admin": g.admin,
-        "limits": {"max_upload_bytes": s.max_upload_bytes, "trash_days": s.trash_days},
+        // `request_bytes`: the most one upload request carries; a file past it goes in parts.
+        "limits": {"max_upload_bytes": s.max_upload_bytes, "request_bytes": crate::site::max_file_bytes(), "trash_days": s.trash_days},
     }))
 }
 

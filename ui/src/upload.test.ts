@@ -68,17 +68,22 @@ describe("uploading what was dropped", () => {
     expect(done.left).toEqual([{ name: "disk.iso", reason: "it is 5.0 MB and the most Drive takes is 2.0 MB" }]);
   });
 
-  it("sends a file past it in parts, to be adopted, when that is offered", async () => {
+  it("sends a file past what one request carries in parts, to be adopted, within the largest Drive takes", async () => {
     const { deps, sent } = fake();
     const large: string[] = [];
-    const big: Tree = { dirs: [], files: [{ path: [], file: file("small.txt", 1024) }, { path: [], file: file("disk.iso", 5 * 1024 * 1024) }] };
-    const done = await uploadTree(big, "root", 2 * 1024 * 1024, {
-      ...deps,
-      sendLarge: (f, folder) => {
-        large.push(`${folder}:${f.name}`);
-        return { done: Promise.resolve() };
-      },
-    });
-    expect([sent, large, done.left, done.sent.map((s) => s.name)]).toEqual([["root:small.txt"], ["root:disk.iso"], [], ["small.txt", "disk.iso"]]);
+    const big: Tree = {
+      dirs: [],
+      files: [{ path: [], file: file("small.txt", 1024) }, { path: [], file: file("video.mp4", 5 * 1024 * 1024) }, { path: [], file: file("disk.iso", 50 * 1024 * 1024) }],
+    };
+    const sendLarge = (f: File, folder: string) => {
+      large.push(`${folder}:${f.name}`);
+      return { done: Promise.resolve() };
+    };
+    const done = await uploadTree(big, "root", 10 * 1024 * 1024, { ...deps, carries: 2 * 1024 * 1024, sendLarge });
+    expect([sent, large, done.sent.map((s) => s.name)]).toEqual([["root:small.txt"], ["root:video.mp4"], ["small.txt", "video.mp4"]]);
+    expect(done.left).toEqual([{ name: "disk.iso", reason: "it is 50 MB and the most Drive takes is 10 MB" }]);
+    // Without parts on offer, such a file is left out before any bytes are sent.
+    const none = await uploadTree({ dirs: [], files: [{ path: [], file: file("video.mp4", 5 * 1024 * 1024) }] }, "root", 10 * 1024 * 1024, { ...deps, carries: 2 * 1024 * 1024 });
+    expect(none.left).toEqual([{ name: "video.mp4", reason: "it is 5.0 MB and one upload carries at most 2.0 MB" }]);
   });
 });
