@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, formatMoment, relativeTime, todayIso, t } from "@ferrum/client";
+import { api, errorMessage, formatMoment, relativeTime, todayIso, t, isolate } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, Field, Spinner, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { type Share, type Shares, groupShares, shareFor } from "./access";
@@ -83,9 +83,9 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
   const copy = async (text: string, what: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      toast(`${what} copied`);
+      toast(t("{what} copied", { what }));
     } catch {
-      toast(`Copy this ${what.toLowerCase()}: ${text}`);
+      toast(t("Copy this {what}: {text}", { what: what.toLowerCase(), text }));
     }
   };
   const run = async (key: string, work: () => Promise<unknown>) => {
@@ -105,8 +105,8 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
     if (!typed || guestNote?.stop) return;
     void run("add", async () => {
       const done = (await act("share", { item: item.id, email: typed, permission, expires_at: until || undefined })) as { guest?: boolean; mailed?: boolean; page?: string | null };
-      if (!done.guest) toast(`Shared with ${typed} as ${roleLabel(permission)}`);
-      else if (done.mailed) toast(`${typed} is outside the workspace: a link was sent to them`);
+      if (!done.guest) toast(t("Shared with {typed} as {permission}", { typed, permission: roleLabel(permission) }));
+      else if (done.mailed) toast(t("{typed} is outside the workspace: a link was sent to them", { typed }));
       // A guest's link comes whole, on the server's public address.
       else if (done.page) await copy(done.page, "Their link");
       setEmail("");
@@ -117,17 +117,17 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
   const change = (s: Share, next: string) =>
     run(`role-${s.id}`, async () => {
       await act("share", { item: item.id, ...(s.email ? { email: s.email } : { role: s.role }), permission: next, expires_at: s.expires_at || undefined });
-      toast(`${shareFor(s)} is now ${roleLabel(next)}`);
+      toast(t("{s} is now {next}", { s: shareFor(s), next: roleLabel(next) }));
     });
   const remove = (s: Share) =>
     run(`share-${s.id}`, async () => {
       await act("unshare", { item: item.id, share: s.id });
-      toast(`${shareFor(s)} no longer has access`);
+      toast(t("{s} no longer has access", { s: shareFor(s) }));
     });
   const revoke = (l: PublicLink) =>
     run(`link-${l.id}`, async () => {
       await act("revoke_link", { item: item.id, link: l.id });
-      toast(l.email ? `${l.email} no longer has access` : "The link no longer works");
+      toast(l.email ? t("{email} no longer has access", { email: l.email }) : t("The link no longer works"));
     });
   const publish = (e: FormEvent) => {
     e.preventDefault();
@@ -153,29 +153,29 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
     return (
       <li key={s.id} className="share-row">
         <span className="share-who">
-          <strong>{who}</strong>
+          <strong>{isolate(who)}</strong>
           {(s.email && who !== s.email) || s.expires_at ? (
             <span className="faint">
               {s.email && who !== s.email ? s.email : ""}
-              {s.expires_at ? `${s.email && who !== s.email ? " · " : ""}until ${day(s.expires_at)}` : ""}
+              {s.expires_at ? t("{value}until {value2}", { value: s.email && who !== s.email ? " · " : "", value2: day(s.expires_at) }) : ""}
             </span>
           ) : null}
         </span>
         {editable ? (
           <>
-            <select className="input share-role" value={s.permission} disabled={busy === `role-${s.id}`} aria-label={`Role of ${who}`} onChange={(e) => void change(s, e.target.value)}>
+            <select className="input share-role" value={s.permission} disabled={busy === `role-${s.id}`} aria-label={t("Role of {who}", { who })} onChange={(e) => void change(s, e.target.value)}>
               {ROLES.map((r) => (
                 <option key={r.permission} value={r.permission}>
-                  {r.label}
+                  {isolate(r.label)}
                 </option>
               ))}
             </select>
-            <Button size="sm" variant="ghost" aria-label={`Remove ${who}`} loading={busy === `share-${s.id}`} onClick={() => void remove(s)}>
+            <Button size="sm" variant="ghost" aria-label={t("Remove {who}", { who })} loading={busy === `share-${s.id}`} onClick={() => void remove(s)}>
               {t("Remove")}
             </Button>
           </>
         ) : (
-          <Badge tone="blue">{roleLabel(s.permission)}</Badge>
+          <Badge tone="blue">{isolate(roleLabel(s.permission))}</Badge>
         )}
       </li>
     );
@@ -185,7 +185,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
     <Dialog
       open
       wide
-      title={`Share “${shownName(item.name)}”`}
+      title={t("Share “{value}”", { value: shownName(item.name) })}
       onClose={onClose}
       footer={
         <>
@@ -219,7 +219,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
               <datalist id={`${formId}-people-list`}>
                 {people.map((p) => (
                   <option key={p.id} value={p.email}>
-                    {p.full_name}
+                    {isolate(p.full_name)}
                   </option>
                 ))}
               </datalist>
@@ -228,7 +228,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
               <select id={`${formId}-role`} className="input" value={permission} onChange={(e) => setPermission(e.target.value)}>
                 {ROLES.map((r) => (
                   <option key={r.permission} value={r.permission}>
-                    {r.label}: {r.hint}
+                    {isolate(r.label)}: {isolate(r.hint)}
                   </option>
                 ))}
               </select>
@@ -238,7 +238,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
             </Field>
             {guestNote && (
               <p className={guestNote.stop ? "share-note share-note-stop" : "share-note"} role="status">
-                {guestNote.text}
+                {isolate(guestNote.text)}
               </p>
             )}
             <Button type="submit" variant="primary" loading={busy === "add"} disabled={!typed || !!guestNote?.stop}>
@@ -250,7 +250,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
           {shares.isLoading ? (
             <Spinner label={t("Loading who has access")} />
           ) : shares.error ? (
-            <p className="muted">{errorMessage(shares.error)}</p>
+            <p className="muted">{isolate(errorMessage(shares.error))}</p>
           ) : (
             <>
               <ul className="share-list">
@@ -258,7 +258,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   <li className="share-row">
                     <span className="share-who">
                       <strong>{nameOf(current.owner) || current.owner}</strong>
-                      {nameOf(current.owner) && <span className="faint">{current.owner}</span>}
+                      {nameOf(current.owner) && <span className="faint">{isolate(current.owner)}</span>}
                     </span>
                     <Badge>{t("Owner")}</Badge>
                   </li>
@@ -267,7 +267,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   <li className="share-row">
                     <span className="share-who">
                       <strong>{t("Team folder “{name}”", { name: current.team.name })}</strong>
-                      <span className="faint">{current.team.members.length} {current.team.members.length === 1 ? "member" : "members"}</span>
+                      <span className="faint">{current.team.members.length} {current.team.members.length === 1 ? t("member") : t("members")}</span>
                     </span>
                     <Badge>{t("Team")}</Badge>
                   </li>
@@ -276,11 +276,11 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 {guests.map((l) => (
                   <li key={l.id} className="share-row">
                     <span className="share-who">
-                      <strong>{l.email}</strong>
-                      <span className="faint">guest{l.expires_at ? ` · until ${day(l.expires_at)}` : ""}</span>
+                      <strong>{isolate(l.email ?? "")}</strong>
+                      <span className="faint">{t("guest")}{l.expires_at ? t(" · until {value}", { value: day(l.expires_at) }) : ""}</span>
                     </span>
                     <Badge tone="amber">{t("Guest")}</Badge>
-                    <Button size="sm" variant="ghost" aria-label={`Remove ${l.email}`} loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
+                    <Button size="sm" variant="ghost" aria-label={t("Remove {email}", { email: String(l.email) })} loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
                       {t("Remove")}
                     </Button>
                   </li>
@@ -291,7 +291,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 <div key={g.folder} className="share-inherited">
                   <div className="share-inherited-head">
                     <span>
-                      {t("Comes down from the folder")} <strong>“{g.name}”</strong>
+                      {t("Comes down from the folder")} <strong>“{isolate(g.name)}”</strong>
                     </span>
                     {onOpenFolder && (
                       <Button size="sm" variant="ghost" onClick={() => onOpenFolder(g.folder)}>
@@ -313,13 +313,13 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
           {links.isLoading ? (
             <Spinner label={t("Loading links")} />
           ) : links.error ? (
-            <p className="muted">{errorMessage(links.error)}</p>
+            <p className="muted">{isolate(errorMessage(links.error))}</p>
           ) : !policy.allow_public_links ? (
             <p className="muted">{t("Public links are turned off for this workspace.")}</p>
           ) : (
             <>
               <p className="faint">{t("Anyone with a link can open this without signing in.")}</p>
-              {rules(policy) && <Alert tone="info">{rules(policy)}</Alert>}
+              {rules(policy) && <Alert tone="info">{isolate(rules(policy) ?? "")}</Alert>}
               {made && (
                 <div className="share-made" role="status">
                   <strong>{t("Your link is ready")}</strong>
@@ -331,7 +331,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   </div>
                   <p className="faint">
                     {t("It is copied. Drive cannot show it again once you close this.")}
-                    {made.password ? " Send the password separately." : ""}
+                    {made.password ? t(" Send the password separately.") : ""}
                   </p>
                 </div>
               )}
@@ -347,7 +347,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   htmlFor={`${formId}-ends`}
                   required={!!latest}
                   error={errors.expires}
-                  hint={latest ? `Required: at most ${policy.max_link_days} ${policy.max_link_days === 1 ? "day" : "days"}` : "Optional"}
+                  hint={latest ? t("Required: at most {max_link_days} {value}", { max_link_days: policy.max_link_days, value: policy.max_link_days === 1 ? "day" : "days" }) : t("Optional")}
                 >
                   <input id={`${formId}-ends`} className="input" type="date" min={today} max={latest ?? undefined} value={form.expires} onChange={(e) => edit({ expires: e.target.value })} />
                 </Field>
@@ -356,7 +356,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   htmlFor={`${formId}-password`}
                   required={policy.link_password_required}
                   error={errors.password}
-                  hint={policy.link_password_required ? "Required: at least 8 characters" : "Optional: at least 8 characters"}
+                  hint={policy.link_password_required ? t("Required: at least 8 characters") : t("Optional: at least 8 characters")}
                 >
                   <div className="share-copy">
                     <input
@@ -376,14 +376,14 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                       {t("Make one")}
                     </Button>
                     <Button aria-pressed={show} onClick={() => setShow(!show)}>
-                      {show ? "Hide" : "Show"}
+                      {show ? t("Hide") : t("Show")}
                     </Button>
                   </div>
                 </Field>
                 <Field label={t("Limit on uses")} htmlFor={`${formId}-limit`} error={errors.limit} hint={t("Optional: it stops working after this many downloads or views")}>
                   <input id={`${formId}-limit`} className="input" inputMode="numeric" value={form.limit} onChange={(e) => edit({ limit: e.target.value })} />
                 </Field>
-                <Field label={t("Note")} htmlFor={`${formId}-note`} error={errors.note} hint={`Optional: shown to people who open the link (${form.note.length} of ${NOTE_MAX})`}>
+                <Field label={t("Note")} htmlFor={`${formId}-note`} error={errors.note} hint={t("Optional: shown to people who open the link ({length} of {NOTE_MAX})", { length: form.note.length, NOTE_MAX })}>
                   <textarea id={`${formId}-note`} className="textarea" rows={2} maxLength={NOTE_MAX + 40} value={form.note} onChange={(e) => edit({ note: e.target.value })} />
                 </Field>
                 <Button type="submit" variant="primary" loading={busy === "publish"}>
@@ -401,11 +401,11 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                         <li key={l.id} className="share-link">
                           <div className="share-who">
                             <span className="share-link-head">
-                              <strong>{l.access === "Download" ? "View and download" : "View"}</strong>
-                              <Badge tone={state === "active" ? "green" : "neutral"}>{state === "active" ? "Working" : state === "ended" ? "Ended" : "Used up"}</Badge>
+                              <strong>{l.access === "Download" ? t("View and download") : t("View")}</strong>
+                              <Badge tone={state === "active" ? "green" : "neutral"}>{state === "active" ? t("Working") : state === "ended" ? t("Ended") : t("Used up")}</Badge>
                             </span>
-                            <span className="faint">{facts(l, state === "ended").join(" · ")}</span>
-                            {l.note && <span className="share-link-note">“{l.note}”</span>}
+                            <span className="faint">{isolate(facts(l, state === "ended").join(" · "))}</span>
+                            {l.note && <span className="share-link-note">“{isolate(l.note)}”</span>}
                           </div>
                           <Button size="sm" variant="ghost" loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
                             {t("Turn off")}

@@ -10,7 +10,7 @@ import { useDropTarget } from "./dropping";
 import { type View, VIEWS } from "./listing";
 import { Meter } from "./Meter";
 import { type Usage, leftLabel, spaceLabel, toneOf } from "./usage";
-import { t as tr } from "@ferrum/client";
+import { t as tr, isolate } from "@ferrum/client";
 
 const ICONS: Record<View, LucideIcon> = { mine: HardDrive, shared: Users, recent: Clock, starred: Star, trash: Trash2 };
 
@@ -64,7 +64,7 @@ export function Rail({
             <li key={v.id}>
               <Entry to={v.id === "mine" ? "/drive" : `/drive?view=${v.id}`} current={place === v.id} drop={v.id === "mine" && root ? { id: root, name: "My files", permission: "Manage" } : undefined} onPick={onPick}>
                 <Icon aria-hidden size={16} />
-                <span>{v.label}</span>
+                <span>{isolate(v.label)}</span>
               </Entry>
             </li>
           );
@@ -86,12 +86,12 @@ export function Rail({
                 <Entry to={`/drive/${t.id}`} current={typeof place === "object" && place?.team === t.id} drop={{ id: t.id, name: t.name, permission: t.permission }} onPick={onPick}>
                   <Folder aria-hidden size={16} />
                   <span className="drive-team-name">
-                    {t.name}
-                    <Meter space={{ used: t.used_bytes, quota: t.quota_bytes }} label={`Space used by ${t.name}`} thin />
+                    {isolate(t.name)}
+                    <Meter space={{ used: t.used_bytes, quota: t.quota_bytes }} label={tr("Space used by {name}", { name: t.name })} thin />
                   </span>
                 </Entry>
                 {allows(t.permission, "Manage") && (
-                  <button type="button" className="drive-rail-add" onClick={() => onManage(t)} aria-label={`Members and space of ${t.name}`} title={tr("Members and space")}>
+                  <button type="button" className="drive-rail-add" onClick={() => onManage(t)} aria-label={tr("Members and space of {name}", { name: t.name })} title={tr("Members and space")}>
                     <Settings2 aria-hidden size={14} />
                   </button>
                 )}
@@ -105,12 +105,12 @@ export function Rail({
           <>
             <div className="drive-storage-head">
               <span>{tr("Your storage")}</span>
-              <span className="faint">{spaceLabel(mine)}</span>
+              <span className="faint">{isolate(spaceLabel(mine))}</span>
             </div>
             <Meter space={mine} label={tr("Your storage")} />
             {tone !== "ok" && (
               <p className="drive-storage-note" data-tone={tone}>
-                {leftLabel(mine)}{tr(". Empty the trash, or ask an administrator for more.")}
+                {isolate(leftLabel(mine) ?? "")}{tr(". Empty the trash, or ask an administrator for more.")}
               </p>
             )}
           </>

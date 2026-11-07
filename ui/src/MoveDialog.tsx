@@ -5,7 +5,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight, Folder, HardDrive } from "lucide-react";
 import { useState } from "react";
-import { api, errorMessage, t as tr } from "@ferrum/client";
+import { api, errorMessage, t as tr, isolate } from "@ferrum/client";
 import { Button, Dialog, Spinner } from "@ferrum/kit";
 import { items as count } from "./bulk";
 import { type Crumb, type Item, allows, shownName } from "./files";
@@ -58,9 +58,9 @@ export function MoveDialog({
   const first = list.data?.pages[0];
   const folders = (list.data?.pages ?? []).flatMap((p) => p.items).filter((i) => i.kind === "folder" && !moving.has(i.id));
   const here = first?.folder;
-  const name = (c: Crumb) => (c.id === root ? "My files" : c.name);
+  const name = (c: Crumb) => (c.id === root ? tr("My files") : c.name);
   const verb = copy ? "Copy" : "Move";
-  const title = items.length === 1 ? `${verb} “${shownName(items[0].name)}” to…` : `${verb} ${count(items.length)} to…`;
+  const title = items.length === 1 ? tr("{verb} “{value}” to…", { verb, value: shownName(items[0].name) }) : tr("{verb} {value} to…", { verb, value: count(items.length) });
   // The reasons the button waits, in words.
   const why = !at
     ? "Open a folder to choose it."
@@ -75,7 +75,7 @@ export function MoveDialog({
     <li key={id}>
       <button type="button" className="drive-pick-item drive-dest" onClick={() => setAt(id)}>
         {icon === "drive" ? <HardDrive aria-hidden size={18} className="drive-glyph" /> : <Folder aria-hidden size={18} className="drive-glyph drive-glyph-folder" />}
-        <span className="drive-pick-name">{label}</span>
+        <span className="drive-pick-name">{isolate(label)}</span>
         <ChevronRight aria-hidden size={16} className="faint" />
       </button>
     </li>
@@ -88,11 +88,11 @@ export function MoveDialog({
       onClose={onClose}
       footer={
         <>
-          {why && <span className="faint drive-dest-why">{why}</span>}
+          {why && <span className="faint drive-dest-why">{isolate(why)}</span>}
           <span className="spacer" />
           <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button variant="primary" disabled={!at || !here || !!why} onClick={() => here && onChoose({ id: here.id, name: here.id === root ? "My files" : here.name })}>
-            {verb} here
+            {tr("{verb} here", { verb })}
           </Button>
         </>
       }
@@ -105,20 +105,20 @@ export function MoveDialog({
           <span key={c.id} className="contents">
             <ChevronRight aria-hidden size={13} className="faint" />
             <button type="button" onClick={() => setAt(c.id)} aria-current={i === all.length - 1 ? "location" : undefined}>
-              {name(c)}
+              {isolate(name(c))}
             </button>
           </span>
         ))}
       </nav>
       {!at ? (
         <ul className="drive-pick drive-dest-list" aria-label={tr("Places")}>
-          {place(root, "My files", "drive")}
+          {place(root, tr("My files"), "drive")}
           {(usage?.teams ?? []).map((t) => place(t.id, t.name, "folder"))}
         </ul>
       ) : list.isPending ? (
         <Spinner label={tr("Opening the folder")} />
       ) : list.error ? (
-        <p className="muted">{errorMessage(list.error)}</p>
+        <p className="muted">{isolate(errorMessage(list.error))}</p>
       ) : (
         <>
           {folders.length ? (

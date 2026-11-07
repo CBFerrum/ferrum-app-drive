@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ApiError, bootstrap, download, errorMessage, fetchBlob, request, t } from "@ferrum/client";
+import { ApiError, bootstrap, download, errorMessage, fetchBlob, request, t, isolate } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, EmptyState, Spinner, confirmDialog, toast } from "@ferrum/kit";
 import { useEditors } from "./editors";
 import { editable } from "./files";
@@ -171,7 +171,7 @@ export function BrowserEditPage() {
       // inside them can hand back other files too.
       if (name.toLowerCase() !== s.name.toLowerCase()) {
         const made = await saveCopy(name, bytes);
-        toast(`Saved ${made.name} next to ${s.name}`);
+        toast(t("Saved {name} next to {name2}", { name: made.name, name2: s.name }));
       } else if (how !== "copy" && s.action === "edit" && s.lock && !gone) {
         const comment = `Saved in ${editor.title}${version ? ` ${version}` : ""}`;
         const saved = await request<{ version: number }>(`/api/app/drive/files/${file}/versions`, {
@@ -182,7 +182,7 @@ export function BrowserEditPage() {
         live.current.base = saved.version;
       } else {
         const made = await saveCopy(copyName(s.name), bytes);
-        toast(`Saved a copy: ${made.name}`);
+        toast(t("Saved a copy: {name}", { name: made.name }));
       }
       setUnsaved(null);
       setStatus("saved");
@@ -191,7 +191,7 @@ export function BrowserEditPage() {
       if (e instanceof ApiError && e.status === 409) setConflict({ name, bytes, message: errorMessage(e) });
       else {
         setUnsaved({ name, bytes });
-        toast(`Not saved: ${errorMessage(e)}`, "error");
+        toast(t("Not saved: {e}", { e: errorMessage(e) }), "error");
       }
     }
   };
@@ -239,7 +239,7 @@ export function BrowserEditPage() {
   };
 
   const leave = async () => {
-    if (unsafe && !(await confirmDialog({ title: "Leave without saving?", message: "Changes not saved to Drive will be lost.", confirmLabel: "Leave", danger: true }))) return;
+    if (unsafe && !(await confirmDialog({ title: t("Leave without saving?"), message: t("Changes not saved to Drive will be lost."), confirmLabel: t("Leave"), danger: true }))) return;
     navigate(-1);
   };
 
@@ -253,7 +253,7 @@ export function BrowserEditPage() {
   }
   if (error || failure) {
     return (
-      <EmptyState title={error ? "This file cannot be opened here" : "The editor could not start"} icon="file">
+      <EmptyState title={error ? t("This file cannot be opened here") : t("The editor could not start")} icon="file">
         <p className="muted">{error ?? failure}</p>
         <div className="row" style={{ gap: 8, justifyContent: "center" }}>
           <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
@@ -275,15 +275,15 @@ export function BrowserEditPage() {
         <Button size="sm" icon="left" onClick={() => void leave()}>
           {t("Back")}
         </Button>
-        <strong>{session.name}</strong>
+        <strong>{isolate(session.name)}</strong>
         {!editing && <Badge>{t("Read only")}</Badge>}
-        {others.length > 0 && <Badge tone="green">{presenceLabel(others)}</Badge>}
+        {others.length > 0 && <Badge tone="green">{isolate(presenceLabel(others))}</Badge>}
         {status === "starting" && <Badge>{t("Starting")}</Badge>}
         {status === "saving" && <Badge tone="blue">{t("Saving")}</Badge>}
         {status === "unsaved" && <Badge tone="red">{t("Not saved")}</Badge>}
         {status !== "saving" && status !== "unsaved" && dirty && <Badge tone="amber">{t("Unsaved changes")}</Badge>}
         {status === "saved" && !dirty && <Badge tone="green">{t("Saved")}</Badge>}
-        <span className="faint">{editing ? "Ctrl+S or ⌘S saves a new version in Drive." : "Ctrl+S or ⌘S saves a copy in Drive."}</span>
+        <span className="faint">{editing ? t("Ctrl+S or ⌘S saves a new version in Drive.") : t("Ctrl+S or ⌘S saves a copy in Drive.")}</span>
         {unsaved && (
           <Button size="sm" onClick={() => void save(unsaved.name, unsaved.bytes)}>
             {t("Try again")}
@@ -306,14 +306,14 @@ export function BrowserEditPage() {
             ) : undefined
           }
         >
-          {readOnlyReason(session, me)}
+          {isolate(readOnlyReason(session, me))}
         </Alert>
       )}
       {lost && <Alert tone="warning">{t("Your editing session ended: {lost} Saving now makes a copy.", { lost })}</Alert>}
       <iframe
         ref={frame}
         src={`${session.url}?${new URLSearchParams({ program: editor.program })}`}
-        title={`${session.name} in ${editor.title}`}
+        title={t("{name} in {title}", { name: session.name, title: editor.title })}
         className="editor-frame"
         sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-popups-to-escape-sandbox"
         allow="clipboard-read; clipboard-write; fullscreen"
@@ -336,7 +336,7 @@ export function BrowserEditPage() {
             </>
           }
         >
-          <p>{conflict.message}</p>
+          <p>{isolate(conflict.message)}</p>
           <p className="muted">{t("A copy keeps your changes beside the file. Replacing keeps the other changes in the file's history.")}</p>
         </Dialog>
       )}

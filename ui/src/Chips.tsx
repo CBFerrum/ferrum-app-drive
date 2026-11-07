@@ -18,7 +18,7 @@ import {
   PopoverTrigger,
 } from "@ferrum/kit/primitives";
 import { type Order, type Query, SINCE, SORTS, type Source, TYPES, abilities, defaultSort, filtersOn, naturalOrder } from "./listing";
-import { t as tr } from "@ferrum/client";
+import { t as tr, isolate } from "@ferrum/client";
 
 /** How each sort's two directions read. */
 const WAYS: Record<string, [string, string]> = {
@@ -35,7 +35,7 @@ function Chip({ icon: Icon, label, on, ...rest }: { icon: typeof Shapes; label: 
   return (
     <button type="button" className="drive-chip" data-on={on || undefined} {...rest}>
       <Icon aria-hidden size={14} />
-      <span>{label}</span>
+      <span>{isolate(label)}</span>
       <ChevronDown aria-hidden size={13} />
     </button>
   );
@@ -63,14 +63,14 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
       {can.sorts.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Chip icon={ArrowDownUp} label={sort ? `Sort: ${SORTS.find((s) => s.id === sort)?.label}${can.direction ? (order === "desc" ? " ↓" : " ↑") : ""}` : "Sort"} on={!!q.sort} />
+            <Chip icon={ArrowDownUp} label={sort ? tr("Sort: {label}{value}", { label: String(SORTS.find((s) => s.id === sort)?.label), value: can.direction ? (order === "desc" ? " ↓" : " ↑") : "" }) : tr("Sort")} on={!!q.sort} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
             <DropdownMenuLabel>{tr("Sort by")}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sort ?? ""} onValueChange={(v) => set({ sort: v, order: null })}>
               {SORTS.filter((s) => can.sorts.includes(s.id)).map((s) => (
                 <DropdownMenuRadioItem key={s.id} value={s.id}>
-                  {s.label}
+                  {isolate(s.label)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -78,8 +78,8 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
               <>
                 <DropdownMenuSeparator />
                 <DropdownMenuRadioGroup value={order} onValueChange={(v) => set({ sort, order: v })}>
-                  <DropdownMenuRadioItem value="asc">{WAYS[sort][0]}</DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="desc">{WAYS[sort][1]}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="asc">{isolate(WAYS[sort][0])}</DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="desc">{isolate(WAYS[sort][1])}</DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </>
             )}
@@ -89,14 +89,14 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
       {can.filter && can.type && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Chip icon={Shapes} label={type ? `Type: ${type.label}` : "Type"} on={!!type} />
+            <Chip icon={Shapes} label={type ? tr("Type: {label}", { label: type.label }) : tr("Type")} on={!!type} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
             <DropdownMenuRadioGroup value={q.type ?? ""} onValueChange={(v) => set({ type: v || null })}>
               <DropdownMenuRadioItem value="">{tr("Any type")}</DropdownMenuRadioItem>
               {TYPES.map((t) => (
                 <DropdownMenuRadioItem key={t.id} value={t.id}>
-                  {t.label}
+                  {isolate(t.label)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -106,14 +106,14 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
       {can.filter && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Chip icon={Calendar} label={since ? `Modified: ${since.label}` : "Modified"} on={!!since} />
+            <Chip icon={Calendar} label={since ? tr("Modified: {label}", { label: since.label }) : tr("Modified")} on={!!since} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
             <DropdownMenuRadioGroup value={q.since ? String(q.since) : ""} onValueChange={(v) => set({ since: v || null })}>
               <DropdownMenuRadioItem value="">{tr("Any time")}</DropdownMenuRadioItem>
               {SINCE.map((s) => (
                 <DropdownMenuRadioItem key={s.days} value={String(s.days)}>
-                  {s.label}
+                  {isolate(s.label)}
                 </DropdownMenuRadioItem>
               ))}
             </DropdownMenuRadioGroup>
@@ -123,7 +123,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
       {can.filter && (
         <Popover onOpenChange={(open) => open && setOwner(q.owner ?? "")}>
           <PopoverTrigger asChild>
-            <Chip icon={User} label={q.owner ? `Owner: ${named?.full_name || q.owner}` : "Owner"} on={!!q.owner} />
+            <Chip icon={User} label={q.owner ? tr("Owner: {value}", { value: named?.full_name || q.owner }) : tr("Owner")} on={!!q.owner} />
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72">
             <form onSubmit={ask} className="grid gap-2">
@@ -134,7 +134,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
               <datalist id={`${field}-people`}>
                 {people.map((p) => (
                   <option key={p.id} value={p.email}>
-                    {p.full_name}
+                    {isolate(p.full_name)}
                   </option>
                 ))}
               </datalist>

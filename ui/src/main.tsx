@@ -7,10 +7,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, Outlet, RouterProvider, useRouteError } from "react-router";
-import { bootstrap, isPublicPage, routeBase, setTimeZone, shell, t } from "@ferrum/client";
+import { addCatalogs, bootstrap, isPublicPage, routeBase, setTimeZone, shell, t, wordsReady } from "@ferrum/client";
 import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
 import { DrivePage } from "./Drive";
 import "./styles.css";
+
+// Its own words in the page's language (src/locales), fetched as the page starts; it is drawn once they are in.
+void addCatalogs({ ar: () => import("./locales/ar.json"), hi: () => import("./locales/hi.json") });
 
 // Days (a link's last day, "today") are counted in the workspace's time zone, as the server counts them.
 setTimeZone(bootstrap()?.locale.timezone);
@@ -83,12 +86,15 @@ const router = createBrowserRouter([
   },
 ]);
 
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <Toaster />
-      <ConfirmHost />
-    </QueryClientProvider>
-  </StrictMode>,
+// Drawn once the page's words are in (its language's catalogs, fetched as the page starts).
+void wordsReady().then(() =>
+  createRoot(document.getElementById("root")!).render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        <Toaster />
+        <ConfirmHost />
+      </QueryClientProvider>
+    </StrictMode>,
+  ),
 );

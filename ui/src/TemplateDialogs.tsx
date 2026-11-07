@@ -4,7 +4,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, t as tr } from "@ferrum/client";
+import { api, errorMessage, t as tr, isolate } from "@ferrum/client";
 import { Button, Dialog, Field, Spinner, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Button as UiButton } from "@ferrum/kit/primitives";
 import { Trash2 } from "lucide-react";
@@ -12,10 +12,10 @@ import { FileGlyph } from "./FileGlyph";
 import { type Template, useTemplates } from "./templateList";
 
 const GROUPS = [
-  { id: "all", label: "All", kinds: ["docx", "xlsx", "pptx", "odt", "ods", "odp"] },
-  { id: "doc", label: "Documents", kinds: ["docx", "odt"] },
-  { id: "sheet", label: "Spreadsheets", kinds: ["xlsx", "ods"] },
-  { id: "slides", label: "Presentations", kinds: ["pptx", "odp"] },
+  { id: "all", get label() { return tr("All"); }, kinds: ["docx", "xlsx", "pptx", "odt", "ods", "odp"] },
+  { id: "doc", get label() { return tr("Documents"); }, kinds: ["docx", "odt"] },
+  { id: "sheet", get label() { return tr("Spreadsheets"); }, kinds: ["xlsx", "ods"] },
+  { id: "slides", get label() { return tr("Presentations"); }, kinds: ["pptx", "odp"] },
 ];
 
 /** The gallery: picking a template makes a file from it in `folder`. `only` keeps to one group
@@ -50,11 +50,11 @@ export function TemplateDialog({
     }
   };
   const remove = async (t: Template) => {
-    if (!(await confirmDialog({ title: `Delete the template “${t.title}”?`, message: "Nobody can start from it any more. Files made from it stay as they are.", confirmLabel: "Delete template", danger: true })))
+    if (!(await confirmDialog({ title: tr("Delete the template “{title}”?", { title: t.title }), message: tr("Nobody can start from it any more. Files made from it stay as they are."), confirmLabel: tr("Delete template"), danger: true })))
       return;
     try {
       await api.post(`/api/v1/DriveSpace/${space}/actions/delete_template`, { template: t.id });
-      toast(`The template “${t.title}” is deleted`);
+      toast(tr("The template “{title}” is deleted", { title: t.title }));
     } catch (e) {
       toast(errorMessage(e), "error");
     }
@@ -63,17 +63,17 @@ export function TemplateDialog({
   const section = (title: string, items: Template[]) =>
     items.length > 0 && (
       <section className="drive-templates-group" aria-label={title}>
-        <h3 className="drive-templates-head">{title}</h3>
+        <h3 className="drive-templates-head">{isolate(title)}</h3>
         <ul className="drive-pick drive-templates">
           {items.map((t) => (
             <li key={t.id} className="drive-template">
               <button type="button" className="drive-pick-item" disabled={!!busy} aria-busy={busy === t.id} onClick={() => void use(t)}>
                 <FileGlyph kind="file" name={`template.${t.kind}`} size={24} />
-                <span className="drive-pick-name">{t.title}</span>
+                <span className="drive-pick-name">{isolate(t.title)}</span>
                 <span className="faint drive-template-about">{[t.category, t.description].filter(Boolean).join(" · ") || t.kind.toUpperCase()}</span>
               </button>
               {!t.builtin && list.data?.manage && (
-                <UiButton variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={`Delete the template ${t.title}`} onClick={() => void remove(t)}>
+                <UiButton variant="ghost" size="icon-sm" className="text-muted-foreground" aria-label={tr("Delete the template {title}", { title: t.title })} onClick={() => void remove(t)}>
                   <Trash2 />
                 </UiButton>
               )}
@@ -88,11 +88,11 @@ export function TemplateDialog({
       {list.isPending ? (
         <Spinner label={tr("Loading templates")} />
       ) : list.error ? (
-        <p className="muted">{errorMessage(list.error)}</p>
+        <p className="muted">{isolate(errorMessage(list.error))}</p>
       ) : (
         <div className="drive-templates-body">
-          {section("Your workspace", shown.filter((t) => !t.builtin))}
-          {section("From Drive", shown.filter((t) => t.builtin))}
+          {section(tr("Your workspace"), shown.filter((t) => !t.builtin))}
+          {section(tr("From Drive"), shown.filter((t) => t.builtin))}
           {!shown.length && <p className="muted">{tr("No templates of this kind yet.")}</p>}
           {list.data?.manage && <p className="faint">{tr("To add your own, choose Save as a template in a file's menu.")}</p>}
         </div>
@@ -122,7 +122,7 @@ export function SaveTemplateDialog({ file, space, onClose }: { file: { id: strin
         description: description.trim() || undefined,
       });
       await qc.invalidateQueries({ queryKey: ["drive-templates"] });
-      toast(`“${name}” is a template: everyone can start from it with New`);
+      toast(tr("“{name}” is a template: everyone can start from it with New", { name }));
       onClose();
     } catch (err) {
       toast(errorMessage(err), "error");
@@ -132,7 +132,7 @@ export function SaveTemplateDialog({ file, space, onClose }: { file: { id: strin
   return (
     <Dialog
       open
-      title={`Save “${file.name}” as a template`}
+      title={tr("Save “{name}” as a template", { name: file.name })}
       onClose={onClose}
       footer={
         <>

@@ -3,24 +3,25 @@
 // filtering and where the page does it. Pure, so it is tested without a browser.
 
 import { type Item, shownName } from "./files";
+import { t as tr } from "@ferrum/client";
 
 /** Drive's views besides a folder of your own (`?view=`). */
 export const VIEWS = [
-  { id: "mine", label: "My files", action: "" },
-  { id: "shared", label: "Shared with me", action: "shared_with_me" },
-  { id: "recent", label: "Recent", action: "recent" },
-  { id: "starred", label: "Starred", action: "starred" },
-  { id: "trash", label: "Trash", action: "list_trash" },
+  { id: "mine", get label() { return tr("My files"); }, action: "" },
+  { id: "shared", get label() { return tr("Shared with me"); }, action: "shared_with_me" },
+  { id: "recent", get label() { return tr("Recent"); }, action: "recent" },
+  { id: "starred", get label() { return tr("Starred"); }, action: "starred" },
+  { id: "trash", get label() { return tr("Trash"); }, action: "list_trash" },
 ] as const;
 export type View = (typeof VIEWS)[number]["id"];
 
 export const viewOf = (param: string | null): View => VIEWS.find((v) => v.id === param)?.id ?? "mine";
 
 export const SORTS = [
-  { id: "name", label: "Name" },
-  { id: "modified", label: "Modified" },
-  { id: "size", label: "Size" },
-  { id: "type", label: "Type" },
+  { id: "name", get label() { return tr("Name"); } },
+  { id: "modified", get label() { return tr("Modified"); } },
+  { id: "size", get label() { return tr("Size"); } },
+  { id: "type", get label() { return tr("Type"); } },
 ] as const;
 export type SortKey = (typeof SORTS)[number]["id"];
 export type Order = "asc" | "desc";
@@ -30,25 +31,25 @@ export const naturalOrder = (sort: SortKey): Order => (sort === "name" || sort =
 
 /** What a file is, as the server tells it (`file_type`), for the Type chip. */
 export const TYPES = [
-  { id: "folder", label: "Folders" },
-  { id: "Document", label: "Documents" },
-  { id: "Spreadsheet", label: "Spreadsheets" },
-  { id: "Presentation", label: "Presentations" },
-  { id: "PDF", label: "PDFs" },
-  { id: "Image", label: "Images" },
-  { id: "Video", label: "Videos" },
-  { id: "Audio", label: "Audio" },
-  { id: "Archive", label: "Archives" },
-  { id: "Text", label: "Text files" },
-  { id: "Other", label: "Other" },
+  { id: "folder", get label() { return tr("Folders"); } },
+  { id: "Document", get label() { return tr("Documents"); } },
+  { id: "Spreadsheet", get label() { return tr("Spreadsheets"); } },
+  { id: "Presentation", get label() { return tr("Presentations"); } },
+  { id: "PDF", get label() { return tr("PDFs"); } },
+  { id: "Image", get label() { return tr("Images"); } },
+  { id: "Video", get label() { return tr("Videos"); } },
+  { id: "Audio", get label() { return tr("Audio"); } },
+  { id: "Archive", get label() { return tr("Archives"); } },
+  { id: "Text", get label() { return tr("Text files"); } },
+  { id: "Other", get label() { return tr("Other"); } },
 ] as const;
 
 /** How recently a file changed, for the Modified chip (days back, today counted). */
 export const SINCE = [
-  { days: 1, label: "Today" },
-  { days: 7, label: "Last 7 days" },
-  { days: 30, label: "Last 30 days" },
-  { days: 365, label: "Last year" },
+  { days: 1, get label() { return tr("Today"); } },
+  { days: 7, get label() { return tr("Last 7 days"); } },
+  { days: 30, get label() { return tr("Last 30 days"); } },
+  { days: 365, get label() { return tr("Last year"); } },
 ] as const;
 
 /** The sort and the filters of a page, as its address keeps them. A sort of none is the list's own
@@ -195,19 +196,19 @@ export function whereLine(i: Item, view: View, inFolder: boolean): string | null
 
 /** What an empty list says, and what to do about it. */
 export function emptyText(o: { view: View; query: string; filtered: boolean; canAdd: boolean; kind?: string; trashDays?: number }): { title: string; hint: string } {
-  if (o.query) return { title: `Nothing matches “${o.query}”`, hint: o.filtered ? "Take a filter off, or try another word." : "Try another word, or part of a name." };
-  if (o.filtered) return { title: "Nothing matches these filters", hint: "Take a filter off to see more." };
-  if (o.kind) return { title: `No ${o.kind} yet`, hint: o.canAdd ? "Make one with New, or upload one." : "The ones you can open show up here." };
+  if (o.query) return { title: tr("Nothing matches “{query}”", { query: o.query }), hint: o.filtered ? tr("Take a filter off, or try another word.") : tr("Try another word, or part of a name.") };
+  if (o.filtered) return { title: tr("Nothing matches these filters"), hint: tr("Take a filter off to see more.") };
+  if (o.kind) return { title: tr("No {kind} yet", { kind: o.kind }), hint: o.canAdd ? tr("Make one with New, or upload one.") : tr("The ones you can open show up here.") };
   switch (o.view) {
     case "shared":
-      return { title: "Nothing has been shared with you", hint: "When someone shares a file or a folder with you, it shows up here." };
+      return { title: tr("Nothing has been shared with you"), hint: tr("When someone shares a file or a folder with you, it shows up here.") };
     case "recent":
-      return { title: "No recent files", hint: "Files you upload, open or change show up here for 90 days." };
+      return { title: tr("No recent files"), hint: tr("Files you upload, open or change show up here for 90 days.") };
     case "starred":
-      return { title: "No starred items", hint: "Star a file or a folder to find it here again." };
+      return { title: tr("No starred items"), hint: tr("Star a file or a folder to find it here again.") };
     case "trash":
-      return { title: "The trash is empty", hint: `What you move to the trash stays here for ${o.trashDays ?? 30} days, and can be restored.` };
+      return { title: tr("The trash is empty"), hint: tr("What you move to the trash stays here for {value} days, and can be restored.", { value: o.trashDays ?? 30 }) };
     default:
-      return { title: "This folder is empty", hint: o.canAdd ? "Drop files here, or use Upload or New." : "Nothing has been put in it yet." };
+      return { title: tr("This folder is empty"), hint: o.canAdd ? tr("Drop files here, or use Upload or New.") : tr("Nothing has been put in it yet.") };
   }
 }

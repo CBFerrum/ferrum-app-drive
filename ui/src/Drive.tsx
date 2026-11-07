@@ -13,7 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, FileUp, FolderPlus, FolderUp, HardDrive, LayoutTemplate, Plus, Trash2, Upload } from "lucide-react";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { api, errorMessage, shell, t as tr } from "@ferrum/client";
+import { api, errorMessage, shell, t as tr, isolate } from "@ferrum/client";
 import { Button, Dialog, EmptyState, ErrorState, FamilyNav, Field, Spinner, toast, useShellTitle } from "@ferrum/kit";
 import {
   Button as UiButton,
@@ -45,18 +45,18 @@ import { useFolder, useFresh, useListing, useSpace, useUsage } from "./useDrive"
 
 /** New files: a live document always; office files open in the online or a browser editor. */
 const NEW = [
-  { kind: "fdoc", label: "Document" },
-  { kind: "docx", label: "Word document" },
-  { kind: "xlsx", label: "Spreadsheet" },
-  { kind: "pptx", label: "Presentation" },
+  { kind: "fdoc", get label() { return tr("Document"); } },
+  { kind: "docx", get label() { return tr("Word document"); } },
+  { kind: "xlsx", get label() { return tr("Spreadsheet"); } },
+  { kind: "pptx", get label() { return tr("Presentation"); } },
 ] as const;
 
 /** Drive's launcher entries for one kind of file (`/sheets/`, `/slides/`, `/pdf/`): everything of
  *  that kind the person can see, and a New button for it. */
 export const KINDS = {
-  Spreadsheet: { title: "Sheets", noun: "spreadsheets", fresh: { kind: "xlsx", label: "New spreadsheet" } },
-  Presentation: { title: "Slides", noun: "presentations", fresh: { kind: "pptx", label: "New presentation" } },
-  PDF: { title: "PDF", noun: "PDFs", fresh: null },
+  Spreadsheet: { get title() { return tr("Sheets"); }, noun: "spreadsheets", fresh: { kind: "xlsx", get label() { return tr("New spreadsheet"); } } },
+  Presentation: { get title() { return tr("Slides"); }, noun: "presentations", fresh: { kind: "pptx", get label() { return tr("New presentation"); } } },
+  PDF: { get title() { return tr("PDF"); }, noun: "PDFs", fresh: null },
 } as const;
 export type FileKind = keyof typeof KINDS;
 
@@ -64,10 +64,10 @@ export type FileKind = keyof typeof KINDS;
 function Crumb({ id, name, last }: { id: string; name: string; last: boolean }) {
   const drop = useDropTarget(last ? null : { id, name });
   return last ? (
-    <span aria-current="location">{name}</span>
+    <span aria-current="location">{isolate(name)}</span>
   ) : (
     <Link to={`/drive/${id}`} className="drive-crumb" data-over={drop.over || undefined} {...drop.props}>
-      {name}
+      {isolate(name)}
     </Link>
   );
 }
@@ -99,11 +99,11 @@ function More({ shown, total, hasMore, loading, load }: { shown: number; total: 
   return (
     <div ref={end} className="drive-more">
       <span className="faint" role="status">
-        {hasMore ? `Showing ${shownOf(shown, total)}` : shown === 1 ? "1 item" : `${shown.toLocaleString()} items`}
+        {hasMore ? tr("Showing {shown}", { shown: shownOf(shown, total) }) : shown === 1 ? tr("1 item") : tr("{shown} items", { shown: shown.toLocaleString() })}
       </span>
       {hasMore && (
         <UiButton size="sm" variant="outline" disabled={loading} onClick={load}>
-          {loading ? "Loading…" : "Show more"}
+          {loading ? tr("Loading…") : tr("Show more")}
         </UiButton>
       )}
     </div>
@@ -211,7 +211,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   // Finished anywhere (this page, another tab, an earlier page): the lists show it.
   useEffect(() => shell().uploads.on("done", (u) => void (u.app === "drive" && qc.invalidateQueries({ queryKey: ["drive"] }))), [qc]);
 
-  const title = query ? `Search: ${query}` : kind ? KINDS[kind].title : inFolder ? (id === root ? "My files" : (current?.name ?? "Drive")) : VIEWS.find((v) => v.id === view)!.label;
+  const title = query ? tr("Search: {query}", { query }) : kind ? KINDS[kind].title : inFolder ? (id === root ? tr("My files") : (current?.name ?? tr("Drive"))) : VIEWS.find((v) => v.id === view)!.label;
   useShellTitle(title);
   const canAdd = (inFolder && !!current && allows(current.permission, "Edit")) || (!!kind && !query && !!space.data);
   const targetName = !target || target === root ? "My files" : (current?.name ?? "this folder");
@@ -238,7 +238,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
     setGallery(false);
     const open = defaultEditor(editorsFor(made, editors), narrow);
     if (open) return openChoice(open, navigate);
-    toast(`Made “${made.name}”`);
+    toast(tr("Made “{name}”", { name: made.name }));
     void refresh();
     pick({ item: made.id });
   };
@@ -251,11 +251,11 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
     }
   };
   const newFolder = () =>
-    setNaming({ title: "New folder", label: "Name", initial: "", done: (name) => attempt(() => actions.act("create_folder", { parent: id, name }), `Folder “${name}” made`) });
+    setNaming({ title: tr("New folder"), label: tr("Name"), initial: "", done: (name) => attempt(() => actions.act("create_folder", { parent: id, name }), `Folder “${name}” made`) });
   const rename = (it: Item) =>
     setNaming({
-      title: `Rename “${shownName(it.name)}”`,
-      label: "New name",
+      title: tr("Rename “{value}”", { value: shownName(it.name) }),
+      label: tr("New name"),
       initial: shownName(it.name),
       // A live document stays one: its name keeps `.fdoc`, which people never see.
       done: (name) => attempt(() => actions.act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name }), "Renamed"),
@@ -495,7 +495,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
     <ListSkeleton />
   ) : !items.length ? (
     <EmptyState title={empty.title} icon={view === "trash" && !query ? "trash" : "file"}>
-      <p className="muted">{empty.hint}</p>
+      <p className="muted">{isolate(empty.hint)}</p>
       {query && (
         <Button onClick={() => navigate(kind ? location.pathname : "/drive")}>{tr("Clear the search")}</Button>
       )}
@@ -541,7 +541,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
           <FamilyNav className="mb-3" />
           <div className="page-head">
             <div className="drive-title">
-              <h1 className="page-title">{title}</h1>
+              <h1 className="page-title">{isolate(title)}</h1>
               {crumbs.length > 0 && (
                 <nav className="page-sub drive-crumbs" aria-label={tr("Folder path")}>
                   {crumbs.map((b, i) => (
@@ -563,7 +563,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                     fresh.map((n) => (
                       <span key={n.kind} className="contents">
                         <UiButton size="sm" variant="outline" onClick={() => void create(n.kind)}>
-                          <Plus /> {n.label}
+                          <Plus /> {isolate(n.label)}
                         </UiButton>
                         <UiButton size="sm" variant="outline" onClick={() => setGallery(true)}>
                           <LayoutTemplate /> {tr("From a template")}
@@ -580,7 +580,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                       <DropdownMenuContent align="start" className="min-w-52">
                         {fresh.map((n) => (
                           <DropdownMenuItem key={n.kind} onSelect={() => void create(n.kind)}>
-                            <FileGlyph kind="file" name={`new.${n.kind}`} size={16} /> {n.label}
+                            <FileGlyph kind="file" name={`new.${n.kind}`} size={16} /> {isolate(n.label)}
                           </DropdownMenuItem>
                         ))}
                         <DropdownMenuItem onSelect={() => setGallery(true)}>
@@ -675,7 +675,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
         )}
         {dropping && (
           <div className="drive-drop" aria-hidden="true" data-blocked={!canAdd || undefined}>
-            <div>{canAdd ? `Drop files or folders to upload them to “${targetName}”` : "You cannot add files here"}</div>
+            <div>{canAdd ? tr("Drop files or folders to upload them to “{targetName}”", { targetName }) : tr("You cannot add files here")}</div>
           </div>
         )}
       </div>

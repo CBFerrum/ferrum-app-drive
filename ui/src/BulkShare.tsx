@@ -3,7 +3,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, todayIso, t } from "@ferrum/client";
+import { api, errorMessage, todayIso, t, isolate } from "@ferrum/client";
 import { Button, Dialog, Field, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { each, items as count, told } from "./bulk";
@@ -33,7 +33,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
   return (
     <Dialog
       open
-      title={`Share ${count(items.length)}`}
+      title={t("Share {value}", { value: count(items.length) })}
       onClose={onClose}
       footer={
         <>
@@ -45,13 +45,13 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
       }
     >
       <form onSubmit={submit} className="grid gap-3">
-        <p className="muted share-names">{items.slice(0, 4).map((i) => shownName(i.name)).join(", ")}{items.length > 4 ? ` and ${items.length - 4} more` : ""}</p>
+        <p className="muted share-names">{isolate(items.slice(0, 4).map((i) => shownName(i.name)).join(", "))}{items.length > 4 ? t(" and {value} more", { value: items.length - 4 }) : ""}</p>
         <Field label={t("Person")} htmlFor={`${id}-email`} hint={t("Someone outside the workspace gets a link by email, as a Viewer")}>
           <input id={`${id}-email`} className="input" type="email" list={`${id}-people`} placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
           <datalist id={`${id}-people`}>
             {people.map((p) => (
               <option key={p.id} value={p.email}>
-                {p.full_name}
+                {isolate(p.full_name)}
               </option>
             ))}
           </datalist>
@@ -60,7 +60,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
           <select id={`${id}-role`} className="input" value={permission} onChange={(e) => setPermission(e.target.value)}>
             {ROLES.map((r) => (
               <option key={r.permission} value={r.permission}>
-                {r.label}: {r.hint}
+                {isolate(r.label)}: {isolate(r.hint)}
               </option>
             ))}
           </select>

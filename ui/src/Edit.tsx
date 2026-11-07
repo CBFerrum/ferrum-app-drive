@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { api, errorMessage, initials, t } from "@ferrum/client";
+import { api, errorMessage, initials, t, isolate } from "@ferrum/client";
 import { Badge, Button, EmptyState, Spinner } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import type { Shareable } from "./files";
@@ -101,7 +101,7 @@ export function EditPage() {
   if (error) {
     return (
       <EmptyState title={t("This file cannot be opened online")} icon="file">
-        <p className="muted">{error}</p>
+        <p className="muted">{isolate(error)}</p>
         <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
       </EmptyState>
     );
@@ -113,14 +113,14 @@ export function EditPage() {
         <Button size="sm" icon="left" onClick={leave}>
           {t("Back")}
         </Button>
-        <strong>{launch.name}</strong>
+        <strong>{isolate(launch.name)}</strong>
         {launch.action === "view" && <Badge>{t("Read only")}</Badge>}
         {others ? (
           others.length > 0 && (
-            <span className="editor-people" role="group" aria-label={`Also in the file: ${others.map((v) => v.name + (v.readOnly ? " (viewing)" : "")).join(", ")}`}>
+            <span className="editor-people" role="group" aria-label={t("Also in the file: {value}", { value: others.map((v) => v.name + (v.readOnly ? " (viewing)" : "")).join(", ") })}>
               {others.slice(0, 6).map((v) => (
-                <span key={v.id} className="editor-person" style={{ background: v.color, color: inkOn(v.color) }} title={v.readOnly ? `${v.name} (viewing)` : v.name} aria-hidden>
-                  {initials(v.name)}
+                <span key={v.id} className="editor-person" style={{ background: v.color, color: inkOn(v.color) }} title={v.readOnly ? t("{name} (viewing)", { name: v.name }) : v.name} aria-hidden>
+                  {isolate(initials(v.name))}
                 </span>
               ))}
               {others.length > 6 && (
@@ -131,12 +131,12 @@ export function EditPage() {
             </span>
           )
         ) : (
-          present.length > 0 && <Badge tone="green">{presenceLabel(present)}</Badge>
+          present.length > 0 && <Badge tone="green">{isolate(presenceLabel(present))}</Badge>
         )}
-        {others && elsewhere.length > 0 && <Badge tone="amber">{presenceLabel(elsewhere)} {t("in a browser editor")}</Badge>}
+        {others && elsewhere.length > 0 && <Badge tone="amber">{isolate(presenceLabel(elsewhere))} {t("in a browser editor")}</Badge>}
         {launch.action === "edit" && (
           <span className="faint" role="status">
-            {modified === true ? "Unsaved changes" : modified === false ? "All changes saved" : "Changes are saved as new versions in Drive."}
+            {modified === true ? t("Unsaved changes") : modified === false ? t("All changes saved") : t("Changes are saved as new versions in Drive.")}
           </span>
         )}
         <span className="editor-bar-end">
@@ -150,7 +150,7 @@ export function EditPage() {
         <input type="hidden" name="access_token_ttl" value={String(launch.access_token_ttl)} />
       </form>
       <div className={panel ? "editor-main editor-main-details" : "editor-main"}>
-        <iframe ref={frame} name="office-editor" title={`${launch.name} in the editor`} className="editor-frame" allow="clipboard-read; clipboard-write; fullscreen" />
+        <iframe ref={frame} name="office-editor" title={t("{name} in the editor", { name: launch.name })} className="editor-frame" allow="clipboard-read; clipboard-write; fullscreen" />
         {panel && space.data && <DetailsPanel id={file} space={space.data.id} tab={panel} inEditor onClose={() => setPanel(null)} onShare={setSharing} />}
       </div>
       {sharing && space.data && <ShareDialog item={sharing} space={space.data.id} onClose={() => setSharing(null)} />}

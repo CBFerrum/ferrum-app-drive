@@ -1,11 +1,12 @@
+import { t } from "@ferrum/client";
 // The roles Drive grants, and the addresses people open an item by.
 
 /** The roles Drive grants, with what each may do. */
 export const ROLES = [
-  { permission: "View", label: "Viewer", hint: "open and download" },
-  { permission: "Comment", label: "Commenter", hint: "also comment" },
-  { permission: "Edit", label: "Editor", hint: "also change, upload, rename and move" },
-  { permission: "Manage", label: "Manager", hint: "also share" },
+  { permission: "View", get label() { return t("Viewer"); }, get hint() { return t("open and download"); } },
+  { permission: "Comment", get label() { return t("Commenter"); }, get hint() { return t("also comment"); } },
+  { permission: "Edit", get label() { return t("Editor"); }, get hint() { return t("also change, upload, rename and move"); } },
+  { permission: "Manage", get label() { return t("Manager"); }, get hint() { return t("also share"); } },
 ] as const;
 
 export const roleLabel = (permission: string) => ROLES.find((r) => r.permission === permission)?.label ?? permission;

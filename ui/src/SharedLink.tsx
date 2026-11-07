@@ -7,7 +7,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, File, Folder, Lock } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { ApiError, errorMessage, formatDateTime, t } from "@ferrum/client";
+import { ApiError, errorMessage, formatDateTime, t, isolate } from "@ferrum/client";
 import { Button, Input, Label, Skeleton } from "@ferrum/kit/primitives";
 import { sizeLabel } from "./files";
 
@@ -154,7 +154,7 @@ function Unlock({ base, onGrant }: { base: string; onGrant: (grant: string) => v
       <Input id="link-password" type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
-          {error}
+          {isolate(error)}
         </p>
       )}
       <Button type="submit" disabled={busy || !password}>
@@ -174,14 +174,14 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
     <div className="flex shrink-0 gap-1">
       {previewable(e) && (
         <Button asChild variant="ghost" size="sm">
-          <a href={content(e.id, true)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${e.name}`}>
+          <a href={content(e.id, true)} target="_blank" rel="noopener noreferrer" aria-label={t("Open {name}", { name: e.name })}>
             <ExternalLink /> {t("Open")}
           </a>
         </Button>
       )}
       {download && (
         <Button asChild variant="outline" size="sm">
-          <a href={content(e.id, false)} download={savedAs(e)} aria-label={`Download ${e.name}`}>
+          <a href={content(e.id, false)} download={savedAs(e)} aria-label={t("Download {name}", { name: e.name })}>
             <Download /> {t("Download")}
           </a>
         </Button>
@@ -189,7 +189,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
     </div>
   );
 
-  const note = s.link.note ? <p className="whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-sm">{s.link.note}</p> : null;
+  const note = s.link.note ? <p className="whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-sm">{isolate(s.link.note)}</p> : null;
 
   if (s.item.kind === "file")
     return (
@@ -200,8 +200,8 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-lg font-semibold">{live(s.item) ? s.item.name.replace(/\.fdoc$/i, "") : s.item.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {sizeLabel(s.item.size ?? null)}
-              {s.item.modified_at ? ` · changed ${formatDateTime(s.item.modified_at)}` : ""}
+              {isolate(sizeLabel(s.item.size ?? null))}
+              {s.item.modified_at ? t(" · changed {value}", { value: formatDateTime(s.item.modified_at) }) : ""}
             </p>
           </div>
           {actions(s.item)}
@@ -209,7 +209,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
         {s.item.content_type?.startsWith("image/") && <img src={content(s.item.id, true)} alt={s.item.name} className="max-h-[70vh] w-auto rounded border object-contain" />}
         {live(s.item) && <iframe src={content(s.item.id, true)} title={s.item.name} sandbox="" className="h-[70vh] w-full rounded border bg-background" />}
         {!download && !previewable(s.item) && <p className="text-sm text-muted-foreground">{t("This link lets you see the file's details; it does not allow downloading.")}</p>}
-        {footer.length > 0 && <p className="text-xs text-muted-foreground">{footer.join(" ")}</p>}
+        {footer.length > 0 && <p className="text-xs text-muted-foreground">{isolate(footer.join(" "))}</p>}
       </section>
     );
 
@@ -222,10 +222,10 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
           <span key={c.id} className="flex items-center gap-1">
             {i > 0 && <span className="text-muted-foreground">/</span>}
             {i === crumbs.length - 1 ? (
-              <span className="font-semibold">{c.name}</span>
+              <span className="font-semibold">{isolate(c.name)}</span>
             ) : (
               <Link to={i === 0 ? "?" : `?folder=${c.id}`} className="text-primary underline-offset-2 hover:underline">
-                {c.name}
+                {isolate(c.name)}
               </Link>
             )}
           </span>
@@ -239,12 +239,12 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
             <div className="min-w-0 flex-1">
               {e.kind === "folder" ? (
                 <Link to={`?folder=${e.id}`} className="truncate font-medium text-primary underline-offset-2 hover:underline">
-                  {e.name}
+                  {isolate(e.name)}
                 </Link>
               ) : (
-                <span className="block truncate">{e.name}</span>
+                <span className="block truncate">{isolate(e.name)}</span>
               )}
-              {e.kind === "file" && <span className="text-xs text-muted-foreground">{sizeLabel(e.size ?? null)}</span>}
+              {e.kind === "file" && <span className="text-xs text-muted-foreground">{isolate(sizeLabel(e.size ?? null))}</span>}
             </div>
             {e.kind === "file" && actions(e)}
           </li>
@@ -252,10 +252,10 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
       </ul>
       {more && (
         <Button variant="outline" disabled={more.loading} onClick={more.load}>
-          {more.loading ? "Loading…" : "Show more"}
+          {more.loading ? t("Loading…") : t("Show more")}
         </Button>
       )}
-      {footer.length > 0 && <p className="text-xs text-muted-foreground">{footer.join(" ")}</p>}
+      {footer.length > 0 && <p className="text-xs text-muted-foreground">{isolate(footer.join(" "))}</p>}
     </section>
   );
 }

@@ -3,7 +3,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import { api, download, errorMessage, formatDateTime, relativeTime, t as tr } from "@ferrum/client";
+import { api, download, errorMessage, formatDateTime, relativeTime, t as tr, isolate } from "@ferrum/client";
 import { Badge, Button, Spinner, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
 import { EditorLink, useEditors } from "./editors";
@@ -88,9 +88,9 @@ export function DetailsPanel({
     );
   }
   const tabs = [
-    ...(isFile ? [{ id: "comments", label: "Comments" }] : []),
-    ...(isFile ? [{ id: "versions", label: "Versions" }] : []),
-    { id: "activity", label: "Activity" },
+    ...(isFile ? [{ id: "comments", label: tr("Comments") }] : []),
+    ...(isFile ? [{ id: "versions", label: tr("Versions") }] : []),
+    { id: "activity", label: tr("Activity") },
   ];
   const shown = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
   // Others editing in an editor people share: join them there (C2).
@@ -98,39 +98,39 @@ export function DetailsPanel({
   const open = isFile && !inEditor ? defaultEditor(editorsFor({ id: item.id, name: item.name, size: item.size ?? null }, editors), narrow) : undefined;
   const join = open && shared(open.key) && joinable(present) ? open : undefined;
   return (
-    <aside className="drive-details" aria-label={`Details of ${shownName(item.name)}`}>
+    <aside className="drive-details" aria-label={tr("Details of {value}", { value: shownName(item.name) })}>
       <div className="drive-details-head">
-        <strong className="drive-details-name">{shownName(item.name)}</strong>
+        <strong className="drive-details-name">{isolate(shownName(item.name))}</strong>
         <Button size="sm" variant="ghost" icon="x" aria-label={tr("Close details")} onClick={onClose} />
       </div>
       <dl className="drive-facts">
         {item.path && (
           <>
             <dt>{tr("Where")}</dt>
-            <dd>{item.path}</dd>
+            <dd>{isolate(item.path)}</dd>
           </>
         )}
         <dt>{tr("Owner")}</dt>
-        <dd>{item.owner ?? "Team folder"}</dd>
+        <dd>{item.owner ?? tr("Team folder")}</dd>
         {isFile && (
           <>
             <dt>{tr("Size")}</dt>
             <dd>
-              {sizeLabel(item.size ?? null)} {tr("· version {version}", { version: item.version ?? "" })}
+              {isolate(sizeLabel(item.size ?? null))} {tr("· version {version}", { version: item.version ?? "" })}
             </dd>
           </>
         )}
         <dt>{tr("Modified")}</dt>
         <dd>
-          {formatDateTime(item.modified_at)}
-          {item.modified_by ? ` by ${item.modified_by}` : ""}
+          {isolate(formatDateTime(item.modified_at))}
+          {item.modified_by ? tr(" by {modified_by}", { modified_by: item.modified_by }) : ""}
         </dd>
         <dt>{tr("Your access")}</dt>
-        <dd>{roleLabel(item.permission)}</dd>
+        <dd>{isolate(roleLabel(item.permission))}</dd>
       </dl>
       {present.length > 0 && (
         <p className="drive-present" role="status">
-          <Badge tone="green">{tr("Now")}</Badge> {presenceLabel(present)}
+          <Badge tone="green">{tr("Now")}</Badge> {isolate(presenceLabel(present))}
           {join && (
             <EditorLink className="btn btn-primary btn-sm" choice={join}>
               {tr("Join them")}
@@ -163,7 +163,7 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
     queryKey: ["drive", "comments", item.id],
     queryFn: ({ signal }) => api.get<{ comments: DriveComment[] }>("/api/app/drive/list_comments", { file: item.id }, signal).then((r) => r.comments),
   });
-  const name = (email?: string | null) => people.find((p) => p.email === email)?.full_name || email || "Someone";
+  const name = (email?: string | null) => people.find((p) => p.email === email)?.full_name || email || tr("Someone");
   const post = async (body: string, mentionIds: string[]) => {
     try {
       const mentions = people.filter((p) => mentionIds.includes(p.id)).map((p) => p.email);
@@ -176,7 +176,7 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
     }
   };
   const remove = async (c: DriveComment) => {
-    if (!(await confirmDialog({ title: "Delete this comment?", confirmLabel: "Delete", danger: true }))) return;
+    if (!(await confirmDialog({ title: tr("Delete this comment?"), confirmLabel: tr("Delete"), danger: true }))) return;
     try {
       await act("delete_comment", { comment: c.id });
       await qc.invalidateQueries({ queryKey: ["drive", "comments", item.id] });
@@ -185,7 +185,7 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
     }
   };
   if (q.isLoading) return <Spinner label={tr("Loading comments")} />;
-  if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
+  if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   return (
     <div className="drive-comments">
       {!q.data?.length && <p className="faint">{tr("No comments yet.")}</p>}
@@ -195,30 +195,30 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
           ?.filter((c) => !c.reply_to)
           .map((c) => (
             <li key={c.id} className={`drive-comment${c.resolved_at ? " is-resolved" : ""}`}>
-              {c.quote && <blockquote className="drive-comment-quote">{c.quote}</blockquote>}
+              {c.quote && <blockquote className="drive-comment-quote">{isolate(c.quote)}</blockquote>}
               <div className="drive-comment-head">
-                <strong>{name(c.author)}</strong> <span className="faint">{relativeTime(c.created_at)}</span>
-                {c.resolved_at && <span className="faint">{tr("· resolved by")} {name(c.resolved_by)}</span>}
+                <strong>{isolate(name(c.author))}</strong> <span className="faint">{isolate(relativeTime(c.created_at))}</span>
+                {c.resolved_at && <span className="faint">{tr("· resolved by")} {isolate(name(c.resolved_by))}</span>}
                 {(c.mine || allows(item.permission, "Manage")) && (
                   <Button size="sm" variant="ghost" aria-label={tr("Delete comment")} onClick={() => void remove(c)}>
                     {tr("Delete")}
                   </Button>
                 )}
               </div>
-              <p className="comment-text">{c.body}</p>
+              <p className="comment-text">{isolate(c.body)}</p>
               {q.data
                 .filter((r) => r.reply_to === c.id)
                 .map((r) => (
                   <div key={r.id} className="drive-comment-reply">
                     <div className="drive-comment-head">
-                      <strong>{name(r.author)}</strong> <span className="faint">{relativeTime(r.created_at)}</span>
+                      <strong>{isolate(name(r.author))}</strong> <span className="faint">{isolate(relativeTime(r.created_at))}</span>
                       {(r.mine || allows(item.permission, "Manage")) && (
                         <Button size="sm" variant="ghost" aria-label={tr("Delete reply")} onClick={() => void remove(r)}>
                           {tr("Delete")}
                         </Button>
                       )}
                     </div>
-                    <p className="comment-text">{r.body}</p>
+                    <p className="comment-text">{isolate(r.body)}</p>
                   </div>
                 ))}
             </li>
@@ -239,10 +239,10 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
   const live = isLiveDoc(item.name);
   const restore = async (v: Version) => {
     const message = live ? "A copy of it is made beside this document, which stays as it is." : "It becomes the newest version; the others stay in the history.";
-    if (!(await confirmDialog({ title: `Restore version ${v.version}?`, message, confirmLabel: "Restore" }))) return;
+    if (!(await confirmDialog({ title: tr("Restore version {version}?", { version: v.version }), message, confirmLabel: tr("Restore") }))) return;
     try {
       const made = await act("restore_version", { file: item.id, version: v.version });
-      toast(live ? `Version ${v.version} is now “${(made as { name?: string }).name ?? "a copy"}”` : `Version ${v.version} restored`);
+      toast(live ? tr("Version {version} is now “{value}”", { version: v.version, value: (made as { name?: string }).name ?? "a copy" }) : tr("Version {version} restored", { version: v.version }));
       await qc.invalidateQueries({ queryKey: ["drive"] });
       await onRestored();
     } catch (e) {
@@ -250,7 +250,7 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
     }
   };
   if (q.isLoading) return <Spinner label={tr("Loading versions")} />;
-  if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
+  if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   return (
     <ul className="drive-versions">
       {q.data?.map((v) => (
@@ -260,16 +260,16 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
             {v.version === item.version && <Badge tone="green">{tr("Current")}</Badge>}
             <div className="faint">
               {v.created_at ? formatDateTime(v.created_at) : ""}
-              {v.author ? ` · ${v.author}` : ""} · {sizeLabel(v.size)}
+              {v.author ? ` · ${v.author}` : ""} · {isolate(sizeLabel(v.size))}
             </div>
-            {v.comment && <div className="muted">{v.comment}</div>}
+            {v.comment && <div className="muted">{isolate(v.comment)}</div>}
           </div>
           <div className="row" style={{ gap: 4 }}>
             <Button
               size="sm"
               variant="ghost"
               icon="download"
-              aria-label={live ? `Download version ${v.version} as a web page` : `Download version ${v.version}`}
+              aria-label={live ? tr("Download version {version} as a web page", { version: v.version }) : tr("Download version {version}", { version: v.version })}
               onClick={() =>
                 void (
                   live
@@ -296,15 +296,15 @@ function ActivityList({ id }: { id: string }) {
     queryFn: ({ signal }) => api.get<{ activity: Activity[] }>("/api/app/drive/activity", { item: id, limit: 50 }, signal).then((r) => r.activity),
   });
   if (q.isLoading) return <Spinner label={tr("Loading activity")} />;
-  if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
+  if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   if (!q.data?.length) return <p className="faint">{tr("Nothing yet.")}</p>;
   return (
     <ul className="drive-activity">
       {q.data.map((a) => (
         <li key={a.id}>
-          <strong>{a.actor ?? "Drive"}</strong> {a.action.toLowerCase()}
-          {a.name && <span className="muted"> “{a.name}”</span>}
-          <div className="faint">{relativeTime(a.at)}</div>
+          <strong>{a.actor ?? tr("Drive")}</strong> {isolate(a.action.toLowerCase())}
+          {a.name && <span className="muted"> “{isolate(a.name)}”</span>}
+          <div className="faint">{isolate(relativeTime(a.at))}</div>
         </li>
       ))}
     </ul>

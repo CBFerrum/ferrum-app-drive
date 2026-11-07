@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { type DragEvent, Fragment, useEffect, useRef } from "react";
 import { Link } from "react-router";
-import { formatDateTime, t as tr } from "@ferrum/client";
+import { formatDateTime, t as tr, isolate } from "@ferrum/client";
 import { Badge, toast } from "@ferrum/kit";
 import {
   Button as UiButton,
@@ -82,7 +82,7 @@ export interface RowActions {
 function Marked({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(«[^»]*»)/).map((part, i) => (part.startsWith("«") ? <mark key={i}>{part.slice(1, -1)}</mark> : <Fragment key={i}>{part}</Fragment>))}
+      {text.split(/(«[^»]*»)/).map((part, i) => (part.startsWith("«") ? <mark key={i}>{isolate(part.slice(1, -1))}</mark> : <Fragment key={i}>{isolate(part)}</Fragment>))}
     </>
   );
 }
@@ -168,7 +168,7 @@ function Row({
           type="checkbox"
           className="drive-check"
           checked={chosen}
-          aria-label={`Choose ${name}`}
+          aria-label={tr("Choose {name}", { name })}
           onChange={() => undefined}
           onClick={(e) => actions.choose(it.id, e.shiftKey)}
         />
@@ -178,24 +178,24 @@ function Row({
           {it.kind === "folder" && !trash ? (
             <Link to={`/drive/${it.id}`} className="drive-name" draggable={false}>
               {glyph}
-              <span className="truncate">{name}</span>
+              <span className="truncate">{isolate(name)}</span>
             </Link>
           ) : open ? (
             <EditorLink choice={open} className="drive-name">
               {glyph}
-              <span className="truncate">{name}</span>
+              <span className="truncate">{isolate(name)}</span>
             </EditorLink>
           ) : (
             <span className="drive-name">
               {glyph}
-              <span className="truncate">{name}</span>
+              <span className="truncate">{isolate(name)}</span>
             </span>
           )}
           {it.starred && <Star aria-label={tr("Starred")} size={14} className="drive-starred" />}
           {it.locked_by && <Badge tone="amber">{tr("Checked out")}</Badge>}
           {here.length > 0 && (
             <Badge tone="green" title={presenceLabel(here)}>
-              {presenceLabel(here)}
+              {isolate(presenceLabel(here))}
             </Badge>
           )}
         </div>
@@ -205,23 +205,23 @@ function Row({
           </div>
         )}
         <div className="drive-line sm:hidden">
-          {[sizeLabel(it.size), when].filter(Boolean).join(" · ")}
+          {isolate([sizeLabel(it.size), when].filter(Boolean).join(" · "))}
         </div>
       </TableCell>
       <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
-        {when}
-        {!trash && it.modified_by && <span className="hidden lg:inline"> · {it.modified_by}</span>}
+        {isolate(when)}
+        {!trash && it.modified_by && <span className="hidden lg:inline"> · {isolate(it.modified_by)}</span>}
       </TableCell>
-      <TableCell className="hidden text-end whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{sizeLabel(it.size)}</TableCell>
+      <TableCell className="hidden text-end whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{isolate(sizeLabel(it.size))}</TableCell>
       <TableCell className="py-1 text-end whitespace-nowrap">
         {joins && open && (
-          <EditorLink className={`${buttonVariants({ size: "xs" })} me-1`} choice={open} aria-label={`Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${name}`}>
+          <EditorLink className={`${buttonVariants({ size: "xs" })} me-1`} choice={open} aria-label={tr("Join {value} in {name}", { value: presenceLabel(editing).replace(/ (is|are) editing$/, ""), name })}>
             {tr("Join")}
           </EditorLink>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <UiButton variant="ghost" size="icon-sm" aria-label={`More for ${name}`} className="text-muted-foreground">
+            <UiButton variant="ghost" size="icon-sm" aria-label={tr("More for {name}", { name })} className="text-muted-foreground">
               <MoreHorizontal />
             </UiButton>
           </DropdownMenuTrigger>
@@ -241,7 +241,7 @@ function Row({
               <>
                 {open && (
                   <DropdownMenuItem onSelect={() => openChoice(open, actions.navigate)}>
-                    <ExternalLink /> {open.key === "live" || open.key === "view" || !allows(it.permission, "Edit") || editing.length > 0 ? "Open" : "Edit online"}
+                    <ExternalLink /> {open.key === "live" || open.key === "view" || !allows(it.permission, "Edit") || editing.length > 0 ? tr("Open") : tr("Edit online")}
                   </DropdownMenuItem>
                 )}
                 {others.length > 0 && (
@@ -251,12 +251,12 @@ function Row({
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="min-w-52">
                       {others.map((c) => (
-                        <DropdownMenuItem key={c.key} onSelect={() => (c.unavailable ? toast(`${c.label} cannot open ${name}: ${c.unavailable}`, "error") : openChoice(c, actions.navigate))}>
+                        <DropdownMenuItem key={c.key} onSelect={() => (c.unavailable ? toast(tr("{label} cannot open {name}: {unavailable}", { label: c.label, name, unavailable: c.unavailable }), "error") : openChoice(c, actions.navigate))}>
                           <span className="grid">
-                            {c.label}
-                            {c.unavailable && <span className="text-xs text-muted-foreground">{c.unavailable}</span>}
+                            {isolate(c.label)}
+                            {c.unavailable && <span className="text-xs text-muted-foreground">{isolate(c.unavailable)}</span>}
                             {!c.unavailable && editing.length > 0 && (
-                              <span className="text-xs text-muted-foreground">{shared(c.key) && joinable(here) ? `Join ${editing.map((p) => p.name).join(", ")}` : "Read only while others edit"}</span>
+                              <span className="text-xs text-muted-foreground">{shared(c.key) && joinable(here) ? tr("Join {value}", { value: editing.map((p) => p.name).join(", ") }) : tr("Read only while others edit")}</span>
                             )}
                           </span>
                         </DropdownMenuItem>
@@ -274,7 +274,7 @@ function Row({
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onSelect={() => actions.star(it)}>
-                  {it.starred ? <StarOff /> : <Star />} {it.starred ? "Remove star" : "Star"}
+                  {it.starred ? <StarOff /> : <Star />} {it.starred ? tr("Remove star") : tr("Star")}
                 </DropdownMenuItem>
                 {allows(it.permission, "Edit") && (
                   <DropdownMenuItem onSelect={() => actions.rename(it)}>
@@ -322,7 +322,7 @@ function SortHead({ id, label, sort, order, onSort, className }: { id: SortKey; 
   return (
     <TableHead className={className} aria-sort={on ? (order === "asc" ? "ascending" : "descending") : undefined}>
       <button type="button" className="drive-sort" onClick={() => onSort(id)}>
-        {label}
+        {isolate(label)}
         {on && (order === "asc" ? <ArrowUp aria-hidden size={13} /> : <ArrowDown aria-hidden size={13} />)}
       </button>
     </TableHead>
@@ -372,7 +372,7 @@ export function FileList({
     sortable.includes(id) ? (
       <SortHead id={id} label={label} sort={sort} order={order} onSort={onSort} className={className} />
     ) : (
-      <TableHead className={className}>{label}</TableHead>
+      <TableHead className={className}>{isolate(label)}</TableHead>
     );
   return (
     <Table className="drive-list">
@@ -381,9 +381,9 @@ export function FileList({
           <TableHead className="w-10 pe-0 ps-3">
             <input ref={all} type="checkbox" className="drive-check" checked={every} aria-label={tr("Choose every item shown")} onChange={(e) => actions.chooseAll(e.target.checked)} />
           </TableHead>
-          {head("name", "Name")}
-          {head("modified", view === "trash" ? "Deleted" : "Modified", "hidden md:table-cell")}
-          {head("size", "Size", "hidden text-right sm:table-cell")}
+          {head("name", tr("Name"))}
+          {head("modified", view === "trash" ? tr("Deleted") : tr("Modified"), "hidden md:table-cell")}
+          {head("size", tr("Size"), "hidden text-right sm:table-cell")}
           <TableHead className="w-12">
             <span className="sr-only">{tr("Actions")}</span>
           </TableHead>
