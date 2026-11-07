@@ -163,7 +163,7 @@ function Row({
       onDoubleClick={(e) => !interactive(e.target) && !trash && actions.open(it)}
       {...drop.props}
     >
-      <TableCell className="w-10 py-2 pr-0 pl-3">
+      <TableCell className="w-10 py-2 pe-0 ps-3">
         <input
           type="checkbox"
           className="drive-check"
@@ -212,10 +212,10 @@ function Row({
         {when}
         {!trash && it.modified_by && <span className="hidden lg:inline"> · {it.modified_by}</span>}
       </TableCell>
-      <TableCell className="hidden text-right whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{sizeLabel(it.size)}</TableCell>
-      <TableCell className="py-1 text-right whitespace-nowrap">
+      <TableCell className="hidden text-end whitespace-nowrap text-muted-foreground tabular-nums sm:table-cell">{sizeLabel(it.size)}</TableCell>
+      <TableCell className="py-1 text-end whitespace-nowrap">
         {joins && open && (
-          <EditorLink className={`${buttonVariants({ size: "xs" })} mr-1`} choice={open} aria-label={`Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${name}`}>
+          <EditorLink className={`${buttonVariants({ size: "xs" })} me-1`} choice={open} aria-label={`Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${name}`}>
             Join
           </EditorLink>
         )}
@@ -378,7 +378,7 @@ export function FileList({
     <Table className="drive-list">
       <TableHeader>
         <TableRow className="hover:bg-transparent">
-          <TableHead className="w-10 pr-0 pl-3">
+          <TableHead className="w-10 pe-0 ps-3">
             <input ref={all} type="checkbox" className="drive-check" checked={every} aria-label="Choose every item shown" onChange={(e) => actions.chooseAll(e.target.checked)} />
           </TableHead>
           {head("name", "Name")}
