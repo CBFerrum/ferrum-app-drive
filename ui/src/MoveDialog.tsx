@@ -5,7 +5,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { ChevronRight, Folder, HardDrive } from "lucide-react";
 import { useState } from "react";
-import { api, errorMessage } from "@ferrum/client";
+import { api, errorMessage, t as tr } from "@ferrum/client";
 import { Button, Dialog, Spinner } from "@ferrum/kit";
 import { items as count } from "./bulk";
 import { type Crumb, type Item, allows, shownName } from "./files";
@@ -90,16 +90,16 @@ export function MoveDialog({
         <>
           {why && <span className="faint drive-dest-why">{why}</span>}
           <span className="spacer" />
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button variant="primary" disabled={!at || !here || !!why} onClick={() => here && onChoose({ id: here.id, name: here.id === root ? "My files" : here.name })}>
             {verb} here
           </Button>
         </>
       }
     >
-      <nav className="drive-dest-path" aria-label="Where you are">
+      <nav className="drive-dest-path" aria-label={tr("Where you are")}>
         <button type="button" onClick={() => setAt(null)} aria-current={!at ? "location" : undefined}>
-          Places
+          {tr("Places")}
         </button>
         {first?.breadcrumbs.map((c, i, all) => (
           <span key={c.id} className="contents">
@@ -111,26 +111,26 @@ export function MoveDialog({
         ))}
       </nav>
       {!at ? (
-        <ul className="drive-pick drive-dest-list" aria-label="Places">
+        <ul className="drive-pick drive-dest-list" aria-label={tr("Places")}>
           {place(root, "My files", "drive")}
           {(usage?.teams ?? []).map((t) => place(t.id, t.name, "folder"))}
         </ul>
       ) : list.isPending ? (
-        <Spinner label="Opening the folder" />
+        <Spinner label={tr("Opening the folder")} />
       ) : list.error ? (
         <p className="muted">{errorMessage(list.error)}</p>
       ) : (
         <>
           {folders.length ? (
-            <ul className="drive-pick drive-dest-list" aria-label="Folders">
+            <ul className="drive-pick drive-dest-list" aria-label={tr("Folders")}>
               {folders.map((f) => place(f.id, shownName(f.name), "folder"))}
             </ul>
           ) : (
-            <p className="muted drive-dest-empty">No folders in here.</p>
+            <p className="muted drive-dest-empty">{tr("No folders in here.")}</p>
           )}
           {list.hasNextPage && (
             <Button loading={list.isFetchingNextPage} onClick={() => void list.fetchNextPage()}>
-              Show more folders
+              {tr("Show more folders")}
             </Button>
           )}
         </>

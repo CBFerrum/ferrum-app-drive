@@ -3,7 +3,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, todayIso } from "@ferrum/client";
+import { api, errorMessage, todayIso, t } from "@ferrum/client";
 import { Button, Dialog, Field, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { each, items as count, told } from "./bulk";
@@ -37,16 +37,16 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{t("Cancel")}</Button>
           <Button variant="primary" loading={busy} disabled={!who} onClick={() => void submit()}>
-            Share
+            {t("Share")}
           </Button>
         </>
       }
     >
       <form onSubmit={submit} className="grid gap-3">
         <p className="muted share-names">{items.slice(0, 4).map((i) => shownName(i.name)).join(", ")}{items.length > 4 ? ` and ${items.length - 4} more` : ""}</p>
-        <Field label="Person" htmlFor={`${id}-email`} hint="Someone outside the workspace gets a link by email, as a Viewer">
+        <Field label={t("Person")} htmlFor={`${id}-email`} hint={t("Someone outside the workspace gets a link by email, as a Viewer")}>
           <input id={`${id}-email`} className="input" type="email" list={`${id}-people`} placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
           <datalist id={`${id}-people`}>
             {people.map((p) => (
@@ -56,7 +56,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
             ))}
           </datalist>
         </Field>
-        <Field label="Role" htmlFor={`${id}-role`}>
+        <Field label={t("Role")} htmlFor={`${id}-role`}>
           <select id={`${id}-role`} className="input" value={permission} onChange={(e) => setPermission(e.target.value)}>
             {ROLES.map((r) => (
               <option key={r.permission} value={r.permission}>
@@ -65,7 +65,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
             ))}
           </select>
         </Field>
-        <Field label="Until" htmlFor={`${id}-until`} hint="Optional">
+        <Field label={t("Until")} htmlFor={`${id}-until`} hint={t("Optional")}>
           <input id={`${id}-until`} className="input" type="date" min={todayIso()} value={until} onChange={(e) => setUntil(e.target.value)} />
         </Field>
         <button type="submit" hidden />

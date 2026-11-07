@@ -4,7 +4,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage } from "@ferrum/client";
+import { api, errorMessage, t as tr } from "@ferrum/client";
 import { Button, Dialog, EmptyState, Field, Spinner, confirmDialog, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { type Shares, addresses } from "./access";
@@ -36,12 +36,12 @@ function AddPeople({ role, setRole, text, setText, id }: { role: string; setRole
   const unknown = typed.emails.filter((e) => !people.some((p) => p.email.toLowerCase() === e));
   return (
     <>
-      <Field label="People" htmlFor={`${id}-people`} hint="Addresses, one after another: separate them with commas, spaces or lines">
+      <Field label={tr("People")} htmlFor={`${id}-people`} hint={tr("Addresses, one after another: separate them with commas, spaces or lines")}>
         <textarea id={`${id}-people`} className="textarea" rows={2} placeholder="ana@company.com, ben@company.com" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
       </Field>
-      {typed.rest.length > 0 && <p className="share-note share-note-stop">Not an address: {typed.rest.join(", ")}</p>}
-      {unknown.length > 0 && <p className="share-note">Not people of this workspace: {unknown.join(", ")}. Drive will say so for each.</p>}
-      <Field label="Role" htmlFor={`${id}-role`} hint={TEAM_ROLES.find((r) => r.id === role)?.hint}>
+      {typed.rest.length > 0 && <p className="share-note share-note-stop">{tr("Not an address:")} {typed.rest.join(", ")}</p>}
+      {unknown.length > 0 && <p className="share-note">{tr("Not people of this workspace:")} {unknown.join(", ")}{tr(". Drive will say so for each.")}</p>}
+      <Field label={tr("Role")} htmlFor={`${id}-role`} hint={TEAM_ROLES.find((r) => r.id === role)?.hint}>
         <RoleSelect id={`${id}-role`} value={role} onChange={setRole} />
       </Field>
     </>
@@ -102,23 +102,23 @@ export function TeamDialog({ team, space, onClose }: { team: string; space: stri
   const nameOf = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())?.full_name;
 
   return (
-    <Dialog open wide title={t ? `Team folder “${t.name}”` : "Team folder"} onClose={onClose} footer={<Button variant="primary" onClick={onClose}>Done</Button>}>
+    <Dialog open wide title={t ? `Team folder “${t.name}”` : "Team folder"} onClose={onClose} footer={<Button variant="primary" onClick={onClose}>{tr("Done")}</Button>}>
       {usage.isPending ? (
-        <Spinner label="Loading the team folder" />
+        <Spinner label={tr("Loading the team folder")} />
       ) : !t ? (
-        <EmptyState title="This team folder is not here any more" />
+        <EmptyState title={tr("This team folder is not here any more")} />
       ) : (
         <div className="share-grid">
           <section aria-labelledby={`${id}-members`}>
             <h3 id={`${id}-members`} className="share-head">
-              Members ({members.length})
+              {tr("Members ({length})", { length: members.length })}
             </h3>
             {shares.isPending ? (
-              <Spinner label="Loading members" />
+              <Spinner label={tr("Loading members")} />
             ) : shares.error ? (
               <p className="muted">{errorMessage(shares.error)}</p>
             ) : !members.length ? (
-              <p className="faint">Nobody belongs to it yet.</p>
+              <p className="faint">{tr("Nobody belongs to it yet.")}</p>
             ) : (
               <ul className="share-list">
                 {members.map((m) => (
@@ -138,7 +138,7 @@ export function TeamDialog({ team, space, onClose }: { team: string; space: stri
                           void run(`gone-${m.member}`, () => act("remove_team_member", { folder: team, member: m.member }));
                       }}
                     >
-                      Remove
+                      {tr("Remove")}
                     </Button>
                   </li>
                 ))}
@@ -147,7 +147,7 @@ export function TeamDialog({ team, space, onClose }: { team: string; space: stri
           </section>
           <section aria-labelledby={`${id}-space`}>
             <h3 id={`${id}-space`} className="share-head">
-              Space
+              {tr("Space")}
             </h3>
             <p>
               {spaceLabel({ used: t.used_bytes, quota: t.quota_bytes })}
@@ -162,22 +162,22 @@ export function TeamDialog({ team, space, onClose }: { team: string; space: stri
                   if (wanted !== null) void run("quota", async () => { await act("set_team_quota", { folder: team, quota_mb: wanted }); setLimit(null); toast(wanted ? "The space limit is changed" : "The team folder has no space limit"); });
                 }}
               >
-                <Field label="Space limit (GB)" htmlFor={`${id}-quota`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint="Empty for no limit. Versions and the trash count">
+                <Field label={tr("Space limit (GB)")} htmlFor={`${id}-quota`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint={tr("Empty for no limit. Versions and the trash count")}>
                   <input id={`${id}-quota`} className="input" inputMode="decimal" value={quota} onChange={(e) => setLimit(e.target.value)} />
                 </Field>
                 <Button type="submit" loading={busy === "quota"} disabled={wanted === null || limit === null}>
-                  Save limit
+                  {tr("Save limit")}
                 </Button>
               </form>
             ) : (
-              <p className="faint">A Drive administrator sets how much space it may use.</p>
+              <p className="faint">{tr("A Drive administrator sets how much space it may use.")}</p>
             )}
 
-            <h3 className="share-head">Add people</h3>
-            <form className="share-add" onSubmit={add} aria-label="Add people">
+            <h3 className="share-head">{tr("Add people")}</h3>
+            <form className="share-add" onSubmit={add} aria-label={tr("Add people")}>
               <AddPeople id={id} role={role} setRole={setRole} text={text} setText={setText} />
               <Button type="submit" variant="primary" loading={busy === "add"} disabled={!addresses(text).emails.length}>
-                Add
+                {tr("Add")}
               </Button>
             </form>
           </section>
@@ -219,23 +219,23 @@ export function NewTeamDialog({ space, onClose, onMade }: { space: string; onClo
   return (
     <Dialog
       open
-      title="New team folder"
+      title={tr("New team folder")}
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button variant="primary" loading={busy} disabled={!name.trim() || wanted === null} onClick={() => void submit()}>
-            Make the team folder
+            {tr("Make the team folder")}
           </Button>
         </>
       }
     >
       <form onSubmit={submit} className="grid gap-3">
-        <p className="muted">A shared place for a department, with its own space. Its members see everything in it.</p>
-        <Field label="Name" htmlFor={`${id}-name`} required>
+        <p className="muted">{tr("A shared place for a department, with its own space. Its members see everything in it.")}</p>
+        <Field label={tr("Name")} htmlFor={`${id}-name`} required>
           <input id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={255} autoFocus />
         </Field>
-        <Field label="Space limit (GB)" htmlFor={`${id}-limit`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint="Empty for the workspace's usual limit; 0 for no limit">
+        <Field label={tr("Space limit (GB)")} htmlFor={`${id}-limit`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint={tr("Empty for the workspace's usual limit; 0 for no limit")}>
           <input id={`${id}-limit`} className="input" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} />
         </Field>
         <AddPeople id={id} role={role} setRole={setRole} text={text} setText={setText} />

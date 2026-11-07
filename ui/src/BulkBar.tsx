@@ -5,6 +5,7 @@ import { ArchiveRestore, Copy, Download, FolderInput, Share2, Trash2, X } from "
 import { Button } from "@ferrum/kit/primitives";
 import { type Item, allows } from "./files";
 import { items as count } from "./bulk";
+import { t } from "@ferrum/client";
 
 export interface BulkActions {
   move: (copy: boolean) => void;
@@ -20,17 +21,17 @@ export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boo
   const every = (needed: string) => chosen.every((i) => allows(i.permission, needed));
   const files = chosen.filter((i) => i.kind === "file").length;
   return (
-    <div className="drive-bulk" role="toolbar" aria-label="Chosen items">
+    <div className="drive-bulk" role="toolbar" aria-label={t("Chosen items")}>
       <strong aria-live="polite">{count(chosen.length)} chosen</strong>
       <div className="drive-bulk-actions">
         {trash ? (
           <>
             <Button size="sm" variant="outline" onClick={actions.restore}>
-              <ArchiveRestore /> Restore
+              <ArchiveRestore /> {t("Restore")}
             </Button>
             {every("Manage") && (
               <Button size="sm" variant="outline" className="text-destructive" onClick={actions.destroy}>
-                <Trash2 /> Delete forever
+                <Trash2 /> {t("Delete forever")}
               </Button>
             )}
           </>
@@ -38,29 +39,29 @@ export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boo
           <>
             {every("Edit") && (
               <Button size="sm" variant="outline" onClick={() => actions.move(false)}>
-                <FolderInput /> Move to…
+                <FolderInput /> {t("Move to…")}
               </Button>
             )}
             <Button size="sm" variant="outline" onClick={() => actions.move(true)}>
-              <Copy /> Copy to…
+              <Copy /> {t("Copy to…")}
             </Button>
             {every("Manage") && (
               <Button size="sm" variant="outline" onClick={actions.share}>
-                <Share2 /> Share
+                <Share2 /> {t("Share")}
               </Button>
             )}
             <Button size="sm" variant="outline" disabled={!files} title={files ? (files < chosen.length ? "Folders cannot be downloaded; the files are" : undefined) : "Only files can be downloaded"} onClick={actions.download}>
-              <Download /> Download
+              <Download /> {t("Download")}
             </Button>
             {every("Edit") && (
               <Button size="sm" variant="outline" className="text-destructive" onClick={actions.trash}>
-                <Trash2 /> Move to trash
+                <Trash2 /> {t("Move to trash")}
               </Button>
             )}
           </>
         )}
       </div>
-      <Button size="icon-sm" variant="ghost" className="ms-auto" aria-label="Choose nothing" title="Choose nothing (Esc)" onClick={actions.clear}>
+      <Button size="icon-sm" variant="ghost" className="ms-auto" aria-label={t("Choose nothing")} title={t("Choose nothing (Esc)")} onClick={actions.clear}>
         <X />
       </Button>
     </div>

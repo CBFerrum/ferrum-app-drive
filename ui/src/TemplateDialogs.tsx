@@ -4,7 +4,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage } from "@ferrum/client";
+import { api, errorMessage, t as tr } from "@ferrum/client";
 import { Button, Dialog, Field, Spinner, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Button as UiButton } from "@ferrum/kit/primitives";
 import { Trash2 } from "lucide-react";
@@ -83,18 +83,18 @@ export function TemplateDialog({
       </section>
     );
   return (
-    <Dialog open wide title="New from a template" onClose={onClose} footer={<Button onClick={onClose}>Cancel</Button>}>
+    <Dialog open wide title={tr("New from a template")} onClose={onClose} footer={<Button onClick={onClose}>{tr("Cancel")}</Button>}>
       {!only && <Tabs id={tabsId} tabs={GROUPS.map(({ id, label }) => ({ id, label }))} value={group} onChange={setGroup} />}
       {list.isPending ? (
-        <Spinner label="Loading templates" />
+        <Spinner label={tr("Loading templates")} />
       ) : list.error ? (
         <p className="muted">{errorMessage(list.error)}</p>
       ) : (
         <div className="drive-templates-body">
           {section("Your workspace", shown.filter((t) => !t.builtin))}
           {section("From Drive", shown.filter((t) => t.builtin))}
-          {!shown.length && <p className="muted">No templates of this kind yet.</p>}
-          {list.data?.manage && <p className="faint">To add your own, choose Save as a template in a file's menu.</p>}
+          {!shown.length && <p className="muted">{tr("No templates of this kind yet.")}</p>}
+          {list.data?.manage && <p className="faint">{tr("To add your own, choose Save as a template in a file's menu.")}</p>}
         </div>
       )}
     </Dialog>
@@ -136,22 +136,22 @@ export function SaveTemplateDialog({ file, space, onClose }: { file: { id: strin
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button variant="primary" loading={busy} disabled={!title.trim()} onClick={() => void submit()}>
-            Save template
+            {tr("Save template")}
           </Button>
         </>
       }
     >
       <form onSubmit={submit} className="grid gap-3">
-        <p className="muted">Everyone in the workspace can start new files from it. It keeps a copy of the file as it is now: later changes to the file leave the template as it was.</p>
-        <Field label="Title" htmlFor={`${id}-title`} required>
+        <p className="muted">{tr("Everyone in the workspace can start new files from it. It keeps a copy of the file as it is now: later changes to the file leave the template as it was.")}</p>
+        <Field label={tr("Title")} htmlFor={`${id}-title`} required>
           <input id={`${id}-title`} className="input" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={140} autoFocus />
         </Field>
-        <Field label="Category" htmlFor={`${id}-category`} hint="Groups templates, such as Finance or Meetings">
+        <Field label={tr("Category")} htmlFor={`${id}-category`} hint={tr("Groups templates, such as Finance or Meetings")}>
           <input id={`${id}-category`} className="input" value={category} onChange={(e) => setCategory(e.target.value)} maxLength={60} />
         </Field>
-        <Field label="Description" htmlFor={`${id}-description`} hint="What it is for, in a line">
+        <Field label={tr("Description")} htmlFor={`${id}-description`} hint={tr("What it is for, in a line")}>
           <input id={`${id}-description`} className="input" value={description} onChange={(e) => setDescription(e.target.value)} maxLength={280} />
         </Field>
         <button type="submit" hidden />

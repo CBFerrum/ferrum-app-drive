@@ -6,7 +6,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
-import { api, errorMessage, formatMoment, relativeTime, todayIso } from "@ferrum/client";
+import { api, errorMessage, formatMoment, relativeTime, todayIso, t } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, Field, Spinner, toast } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { type Share, type Shares, groupShares, shareFor } from "./access";
@@ -171,7 +171,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
               ))}
             </select>
             <Button size="sm" variant="ghost" aria-label={`Remove ${who}`} loading={busy === `share-${s.id}`} onClick={() => void remove(s)}>
-              Remove
+              {t("Remove")}
             </Button>
           </>
         ) : (
@@ -189,12 +189,12 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
       onClose={onClose}
       footer={
         <>
-          <Button onClick={() => void copy(itemLink(item.id, item.kind), "Link")} icon="copy" title="A link for people who already have access">
-            Copy link
+          <Button onClick={() => void copy(itemLink(item.id, item.kind), "Link")} icon="copy" title={t("A link for people who already have access")}>
+            {t("Copy link")}
           </Button>
           <span className="spacer" />
           <Button variant="primary" onClick={onClose}>
-            Done
+            {t("Done")}
           </Button>
         </>
       }
@@ -202,10 +202,10 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
       <div className="share-grid">
         <section aria-labelledby={`${formId}-people`}>
           <h3 id={`${formId}-people`} className="share-head">
-            People
+            {t("People")}
           </h3>
-          <form className="share-add" onSubmit={add} aria-label="Add people">
-            <Field label="Person" htmlFor={`${formId}-email`}>
+          <form className="share-add" onSubmit={add} aria-label={t("Add people")}>
+            <Field label={t("Person")} htmlFor={`${formId}-email`}>
               <input
                 id={`${formId}-email`}
                 className="input"
@@ -224,7 +224,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 ))}
               </datalist>
             </Field>
-            <Field label="Role" htmlFor={`${formId}-role`}>
+            <Field label={t("Role")} htmlFor={`${formId}-role`}>
               <select id={`${formId}-role`} className="input" value={permission} onChange={(e) => setPermission(e.target.value)}>
                 {ROLES.map((r) => (
                   <option key={r.permission} value={r.permission}>
@@ -233,7 +233,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 ))}
               </select>
             </Field>
-            <Field label="Until" htmlFor={`${formId}-until`} hint="Optional">
+            <Field label={t("Until")} htmlFor={`${formId}-until`} hint={t("Optional")}>
               <input id={`${formId}-until`} className="input" type="date" min={today} value={until} onChange={(e) => setUntil(e.target.value)} />
             </Field>
             {guestNote && (
@@ -242,13 +242,13 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
               </p>
             )}
             <Button type="submit" variant="primary" loading={busy === "add"} disabled={!typed || !!guestNote?.stop}>
-              Share
+              {t("Share")}
             </Button>
           </form>
 
-          <h3 className="share-head">Who has access</h3>
+          <h3 className="share-head">{t("Who has access")}</h3>
           {shares.isLoading ? (
-            <Spinner label="Loading who has access" />
+            <Spinner label={t("Loading who has access")} />
           ) : shares.error ? (
             <p className="muted">{errorMessage(shares.error)}</p>
           ) : (
@@ -260,16 +260,16 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                       <strong>{nameOf(current.owner) || current.owner}</strong>
                       {nameOf(current.owner) && <span className="faint">{current.owner}</span>}
                     </span>
-                    <Badge>Owner</Badge>
+                    <Badge>{t("Owner")}</Badge>
                   </li>
                 )}
                 {current?.team && (
                   <li className="share-row">
                     <span className="share-who">
-                      <strong>Team folder “{current.team.name}”</strong>
+                      <strong>{t("Team folder “{name}”", { name: current.team.name })}</strong>
                       <span className="faint">{current.team.members.length} {current.team.members.length === 1 ? "member" : "members"}</span>
                     </span>
-                    <Badge>Team</Badge>
+                    <Badge>{t("Team")}</Badge>
                   </li>
                 )}
                 {direct.map((s) => row(s, true))}
@@ -279,23 +279,23 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                       <strong>{l.email}</strong>
                       <span className="faint">guest{l.expires_at ? ` · until ${day(l.expires_at)}` : ""}</span>
                     </span>
-                    <Badge tone="amber">Guest</Badge>
+                    <Badge tone="amber">{t("Guest")}</Badge>
                     <Button size="sm" variant="ghost" aria-label={`Remove ${l.email}`} loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
-                      Remove
+                      {t("Remove")}
                     </Button>
                   </li>
                 ))}
-                {!direct.length && !guests.length && !current?.team && !inherited.length && <li className="faint">Nobody else yet.</li>}
+                {!direct.length && !guests.length && !current?.team && !inherited.length && <li className="faint">{t("Nobody else yet.")}</li>}
               </ul>
               {inherited.map((g) => (
                 <div key={g.folder} className="share-inherited">
                   <div className="share-inherited-head">
                     <span>
-                      Comes down from the folder <strong>“{g.name}”</strong>
+                      {t("Comes down from the folder")} <strong>“{g.name}”</strong>
                     </span>
                     {onOpenFolder && (
                       <Button size="sm" variant="ghost" onClick={() => onOpenFolder(g.folder)}>
-                        Open folder
+                        {t("Open folder")}
                       </Button>
                     )}
                   </div>
@@ -308,42 +308,42 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
 
         <section aria-labelledby={`${formId}-link`}>
           <h3 id={`${formId}-link`} className="share-head">
-            Link
+            {t("Link")}
           </h3>
           {links.isLoading ? (
-            <Spinner label="Loading links" />
+            <Spinner label={t("Loading links")} />
           ) : links.error ? (
             <p className="muted">{errorMessage(links.error)}</p>
           ) : !policy.allow_public_links ? (
-            <p className="muted">Public links are turned off for this workspace.</p>
+            <p className="muted">{t("Public links are turned off for this workspace.")}</p>
           ) : (
             <>
-              <p className="faint">Anyone with a link can open this without signing in.</p>
+              <p className="faint">{t("Anyone with a link can open this without signing in.")}</p>
               {rules(policy) && <Alert tone="info">{rules(policy)}</Alert>}
               {made && (
                 <div className="share-made" role="status">
-                  <strong>Your link is ready</strong>
+                  <strong>{t("Your link is ready")}</strong>
                   <div className="share-copy">
-                    <input className="input" readOnly value={made.url} aria-label="The new link" onFocus={(e) => e.currentTarget.select()} />
+                    <input className="input" readOnly value={made.url} aria-label={t("The new link")} onFocus={(e) => e.currentTarget.select()} />
                     <Button icon="copy" onClick={() => void copy(made.url, "Link")}>
-                      Copy
+                      {t("Copy")}
                     </Button>
                   </div>
                   <p className="faint">
-                    It is copied. Drive cannot show it again once you close this.
+                    {t("It is copied. Drive cannot show it again once you close this.")}
                     {made.password ? " Send the password separately." : ""}
                   </p>
                 </div>
               )}
-              <form className="share-link-form" onSubmit={publish} noValidate aria-label="New link">
-                <Field label="Anyone with the link can" htmlFor={`${formId}-access`}>
+              <form className="share-link-form" onSubmit={publish} noValidate aria-label={t("New link")}>
+                <Field label={t("Anyone with the link can")} htmlFor={`${formId}-access`}>
                   <select id={`${formId}-access`} className="input" value={form.access} onChange={(e) => edit({ access: e.target.value as LinkDraft["access"] })}>
-                    <option value="View">View</option>
-                    <option value="Download">View and download</option>
+                    <option value="View">{t("View")}</option>
+                    <option value="Download">{t("View and download")}</option>
                   </select>
                 </Field>
                 <Field
-                  label="Ends on"
+                  label={t("Ends on")}
                   htmlFor={`${formId}-ends`}
                   required={!!latest}
                   error={errors.expires}
@@ -352,7 +352,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   <input id={`${formId}-ends`} className="input" type="date" min={today} max={latest ?? undefined} value={form.expires} onChange={(e) => edit({ expires: e.target.value })} />
                 </Field>
                 <Field
-                  label="Password"
+                  label={t("Password")}
                   htmlFor={`${formId}-password`}
                   required={policy.link_password_required}
                   error={errors.password}
@@ -373,27 +373,27 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                         setShow(true);
                       }}
                     >
-                      Make one
+                      {t("Make one")}
                     </Button>
                     <Button aria-pressed={show} onClick={() => setShow(!show)}>
                       {show ? "Hide" : "Show"}
                     </Button>
                   </div>
                 </Field>
-                <Field label="Limit on uses" htmlFor={`${formId}-limit`} error={errors.limit} hint="Optional: it stops working after this many downloads or views">
+                <Field label={t("Limit on uses")} htmlFor={`${formId}-limit`} error={errors.limit} hint={t("Optional: it stops working after this many downloads or views")}>
                   <input id={`${formId}-limit`} className="input" inputMode="numeric" value={form.limit} onChange={(e) => edit({ limit: e.target.value })} />
                 </Field>
-                <Field label="Note" htmlFor={`${formId}-note`} error={errors.note} hint={`Optional: shown to people who open the link (${form.note.length} of ${NOTE_MAX})`}>
+                <Field label={t("Note")} htmlFor={`${formId}-note`} error={errors.note} hint={`Optional: shown to people who open the link (${form.note.length} of ${NOTE_MAX})`}>
                   <textarea id={`${formId}-note`} className="textarea" rows={2} maxLength={NOTE_MAX + 40} value={form.note} onChange={(e) => edit({ note: e.target.value })} />
                 </Field>
                 <Button type="submit" variant="primary" loading={busy === "publish"}>
-                  Make a link
+                  {t("Make a link")}
                 </Button>
               </form>
 
               {open.length > 0 && (
                 <>
-                  <h4 className="share-subhead">Links already made</h4>
+                  <h4 className="share-subhead">{t("Links already made")}</h4>
                   <ul className="share-list">
                     {open.map((l) => {
                       const state = stateOf(l);
@@ -408,13 +408,13 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                             {l.note && <span className="share-link-note">“{l.note}”</span>}
                           </div>
                           <Button size="sm" variant="ghost" loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
-                            Turn off
+                            {t("Turn off")}
                           </Button>
                         </li>
                       );
                     })}
                   </ul>
-                  <p className="faint">A link cannot be shown again after it is made.</p>
+                  <p className="faint">{t("A link cannot be shown again after it is made.")}</p>
                 </>
               )}
             </>
