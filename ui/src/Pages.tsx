@@ -7,7 +7,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { api, download, errorMessage, formatDateTime, shell, type IntentRequest } from "@ferrum/client";
+import { api, download, errorMessage, formatDateTime, shell, type IntentRequest, t } from "@ferrum/client";
 import { Button, EmptyState, Spinner, toast } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import { FileGlyph } from "./FileGlyph";
@@ -71,11 +71,11 @@ export function Viewer({ item }: { item: Pick<ItemInfo, "id" | "name"> }) {
       <div className="row" style={{ gap: 8 }}>
         {isPdf(item.name) && (
           <a className="btn btn-default btn-sm" href={`${url}?inline=1`} target="_blank" rel="noopener noreferrer">
-            Open
+            {t("Open")}
           </a>
         )}
         <Button size="sm" icon="download" onClick={() => void download(url, item.name).catch((e: unknown) => toast(errorMessage(e), "error"))}>
-          Download
+          {t("Download")}
         </Button>
       </div>
     </div>
@@ -91,18 +91,18 @@ export function ViewPage() {
   }, [item.data]);
   if (item.error)
     return (
-      <EmptyState title="This file cannot be opened" icon="file">
+      <EmptyState title={t("This file cannot be opened")} icon="file">
         <p className="muted">{errorMessage(item.error)}</p>
-        <Link to="/drive">Go to Drive</Link>
+        <Link to="/drive">{t("Go to Drive")}</Link>
       </EmptyState>
     );
-  if (!item.data) return <Spinner label="Opening the file" />;
+  if (!item.data) return <Spinner label={t("Opening the file")} />;
   const back = item.data.parent ? `/drive/${item.data.parent}?item=${item.data.id}` : "/drive";
   return (
     <div className="drive-view-page">
       <div className="editor-bar">
         <Link className="btn btn-default btn-sm" to={back}>
-          Back
+          {t("Back")}
         </Link>
         <strong>{shownName(item.data.name)}</strong>
         <span className="faint">
@@ -128,12 +128,12 @@ export function ItemPage() {
   }, [item.data, navigate]);
   if (item.error)
     return (
-      <EmptyState title="This item cannot be opened" icon="file">
+      <EmptyState title={t("This item cannot be opened")} icon="file">
         <p className="muted">{errorMessage(item.error)}</p>
-        <Link to="/drive">Go to Drive</Link>
+        <Link to="/drive">{t("Go to Drive")}</Link>
       </EmptyState>
     );
-  return <Spinner label="Opening" />;
+  return <Spinner label={t("Opening")} />;
 }
 
 /** `drive/_intent/pick` (`pick file`): files for another app, found by name or among recent
@@ -154,8 +154,8 @@ export function PickPage() {
       ).then((r) => r.items.filter((i) => i.kind === "file")),
     enabled: !!req,
   });
-  if (error) return <EmptyState title="Nothing to pick">{error}</EmptyState>;
-  if (!req) return <Spinner label="Opening Drive" />;
+  if (error) return <EmptyState title={t("Nothing to pick")}>{error}</EmptyState>;
+  if (!req) return <Spinner label={t("Opening Drive")} />;
   const toggle = (f: Found) =>
     setChosen((c) => (c.some((x) => x.id === f.id) ? c.filter((x) => x.id !== f.id) : opts.multiple ? [...c, f] : [f]));
   const done = () => shell().intent.done({ files: chosen.map((f) => ({ id: f.id, name: f.name, size: f.size, url: contentUrl(f.id) })) });
@@ -171,19 +171,19 @@ export function PickPage() {
         }}
       >
         <label htmlFor={fieldId} className="sr-only">
-          Search Drive
+          {t("Search Drive")}
         </label>
-        <input id={fieldId} className="input" type="search" placeholder="Search Drive" value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
+        <input id={fieldId} className="input" type="search" placeholder={t("Search Drive")} value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
       </form>
       <p className="faint">{query ? `Files named like “${query}”` : "Files you worked on lately"}</p>
       {found.isPending ? (
-        <Spinner label="Looking" />
+        <Spinner label={t("Looking")} />
       ) : found.error ? (
         <p className="muted">{errorMessage(found.error)}</p>
       ) : !found.data?.length ? (
-        <p className="muted">No files here.</p>
+        <p className="muted">{t("No files here.")}</p>
       ) : (
-        <ul className="drive-pick" role="listbox" aria-multiselectable={!!opts.multiple} aria-label="Files">
+        <ul className="drive-pick" role="listbox" aria-multiselectable={!!opts.multiple} aria-label={t("Files")}>
           {found.data.map((f) => {
             const on = chosen.some((x) => x.id === f.id);
             return (
@@ -202,7 +202,7 @@ export function PickPage() {
         </ul>
       )}
       <div className="drive-intent-actions">
-        <Button onClick={() => shell().intent.cancel()}>Cancel</Button>
+        <Button onClick={() => shell().intent.cancel()}>{t("Cancel")}</Button>
         <Button variant="primary" disabled={!chosen.length} onClick={done}>
           {chosen.length > 1 ? `Choose ${chosen.length} files` : "Choose"}
         </Button>
@@ -217,8 +217,8 @@ export function PreviewPage() {
   const { req, error } = useIntent();
   const id = (req?.data as { id?: string } | null)?.id;
   const item = useItem(id);
-  if (error || item.error) return <EmptyState title="This file cannot be shown">{error ?? errorMessage(item.error)}</EmptyState>;
-  if (!item.data) return <Spinner label="Opening the file" />;
+  if (error || item.error) return <EmptyState title={t("This file cannot be shown")}>{error ?? errorMessage(item.error)}</EmptyState>;
+  if (!item.data) return <Spinner label={t("Opening the file")} />;
   return (
     <div className="drive-intent">
       <div className="editor-bar">
@@ -226,10 +226,10 @@ export function PreviewPage() {
         <span className="faint">{sizeLabel(item.data.size ?? null)}</span>
         <span className="editor-bar-end">
           <a className="btn btn-default btn-sm" href={item.data.parent ? `/drive/${item.data.parent}?item=${item.data.id}` : "/drive"} onClick={(e) => (e.preventDefault(), shell().navigate(e.currentTarget.getAttribute("href")!))}>
-            Open in Drive
+            {t("Open in Drive")}
           </a>
           <Button size="sm" onClick={() => shell().intent.done()}>
-            Close
+            {t("Close")}
           </Button>
         </span>
       </div>
@@ -245,8 +245,8 @@ export function ShareIntentPage() {
   const id = (req?.data as { id?: string } | null)?.id;
   const item = useItem(id);
   const space = useSpace();
-  if (error || item.error || space.error) return <EmptyState title="This cannot be shared">{error ?? errorMessage(item.error ?? space.error)}</EmptyState>;
-  if (!item.data || !space.data) return <Spinner label="Opening sharing" />;
+  if (error || item.error || space.error) return <EmptyState title={t("This cannot be shared")}>{error ?? errorMessage(item.error ?? space.error)}</EmptyState>;
+  if (!item.data || !space.data) return <Spinner label={t("Opening sharing")} />;
   const shareable: Shareable = { id: item.data.id, name: item.data.name, kind: item.data.kind };
   return <ShareDialog item={shareable} space={space.data.id} onClose={() => shell().intent.done({ shared: true })} />;
 }
@@ -261,9 +261,9 @@ export function DetailsPanelPage() {
     const off = shell().on("panel-context", (c) => setFile((c as { file?: string } | null)?.file));
     return () => off?.();
   }, []);
-  if (!file) return <EmptyState title="No file">Open the panel from a file.</EmptyState>;
-  if (space.error) return <EmptyState title="Drive is not available">{errorMessage(space.error)}</EmptyState>;
-  if (!space.data) return <Spinner label="Loading" />;
+  if (!file) return <EmptyState title={t("No file")}>{t("Open the panel from a file.")}</EmptyState>;
+  if (space.error) return <EmptyState title={t("Drive is not available")}>{errorMessage(space.error)}</EmptyState>;
+  if (!space.data) return <Spinner label={t("Loading")} />;
   return (
     <div className="drive-panel">
       <DetailsPanel id={file} space={space.data.id} inEditor onClose={() => shell().sidepanel.close()} onShare={setSharing} />

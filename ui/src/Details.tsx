@@ -3,7 +3,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import { api, download, errorMessage, formatDateTime, relativeTime } from "@ferrum/client";
+import { api, download, errorMessage, formatDateTime, relativeTime, t as tr } from "@ferrum/client";
 import { Badge, Button, Spinner, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
 import { EditorLink, useEditors } from "./editors";
@@ -71,10 +71,10 @@ export function DetailsPanel({
 
   if (info.error) {
     return (
-      <aside className="drive-details" aria-label="Details">
+      <aside className="drive-details" aria-label={tr("Details")}>
         <div className="drive-details-head">
-          <strong>No access</strong>
-          <Button size="sm" variant="ghost" icon="x" aria-label="Close details" onClick={onClose} />
+          <strong>{tr("No access")}</strong>
+          <Button size="sm" variant="ghost" icon="x" aria-label={tr("Close details")} onClick={onClose} />
         </div>
         <RequestAccess id={id} act={act} onGranted={() => qc.invalidateQueries({ queryKey: ["drive", "item", id] })} />
       </aside>
@@ -82,8 +82,8 @@ export function DetailsPanel({
   }
   if (!item) {
     return (
-      <aside className="drive-details" aria-label="Details">
-        <Spinner label="Loading details" />
+      <aside className="drive-details" aria-label={tr("Details")}>
+        <Spinner label={tr("Loading details")} />
       </aside>
     );
   }
@@ -101,47 +101,47 @@ export function DetailsPanel({
     <aside className="drive-details" aria-label={`Details of ${shownName(item.name)}`}>
       <div className="drive-details-head">
         <strong className="drive-details-name">{shownName(item.name)}</strong>
-        <Button size="sm" variant="ghost" icon="x" aria-label="Close details" onClick={onClose} />
+        <Button size="sm" variant="ghost" icon="x" aria-label={tr("Close details")} onClick={onClose} />
       </div>
       <dl className="drive-facts">
         {item.path && (
           <>
-            <dt>Where</dt>
+            <dt>{tr("Where")}</dt>
             <dd>{item.path}</dd>
           </>
         )}
-        <dt>Owner</dt>
+        <dt>{tr("Owner")}</dt>
         <dd>{item.owner ?? "Team folder"}</dd>
         {isFile && (
           <>
-            <dt>Size</dt>
+            <dt>{tr("Size")}</dt>
             <dd>
-              {sizeLabel(item.size ?? null)} · version {item.version}
+              {sizeLabel(item.size ?? null)} {tr("· version {version}", { version: item.version ?? "" })}
             </dd>
           </>
         )}
-        <dt>Modified</dt>
+        <dt>{tr("Modified")}</dt>
         <dd>
           {formatDateTime(item.modified_at)}
           {item.modified_by ? ` by ${item.modified_by}` : ""}
         </dd>
-        <dt>Your access</dt>
+        <dt>{tr("Your access")}</dt>
         <dd>{roleLabel(item.permission)}</dd>
       </dl>
       {present.length > 0 && (
         <p className="drive-present" role="status">
-          <Badge tone="green">Now</Badge> {presenceLabel(present)}
+          <Badge tone="green">{tr("Now")}</Badge> {presenceLabel(present)}
           {join && (
             <EditorLink className="btn btn-primary btn-sm" choice={join}>
-              Join them
+              {tr("Join them")}
             </EditorLink>
           )}
         </p>
       )}
-      {item.locked_by && <p className="faint">Checked out by {item.locked_by}.</p>}
+      {item.locked_by && <p className="faint">{tr("Checked out by {locked_by}.", { locked_by: item.locked_by })}</p>}
       {allows(item.permission, "Manage") && (
         <Button size="sm" onClick={() => onShare(item)}>
-          Share
+          {tr("Share")}
         </Button>
       )}
       <Tabs id={tabsId} tabs={tabs} value={shown} onChange={setTab} />
@@ -184,11 +184,11 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
       toast(errorMessage(e), "error");
     }
   };
-  if (q.isLoading) return <Spinner label="Loading comments" />;
+  if (q.isLoading) return <Spinner label={tr("Loading comments")} />;
   if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
   return (
     <div className="drive-comments">
-      {!q.data?.length && <p className="faint">No comments yet.</p>}
+      {!q.data?.length && <p className="faint">{tr("No comments yet.")}</p>}
       <ul className="drive-comment-list">
         {/* Threads: replies under the comment they answer; comments on a document's text quote it. */}
         {q.data
@@ -198,10 +198,10 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
               {c.quote && <blockquote className="drive-comment-quote">{c.quote}</blockquote>}
               <div className="drive-comment-head">
                 <strong>{name(c.author)}</strong> <span className="faint">{relativeTime(c.created_at)}</span>
-                {c.resolved_at && <span className="faint">· resolved by {name(c.resolved_by)}</span>}
+                {c.resolved_at && <span className="faint">{tr("· resolved by")} {name(c.resolved_by)}</span>}
                 {(c.mine || allows(item.permission, "Manage")) && (
-                  <Button size="sm" variant="ghost" aria-label="Delete comment" onClick={() => void remove(c)}>
-                    Delete
+                  <Button size="sm" variant="ghost" aria-label={tr("Delete comment")} onClick={() => void remove(c)}>
+                    {tr("Delete")}
                   </Button>
                 )}
               </div>
@@ -213,8 +213,8 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
                     <div className="drive-comment-head">
                       <strong>{name(r.author)}</strong> <span className="faint">{relativeTime(r.created_at)}</span>
                       {(r.mine || allows(item.permission, "Manage")) && (
-                        <Button size="sm" variant="ghost" aria-label="Delete reply" onClick={() => void remove(r)}>
-                          Delete
+                        <Button size="sm" variant="ghost" aria-label={tr("Delete reply")} onClick={() => void remove(r)}>
+                          {tr("Delete")}
                         </Button>
                       )}
                     </div>
@@ -224,7 +224,7 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
             </li>
           ))}
       </ul>
-      {allows(item.permission, "Comment") ? <Composer people={people} onPost={post} /> : <p className="faint">You can view this file but not comment on it.</p>}
+      {allows(item.permission, "Comment") ? <Composer people={people} onPost={post} /> : <p className="faint">{tr("You can view this file but not comment on it.")}</p>}
     </div>
   );
 }
@@ -249,15 +249,15 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
       toast(errorMessage(e), "error");
     }
   };
-  if (q.isLoading) return <Spinner label="Loading versions" />;
+  if (q.isLoading) return <Spinner label={tr("Loading versions")} />;
   if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
   return (
     <ul className="drive-versions">
       {q.data?.map((v) => (
         <li key={v.id}>
           <div>
-            <strong>Version {v.version}</strong>
-            {v.version === item.version && <Badge tone="green">Current</Badge>}
+            <strong>{tr("Version {version}", { version: v.version })}</strong>
+            {v.version === item.version && <Badge tone="green">{tr("Current")}</Badge>}
             <div className="faint">
               {v.created_at ? formatDateTime(v.created_at) : ""}
               {v.author ? ` · ${v.author}` : ""} · {sizeLabel(v.size)}
@@ -280,7 +280,7 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
             />
             {v.version !== item.version && allows(item.permission, "Edit") && (
               <Button size="sm" onClick={() => void restore(v)}>
-                Restore
+                {tr("Restore")}
               </Button>
             )}
           </div>
@@ -295,9 +295,9 @@ function ActivityList({ id }: { id: string }) {
     queryKey: ["drive", "activity", id],
     queryFn: ({ signal }) => api.get<{ activity: Activity[] }>("/api/app/drive/activity", { item: id, limit: 50 }, signal).then((r) => r.activity),
   });
-  if (q.isLoading) return <Spinner label="Loading activity" />;
+  if (q.isLoading) return <Spinner label={tr("Loading activity")} />;
   if (q.error) return <p className="muted">{errorMessage(q.error)}</p>;
-  if (!q.data?.length) return <p className="faint">Nothing yet.</p>;
+  if (!q.data?.length) return <p className="faint">{tr("Nothing yet.")}</p>;
   return (
     <ul className="drive-activity">
       {q.data.map((a) => (
@@ -331,16 +331,16 @@ function RequestAccess({ id, act, onGranted }: { id: string; act: Act; onGranted
       setState("idle");
     }
   };
-  if (state === "sent") return <p role="status">Your request was sent. You will be told when it is shared with you.</p>;
+  if (state === "sent") return <p role="status">{tr("Your request was sent. You will be told when it is shared with you.")}</p>;
   return (
     <div className="drive-request">
-      <p>You don't have access to this item, or it no longer exists. You can ask its owner to share it with you.</p>
+      <p>{tr("You don't have access to this item, or it no longer exists. You can ask its owner to share it with you.")}</p>
       <label htmlFor={fieldId} className="field-label">
-        Message (optional)
+        {tr("Message (optional)")}
       </label>
       <textarea id={fieldId} className="textarea" rows={3} maxLength={500} value={message} onChange={(e) => setMessage(e.target.value)} />
       <Button variant="primary" loading={state === "busy"} onClick={() => void ask()}>
-        Request access
+        {tr("Request access")}
       </Button>
     </div>
   );

@@ -7,7 +7,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { Download, ExternalLink, File, Folder, Lock } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { ApiError, errorMessage, formatDateTime } from "@ferrum/client";
+import { ApiError, errorMessage, formatDateTime, t } from "@ferrum/client";
 import { Button, Input, Label, Skeleton } from "@ferrum/kit/primitives";
 import { sizeLabel } from "./files";
 
@@ -92,7 +92,7 @@ export function SharedLinkPage() {
   return (
     <div className="min-h-dvh bg-muted/30">
       <main className="mx-auto grid max-w-3xl gap-4 p-4 sm:p-8">
-        <p className="text-sm text-muted-foreground">Shared with you through Ferrum Drive</p>
+        <p className="text-sm text-muted-foreground">{t("Shared with you through Ferrum Drive")}</p>
         {locked ? (
           <Unlock
             base={base}
@@ -107,8 +107,8 @@ export function SharedLinkPage() {
           />
         ) : shared.error ? (
           <div className="rounded-lg border bg-background p-6">
-            <h1 className="text-lg font-semibold">This link does not work</h1>
-            <p className="mt-1 text-muted-foreground">It may have expired or been turned off. Ask the person who shared it with you for a new one.</p>
+            <h1 className="text-lg font-semibold">{t("This link does not work")}</h1>
+            <p className="mt-1 text-muted-foreground">{t("It may have expired or been turned off. Ask the person who shared it with you for a new one.")}</p>
           </div>
         ) : !shared.data ? (
           <Skeleton className="h-48 motion-reduce:animate-none" />
@@ -148,9 +148,9 @@ function Unlock({ base, onGrant }: { base: string; onGrant: (grant: string) => v
   return (
     <form onSubmit={(e) => void submit(e)} className="grid gap-3 rounded-lg border bg-background p-6">
       <h1 className="flex items-center gap-2 text-lg font-semibold">
-        <Lock className="size-4" aria-hidden="true" /> This link has a password
+        <Lock className="size-4" aria-hidden="true" /> {t("This link has a password")}
       </h1>
-      <Label htmlFor="link-password">Password</Label>
+      <Label htmlFor="link-password">{t("Password")}</Label>
       <Input id="link-password" type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -158,7 +158,7 @@ function Unlock({ base, onGrant }: { base: string; onGrant: (grant: string) => v
         </p>
       )}
       <Button type="submit" disabled={busy || !password}>
-        Open
+        {t("Open")}
       </Button>
     </form>
   );
@@ -175,14 +175,14 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
       {previewable(e) && (
         <Button asChild variant="ghost" size="sm">
           <a href={content(e.id, true)} target="_blank" rel="noopener noreferrer" aria-label={`Open ${e.name}`}>
-            <ExternalLink /> Open
+            <ExternalLink /> {t("Open")}
           </a>
         </Button>
       )}
       {download && (
         <Button asChild variant="outline" size="sm">
           <a href={content(e.id, false)} download={savedAs(e)} aria-label={`Download ${e.name}`}>
-            <Download /> Download
+            <Download /> {t("Download")}
           </a>
         </Button>
       )}
@@ -208,7 +208,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
         </div>
         {s.item.content_type?.startsWith("image/") && <img src={content(s.item.id, true)} alt={s.item.name} className="max-h-[70vh] w-auto rounded border object-contain" />}
         {live(s.item) && <iframe src={content(s.item.id, true)} title={s.item.name} sandbox="" className="h-[70vh] w-full rounded border bg-background" />}
-        {!download && !previewable(s.item) && <p className="text-sm text-muted-foreground">This link lets you see the file's details; it does not allow downloading.</p>}
+        {!download && !previewable(s.item) && <p className="text-sm text-muted-foreground">{t("This link lets you see the file's details; it does not allow downloading.")}</p>}
         {footer.length > 0 && <p className="text-xs text-muted-foreground">{footer.join(" ")}</p>}
       </section>
     );
@@ -217,7 +217,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
   return (
     <section className="grid gap-3 rounded-lg border bg-background p-4 sm:p-6">
       {note}
-      <nav aria-label="Folders" className="flex flex-wrap items-center gap-1 text-sm">
+      <nav aria-label={t("Folders")} className="flex flex-wrap items-center gap-1 text-sm">
         {crumbs.map((c, i) => (
           <span key={c.id} className="flex items-center gap-1">
             {i > 0 && <span className="text-muted-foreground">/</span>}
@@ -231,7 +231,7 @@ function SharedItem({ s, content, more }: { s: Shared; content: (file: string, i
           </span>
         ))}
       </nav>
-      {!s.items?.length && <p className="text-muted-foreground">This folder is empty.</p>}
+      {!s.items?.length && <p className="text-muted-foreground">{t("This folder is empty.")}</p>}
       <ul className="divide-y">
         {s.items?.map((e) => (
           <li key={e.id} className="flex items-center gap-3 py-2">

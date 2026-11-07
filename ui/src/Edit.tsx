@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { api, errorMessage, initials } from "@ferrum/client";
+import { api, errorMessage, initials, t } from "@ferrum/client";
 import { Badge, Button, EmptyState, Spinner } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import type { Shareable } from "./files";
@@ -100,21 +100,21 @@ export function EditPage() {
 
   if (error) {
     return (
-      <EmptyState title="This file cannot be opened online" icon="file">
+      <EmptyState title={t("This file cannot be opened online")} icon="file">
         <p className="muted">{error}</p>
-        <Button onClick={() => navigate(-1)}>Back</Button>
+        <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
       </EmptyState>
     );
   }
-  if (!launch || !file) return <Spinner label="Opening the editor" />;
+  if (!launch || !file) return <Spinner label={t("Opening the editor")} />;
   return (
     <div className="editor-page">
       <div className="editor-bar">
         <Button size="sm" icon="left" onClick={leave}>
-          Back
+          {t("Back")}
         </Button>
         <strong>{launch.name}</strong>
-        {launch.action === "view" && <Badge>Read only</Badge>}
+        {launch.action === "view" && <Badge>{t("Read only")}</Badge>}
         {others ? (
           others.length > 0 && (
             <span className="editor-people" role="group" aria-label={`Also in the file: ${others.map((v) => v.name + (v.readOnly ? " (viewing)" : "")).join(", ")}`}>
@@ -133,7 +133,7 @@ export function EditPage() {
         ) : (
           present.length > 0 && <Badge tone="green">{presenceLabel(present)}</Badge>
         )}
-        {others && elsewhere.length > 0 && <Badge tone="amber">{presenceLabel(elsewhere)} in a browser editor</Badge>}
+        {others && elsewhere.length > 0 && <Badge tone="amber">{presenceLabel(elsewhere)} {t("in a browser editor")}</Badge>}
         {launch.action === "edit" && (
           <span className="faint" role="status">
             {modified === true ? "Unsaved changes" : modified === false ? "All changes saved" : "Changes are saved as new versions in Drive."}
@@ -141,7 +141,7 @@ export function EditPage() {
         )}
         <span className="editor-bar-end">
           <Button size="sm" aria-pressed={!!panel} onClick={() => setPanel(panel ? null : "comments")}>
-            Comments and history
+            {t("Comments and history")}
           </Button>
         </span>
       </div>

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { ApiError, bootstrap, download, errorMessage, fetchBlob, request } from "@ferrum/client";
+import { ApiError, bootstrap, download, errorMessage, fetchBlob, request, t } from "@ferrum/client";
 import { Alert, Badge, Button, Dialog, EmptyState, Spinner, confirmDialog, toast } from "@ferrum/kit";
 import { useEditors } from "./editors";
 import { editable } from "./files";
@@ -245,9 +245,9 @@ export function BrowserEditPage() {
 
   if (!editors.loading && !editor) {
     return (
-      <EmptyState title="This editor is not available" icon="file">
-        <p className="muted">Its add-on is not installed in this workspace, or the editor server is not set up.</p>
-        <Button onClick={() => navigate(-1)}>Back</Button>
+      <EmptyState title={t("This editor is not available")} icon="file">
+        <p className="muted">{t("Its add-on is not installed in this workspace, or the editor server is not set up.")}</p>
+        <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
       </EmptyState>
     );
   }
@@ -256,37 +256,37 @@ export function BrowserEditPage() {
       <EmptyState title={error ? "This file cannot be opened here" : "The editor could not start"} icon="file">
         <p className="muted">{error ?? failure}</p>
         <div className="row" style={{ gap: 8, justifyContent: "center" }}>
-          <Button onClick={() => navigate(-1)}>Back</Button>
+          <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
           {session && (
             <Button icon="download" onClick={() => void download(`/api/app/drive/files/${file}/content`, session.name).catch((e) => toast(errorMessage(e), "error"))}>
-              Download
+              {t("Download")}
             </Button>
           )}
         </div>
       </EmptyState>
     );
   }
-  if (!session || !editor) return <Spinner label="Opening the editor" />;
+  if (!session || !editor) return <Spinner label={t("Opening the editor")} />;
 
   const editing = session.action === "edit" && !lost;
   return (
     <div className="editor-page">
       <div className="editor-bar">
         <Button size="sm" icon="left" onClick={() => void leave()}>
-          Back
+          {t("Back")}
         </Button>
         <strong>{session.name}</strong>
-        {!editing && <Badge>Read only</Badge>}
+        {!editing && <Badge>{t("Read only")}</Badge>}
         {others.length > 0 && <Badge tone="green">{presenceLabel(others)}</Badge>}
-        {status === "starting" && <Badge>Starting</Badge>}
-        {status === "saving" && <Badge tone="blue">Saving</Badge>}
-        {status === "unsaved" && <Badge tone="red">Not saved</Badge>}
-        {status !== "saving" && status !== "unsaved" && dirty && <Badge tone="amber">Unsaved changes</Badge>}
-        {status === "saved" && !dirty && <Badge tone="green">Saved</Badge>}
+        {status === "starting" && <Badge>{t("Starting")}</Badge>}
+        {status === "saving" && <Badge tone="blue">{t("Saving")}</Badge>}
+        {status === "unsaved" && <Badge tone="red">{t("Not saved")}</Badge>}
+        {status !== "saving" && status !== "unsaved" && dirty && <Badge tone="amber">{t("Unsaved changes")}</Badge>}
+        {status === "saved" && !dirty && <Badge tone="green">{t("Saved")}</Badge>}
         <span className="faint">{editing ? "Ctrl+S or ⌘S saves a new version in Drive." : "Ctrl+S or ⌘S saves a copy in Drive."}</span>
         {unsaved && (
           <Button size="sm" onClick={() => void save(unsaved.name, unsaved.bytes)}>
-            Try again
+            {t("Try again")}
           </Button>
         )}
       </div>
@@ -296,12 +296,12 @@ export function BrowserEditPage() {
           action={
             session.held_in === "browser" && session.held_by === me ? (
               <Button size="sm" onClick={() => void takeOver()}>
-                Edit here instead
+                {t("Edit here instead")}
               </Button>
             ) : session.held_in === "browser" && editors.online && editable(session.name) ? (
               // Browser editors are one person's at a time: others may read it in the online editor.
               <Link className="btn btn-default btn-sm" to={`/drive/edit/${file}`}>
-                Open in the online editor (read only)
+                {t("Open in the online editor (read only)")}
               </Link>
             ) : undefined
           }
@@ -309,7 +309,7 @@ export function BrowserEditPage() {
           {readOnlyReason(session, me)}
         </Alert>
       )}
-      {lost && <Alert tone="warning">Your editing session ended: {lost} Saving now makes a copy.</Alert>}
+      {lost && <Alert tone="warning">{t("Your editing session ended: {lost} Saving now makes a copy.", { lost })}</Alert>}
       <iframe
         ref={frame}
         src={`${session.url}?${new URLSearchParams({ program: editor.program })}`}
@@ -322,22 +322,22 @@ export function BrowserEditPage() {
       {conflict && (
         <Dialog
           open
-          title="Not saved"
+          title={t("Not saved")}
           onClose={() => setConflict(null)}
           footer={
             <>
-              <Button onClick={() => setConflict(null)}>Cancel</Button>
+              <Button onClick={() => setConflict(null)}>{t("Cancel")}</Button>
               {editing && conflict.message.includes("changed since it was opened") && (
-                <Button onClick={() => void save(conflict.name, conflict.bytes, "replace")}>Replace</Button>
+                <Button onClick={() => void save(conflict.name, conflict.bytes, "replace")}>{t("Replace")}</Button>
               )}
               <Button variant="primary" onClick={() => void save(conflict.name, conflict.bytes, "copy")}>
-                Save a copy
+                {t("Save a copy")}
               </Button>
             </>
           }
         >
           <p>{conflict.message}</p>
-          <p className="muted">A copy keeps your changes beside the file. Replacing keeps the other changes in the file's history.</p>
+          <p className="muted">{t("A copy keeps your changes beside the file. Replacing keeps the other changes in the file's history.")}</p>
         </Dialog>
       )}
     </div>

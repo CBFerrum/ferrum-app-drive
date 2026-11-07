@@ -13,7 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, FileUp, FolderPlus, FolderUp, HardDrive, LayoutTemplate, Plus, Trash2, Upload } from "lucide-react";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
-import { api, errorMessage, shell } from "@ferrum/client";
+import { api, errorMessage, shell, t as tr } from "@ferrum/client";
 import { Button, Dialog, EmptyState, ErrorState, FamilyNav, Field, Spinner, toast, useShellTitle } from "@ferrum/kit";
 import {
   Button as UiButton,
@@ -75,7 +75,7 @@ function Crumb({ id, name, last }: { id: string; name: string; last: boolean }) 
 /** Placeholders for a list on its way. */
 function ListSkeleton() {
   return (
-    <div className="drive-skeleton" role="status" aria-label="Loading files">
+    <div className="drive-skeleton" role="status" aria-label={tr("Loading files")}>
       {Array.from({ length: 7 }, (_, i) => (
         <div key={i} className="drive-skeleton-row">
           <Skeleton className="size-5 rounded motion-reduce:animate-none" />
@@ -478,7 +478,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       if (!canAdd || !target) {
         depth.current = 0;
         setDropping(false);
-        return toast("You cannot add files here", "error");
+        return toast(tr("You cannot add files here"), "error");
       }
       dropFiles(entriesOf(e.dataTransfer), { id: target, name: targetName });
     },
@@ -490,16 +490,16 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const waiting = list.loading || (space.isPending && !src);
 
   const body = problem ? (
-    <ErrorState error={problem} title="Drive could not show this" onRetry={() => void qc.invalidateQueries({ queryKey: ["drive"] })} />
+    <ErrorState error={problem} title={tr("Drive could not show this")} onRetry={() => void qc.invalidateQueries({ queryKey: ["drive"] })} />
   ) : waiting ? (
     <ListSkeleton />
   ) : !items.length ? (
     <EmptyState title={empty.title} icon={view === "trash" && !query ? "trash" : "file"}>
       <p className="muted">{empty.hint}</p>
       {query && (
-        <Button onClick={() => navigate(kind ? location.pathname : "/drive")}>Clear the search</Button>
+        <Button onClick={() => navigate(kind ? location.pathname : "/drive")}>{tr("Clear the search")}</Button>
       )}
-      {!query && filtered && <Button onClick={() => setQuery({ type: null, since: null, owner: null })}>Clear filters</Button>}
+      {!query && filtered && <Button onClick={() => setQuery({ type: null, since: null, owner: null })}>{tr("Clear filters")}</Button>}
     </EmptyState>
   ) : (
     <>
@@ -543,7 +543,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             <div className="drive-title">
               <h1 className="page-title">{title}</h1>
               {crumbs.length > 0 && (
-                <nav className="page-sub drive-crumbs" aria-label="Folder path">
+                <nav className="page-sub drive-crumbs" aria-label={tr("Folder path")}>
                   {crumbs.map((b, i) => (
                     <span key={b.id}>
                       {i > 0 && <span aria-hidden="true"> / </span>}
@@ -555,7 +555,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <button type="button" className="drive-places-toggle" aria-expanded={places} aria-controls={railId} onClick={() => setPlaces(!places)}>
-                <HardDrive aria-hidden size={14} /> Places
+                <HardDrive aria-hidden size={14} /> {tr("Places")}
               </button>
               {canAdd && (
                 <>
@@ -566,15 +566,15 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                           <Plus /> {n.label}
                         </UiButton>
                         <UiButton size="sm" variant="outline" onClick={() => setGallery(true)}>
-                          <LayoutTemplate /> From a template
+                          <LayoutTemplate /> {tr("From a template")}
                         </UiButton>
                       </span>
                     ))
                   ) : (
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <UiButton size="sm" variant="outline" aria-label="New document or folder">
-                          <Plus /> New
+                        <UiButton size="sm" variant="outline" aria-label={tr("New document or folder")}>
+                          <Plus /> {tr("New")}
                         </UiButton>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" className="min-w-52">
@@ -584,11 +584,11 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                           </DropdownMenuItem>
                         ))}
                         <DropdownMenuItem onSelect={() => setGallery(true)}>
-                          <LayoutTemplate /> From a template…
+                          <LayoutTemplate /> {tr("From a template…")}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={newFolder}>
-                          <FolderPlus /> Folder
+                          <FolderPlus /> {tr("Folder")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -596,15 +596,15 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <UiButton size="sm" disabled={busy}>
-                        {busy ? <Spinner small /> : <Upload />} Upload <ChevronDown />
+                        {busy ? <Spinner small /> : <Upload />} {tr("Upload")} <ChevronDown />
                       </UiButton>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="min-w-44">
                       <DropdownMenuItem onSelect={() => picker.current?.click()}>
-                        <FileUp /> Files…
+                        <FileUp /> {tr("Files…")}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => folderPicker.current?.click()}>
-                        <FolderUp /> Folder…
+                        <FolderUp /> {tr("Folder…")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -622,7 +622,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
               )}
               {view === "trash" && !query && items.length > 0 && (
                 <UiButton size="sm" variant="outline" onClick={() => void actions.emptyTrash()}>
-                  <Trash2 /> Empty the trash
+                  <Trash2 /> {tr("Empty the trash")}
                 </UiButton>
               )}
             </div>
@@ -640,15 +640,15 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
               }}
             >
               <label htmlFor={`${railId}-q`} className="sr-only">
-                Search Drive
+                {tr("Search Drive")}
               </label>
-              <input ref={searchBox} id={`${railId}-q`} className="input" type="search" placeholder="Search Drive" value={typed} onChange={(e) => setTyped(e.target.value)} />
+              <input ref={searchBox} id={`${railId}-q`} className="input" type="search" placeholder={tr("Search Drive")} value={typed} onChange={(e) => setTyped(e.target.value)} />
             </form>
             <Chips src={src} fileType={kind} q={q} set={setQuery} />
           </div>
           {src?.kind === "search" && src.folder && !query && (
             <p className="faint drive-note" role="status">
-              Looking in “{targetName}” and the folders inside it.
+              {tr("Looking in “{targetName}” and the folders inside it.", { targetName })}
             </p>
           )}
           {chosenItems.length > 0 && (
@@ -750,9 +750,9 @@ function NameDialog({ title, label, initial, done, onClose }: { title: string; l
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{tr("Cancel")}</Button>
           <Button variant="primary" loading={busy} disabled={!name.trim()} onClick={() => void submit()}>
-            Save
+            {tr("Save")}
           </Button>
         </>
       }

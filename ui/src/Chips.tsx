@@ -18,6 +18,7 @@ import {
   PopoverTrigger,
 } from "@ferrum/kit/primitives";
 import { type Order, type Query, SINCE, SORTS, type Source, TYPES, abilities, defaultSort, filtersOn, naturalOrder } from "./listing";
+import { t as tr } from "@ferrum/client";
 
 /** How each sort's two directions read. */
 const WAYS: Record<string, [string, string]> = {
@@ -58,14 +59,14 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
   };
 
   return (
-    <div className="drive-chips" role="group" aria-label="Sort and filter">
+    <div className="drive-chips" role="group" aria-label={tr("Sort and filter")}>
       {can.sorts.length > 0 && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Chip icon={ArrowDownUp} label={sort ? `Sort: ${SORTS.find((s) => s.id === sort)?.label}${can.direction ? (order === "desc" ? " ↓" : " ↑") : ""}` : "Sort"} on={!!q.sort} />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
-            <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+            <DropdownMenuLabel>{tr("Sort by")}</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={sort ?? ""} onValueChange={(v) => set({ sort: v, order: null })}>
               {SORTS.filter((s) => can.sorts.includes(s.id)).map((s) => (
                 <DropdownMenuRadioItem key={s.id} value={s.id}>
@@ -92,7 +93,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
             <DropdownMenuRadioGroup value={q.type ?? ""} onValueChange={(v) => set({ type: v || null })}>
-              <DropdownMenuRadioItem value="">Any type</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="">{tr("Any type")}</DropdownMenuRadioItem>
               {TYPES.map((t) => (
                 <DropdownMenuRadioItem key={t.id} value={t.id}>
                   {t.label}
@@ -109,7 +110,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="min-w-44">
             <DropdownMenuRadioGroup value={q.since ? String(q.since) : ""} onValueChange={(v) => set({ since: v || null })}>
-              <DropdownMenuRadioItem value="">Any time</DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="">{tr("Any time")}</DropdownMenuRadioItem>
               {SINCE.map((s) => (
                 <DropdownMenuRadioItem key={s.days} value={String(s.days)}>
                   {s.label}
@@ -127,7 +128,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
           <PopoverContent align="start" className="w-72">
             <form onSubmit={ask} className="grid gap-2">
               <label htmlFor={field} className="text-sm font-medium">
-                Files owned by
+                {tr("Files owned by")}
               </label>
               <input id={field} className="input" type="email" list={`${field}-people`} placeholder="name@company.com" value={owner} onChange={(e) => setOwner(e.target.value)} autoComplete="off" />
               <datalist id={`${field}-people`}>
@@ -140,11 +141,11 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
               <div className="flex justify-end gap-2">
                 {q.owner && (
                   <Button size="sm" onClick={() => (setOwner(""), set({ owner: null }))}>
-                    Clear
+                    {tr("Clear")}
                   </Button>
                 )}
                 <Button size="sm" variant="primary" type="submit" disabled={!owner.trim()}>
-                  Apply
+                  {tr("Apply")}
                 </Button>
               </div>
             </form>
@@ -153,7 +154,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
       )}
       {filtersOn(q) > 0 && (
         <button type="button" className="drive-chip-clear" onClick={() => set({ type: null, since: null, owner: null })}>
-          <X aria-hidden size={13} /> Clear filters
+          <X aria-hidden size={13} /> {tr("Clear filters")}
         </button>
       )}
     </div>

@@ -3,6 +3,7 @@
 
 import { lazy, type ReactNode, Suspense } from "react";
 import { Spinner } from "@ferrum/kit";
+import { t } from "@ferrum/client";
 
 export const ShareDialog = lazy(() => import("./Share").then((m) => ({ default: m.ShareDialog })));
 export const BulkShareDialog = lazy(() => import("./BulkShare").then((m) => ({ default: m.BulkShareDialog })));
@@ -21,8 +22,8 @@ export const Later = ({ children }: { children: ReactNode }) => <Suspense fallba
 export const LaterPanel = ({ children }: { children: ReactNode }) => (
   <Suspense
     fallback={
-      <aside className="drive-details" aria-label="Details">
-        <Spinner label="Loading details" />
+      <aside className="drive-details" aria-label={t("Details")}>
+        <Spinner label={t("Loading details")} />
       </aside>
     }
   >

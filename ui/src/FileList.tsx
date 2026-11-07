@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { type DragEvent, Fragment, useEffect, useRef } from "react";
 import { Link } from "react-router";
-import { formatDateTime } from "@ferrum/client";
+import { formatDateTime, t as tr } from "@ferrum/client";
 import { Badge, toast } from "@ferrum/kit";
 import {
   Button as UiButton,
@@ -191,8 +191,8 @@ function Row({
               <span className="truncate">{name}</span>
             </span>
           )}
-          {it.starred && <Star aria-label="Starred" size={14} className="drive-starred" />}
-          {it.locked_by && <Badge tone="amber">Checked out</Badge>}
+          {it.starred && <Star aria-label={tr("Starred")} size={14} className="drive-starred" />}
+          {it.locked_by && <Badge tone="amber">{tr("Checked out")}</Badge>}
           {here.length > 0 && (
             <Badge tone="green" title={presenceLabel(here)}>
               {presenceLabel(here)}
@@ -216,7 +216,7 @@ function Row({
       <TableCell className="py-1 text-end whitespace-nowrap">
         {joins && open && (
           <EditorLink className={`${buttonVariants({ size: "xs" })} me-1`} choice={open} aria-label={`Join ${presenceLabel(editing).replace(/ (is|are) editing$/, "")} in ${name}`}>
-            Join
+            {tr("Join")}
           </EditorLink>
         )}
         <DropdownMenu>
@@ -229,11 +229,11 @@ function Row({
             {trash ? (
               <>
                 <DropdownMenuItem onSelect={() => actions.restore(it)}>
-                  <ArchiveRestore /> Restore
+                  <ArchiveRestore /> {tr("Restore")}
                 </DropdownMenuItem>
                 {allows(it.permission, "Manage") && (
                   <DropdownMenuItem variant="destructive" onSelect={() => actions.destroy(it)}>
-                    <Trash2 /> Delete forever
+                    <Trash2 /> {tr("Delete forever")}
                   </DropdownMenuItem>
                 )}
               </>
@@ -247,7 +247,7 @@ function Row({
                 {others.length > 0 && (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
-                      <ExternalLink /> Open with
+                      <ExternalLink /> {tr("Open with")}
                     </DropdownMenuSubTrigger>
                     <DropdownMenuSubContent className="min-w-52">
                       {others.map((c) => (
@@ -266,11 +266,11 @@ function Row({
                 )}
                 {(open || others.length > 0) && <DropdownMenuSeparator />}
                 <DropdownMenuItem onSelect={() => actions.details(it)}>
-                  <Info /> Details
+                  <Info /> {tr("Details")}
                 </DropdownMenuItem>
                 {allows(it.permission, "Manage") && (
                   <DropdownMenuItem onSelect={() => actions.share(it)}>
-                    <Share2 /> Share
+                    <Share2 /> {tr("Share")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onSelect={() => actions.star(it)}>
@@ -278,32 +278,32 @@ function Row({
                 </DropdownMenuItem>
                 {allows(it.permission, "Edit") && (
                   <DropdownMenuItem onSelect={() => actions.rename(it)}>
-                    <Pencil /> Rename
+                    <Pencil /> {tr("Rename")}
                   </DropdownMenuItem>
                 )}
                 {allows(it.permission, "Edit") && (
                   <DropdownMenuItem onSelect={() => actions.move(it, false)}>
-                    <FolderInput /> Move to…
+                    <FolderInput /> {tr("Move to…")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onSelect={() => actions.move(it, true)}>
-                  <Copy /> Copy to…
+                  <Copy /> {tr("Copy to…")}
                 </DropdownMenuItem>
                 {it.kind === "file" && (
                   <DropdownMenuItem onSelect={() => actions.download(it)}>
-                    <Download /> Download
+                    <Download /> {tr("Download")}
                   </DropdownMenuItem>
                 )}
                 {it.kind === "file" && templates && templatable(it.name) && (
                   <DropdownMenuItem onSelect={() => actions.saveTemplate(it)}>
-                    <LayoutTemplate /> Save as a template
+                    <LayoutTemplate /> {tr("Save as a template")}
                   </DropdownMenuItem>
                 )}
                 {allows(it.permission, "Edit") && (
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem variant="destructive" onSelect={() => actions.trash(it)}>
-                      <Trash2 /> Move to trash
+                      <Trash2 /> {tr("Move to trash")}
                     </DropdownMenuItem>
                   </>
                 )}
@@ -379,13 +379,13 @@ export function FileList({
       <TableHeader>
         <TableRow className="hover:bg-transparent">
           <TableHead className="w-10 pe-0 ps-3">
-            <input ref={all} type="checkbox" className="drive-check" checked={every} aria-label="Choose every item shown" onChange={(e) => actions.chooseAll(e.target.checked)} />
+            <input ref={all} type="checkbox" className="drive-check" checked={every} aria-label={tr("Choose every item shown")} onChange={(e) => actions.chooseAll(e.target.checked)} />
           </TableHead>
           {head("name", "Name")}
           {head("modified", view === "trash" ? "Deleted" : "Modified", "hidden md:table-cell")}
           {head("size", "Size", "hidden text-right sm:table-cell")}
           <TableHead className="w-12">
-            <span className="sr-only">Actions</span>
+            <span className="sr-only">{tr("Actions")}</span>
           </TableHead>
         </TableRow>
       </TableHeader>

@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import { Button, Dialog } from "@ferrum/kit";
 import { Kbd } from "@ferrum/kit/primitives";
 import { SHORTCUTS, keyName } from "./shortcuts";
+import { t } from "@ferrum/client";
 
 const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -11,15 +12,15 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog
       open
-      title="Keyboard shortcuts"
+      title={t("Keyboard shortcuts")}
       onClose={onClose}
       footer={
         <Button variant="primary" onClick={onClose}>
-          Done
+          {t("Done")}
         </Button>
       }
     >
-      <p className="muted">They work in the list, when no field has the focus. Delete asks before it moves anything to the trash.</p>
+      <p className="muted">{t("They work in the list, when no field has the focus. Delete asks before it moves anything to the trash.")}</p>
       <div className="drive-keys">
         {SHORTCUTS.map((g) => (
           <section key={g.group} aria-label={g.group}>
