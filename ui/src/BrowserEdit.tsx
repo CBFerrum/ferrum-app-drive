@@ -47,16 +47,17 @@ export function copyName(name: string): string {
 
 /** Why a session opened read-only, for people. */
 export function readOnlyReason(s: Pick<Session, "held_by" | "held_in">, me: string | undefined): string {
-  const who = s.held_by && s.held_by === me ? "You are" : `${s.held_by ?? "Someone"} is`;
+  const mine = !!s.held_by && s.held_by === me;
+  const name = s.held_by ?? t("Someone");
   switch (s.held_in) {
     case "browser":
-      return s.held_by === me ? "You are editing this file in another tab or window." : `${who} editing this file in a browser editor.`;
+      return mine ? t("You are editing this file in another tab or window.") : t("{name} is editing this file in a browser editor.", { name });
     case "online":
-      return `${who} editing this file in the online editor.`;
+      return mine ? t("You are editing this file in the online editor.") : t("{name} is editing this file in the online editor.", { name });
     case "checkout":
-      return `${s.held_by ?? "Someone"} has checked this file out.`;
+      return t("{name} has checked this file out.", { name });
     default:
-      return "You can view this file but not change it.";
+      return t("You can view this file but not change it.");
   }
 }
 
@@ -94,7 +95,7 @@ export function BrowserEditPage() {
       (s) => {
         if (!alive) return;
         if (editor.max_mb && s.size > editor.max_mb * 1024 * 1024) {
-          setError(`${s.name} is larger than ${editor.max_mb} MB, the most ${editor.title} opens.`);
+          setError(t("{name} is larger than {max_mb} MB, the most {title} opens.", { name: s.name, max_mb: editor.max_mb, title: editor.title }));
           return;
         }
         live.current.base = s.version;
@@ -173,7 +174,7 @@ export function BrowserEditPage() {
         const made = await saveCopy(name, bytes);
         toast(t("Saved {name} next to {name2}", { name: made.name, name2: s.name }));
       } else if (how !== "copy" && s.action === "edit" && s.lock && !gone) {
-        const comment = `Saved in ${editor.title}${version ? ` ${version}` : ""}`;
+        const comment = (version ? t("Saved in {title} {version}", { title: editor.title, version: String(version) }) : t("Saved in {title}", { title: editor.title }));
         const saved = await request<{ version: number }>(`/api/app/drive/files/${file}/versions`, {
           method: "POST",
           query: { lock: s.lock, base: how === "replace" ? undefined : base, comment },
@@ -203,7 +204,7 @@ export function BrowserEditPage() {
       setStatus("ready");
     } else if (d.type === "dirty") setDirty(!!d.dirty);
     else if (d.type === "save" && d.bytes instanceof ArrayBuffer) void save(String(d.name ?? live.current.session?.name ?? "file"), d.bytes);
-    else if (d.type === "failed") setFailure(FAILURES[String(d.error)] ?? `The editor could not start: ${d.error}`);
+    else if (d.type === "failed") setFailure(FAILURES[String(d.error)] ?? t("The editor could not start: {error}", { error: String(d.error) }));
   };
 
   // The relay loaded: connect, and send the file along (the relay keeps it until the editor is ready).
@@ -219,7 +220,7 @@ export function BrowserEditPage() {
       .then((b) => b.arrayBuffer())
       .then(
         (bytes) => channel.port1.postMessage({ type: "open", name: s.name, bytes }, [bytes]),
-        (e: unknown) => setFailure(`The file could not be read: ${errorMessage(e)}`),
+        (e: unknown) => setFailure(t("The file could not be read: {e}", { e: errorMessage(e) })),
       );
   };
 

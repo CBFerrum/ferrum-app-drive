@@ -14,7 +14,7 @@ export interface Where {
   name: string;
 }
 
-const files = (n: number) => (n === 1 ? "1 file" : `${n} files`);
+const files = (n: number) => (n === 1 ? "1 file" : t("{n} files", { n }));
 
 /** What a confirmation calls the items: their name, or how many. */
 const called = (list: Item[]) => (list.length === 1 ? `“${shownName(list[0].name)}”` : count(list.length));
@@ -55,16 +55,16 @@ export function useActions(o: {
     async trash(list: Item[]) {
       if (!list.length) return;
       const ok = await confirmDialog({ title: t("Move {list} to the trash?", { list: called(list) }), message: t("You can restore them from Trash."), confirmLabel: t("Move to trash"), danger: true });
-      if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: "Moved", doing: "trash" }, "to the trash");
+      if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: t("Moved"), doing: t("trash") }, "to the trash");
     },
 
     async restore(list: Item[]) {
-      await run(list, (i) => act("restore", { item: i.id }), { done: "Restored", doing: "restore" });
+      await run(list, (i) => act("restore", { item: i.id }), { done: t("Restored"), doing: t("restore") });
     },
 
     async destroy(list: Item[]) {
       const ok = await confirmDialog({ title: t("Delete {list} for good?", { list: called(list) }), message: t("This cannot be undone."), confirmLabel: t("Delete forever"), danger: true });
-      if (ok) await run(list, (i) => act("delete_forever", { item: i.id }), { done: "Deleted", doing: "delete" });
+      if (ok) await run(list, (i) => act("delete_forever", { item: i.id }), { done: t("Deleted"), doing: t("delete") });
     },
 
     async emptyTrash() {
@@ -87,7 +87,7 @@ export function useActions(o: {
 
     /** Moves the items into a folder, or copies them. */
     async move(list: Item[], to: Where, copy: boolean) {
-      return run(list, (i) => act(copy ? "copy" : "move", { item: i.id, to: to.id }), copy ? { done: "Copied", doing: "copy" } : { done: "Moved", doing: "move" }, `to “${to.name}”`, !copy);
+      return run(list, (i) => act(copy ? "copy" : "move", { item: i.id, to: to.id }), copy ? { done: t("Copied"), doing: t("copy") } : { done: t("Moved"), doing: t("move") }, t("to “{name}”", { name: to.name }), !copy);
     },
 
     /** Stars them all, or, when every one is starred already, takes the stars off. */
@@ -107,7 +107,7 @@ export function useActions(o: {
         (i) => (isLiveDoc(i.name) ? download(`/api/app/drive/files/${i.id}/content`, i.name.replace(/\.fdoc$/i, ".html"), { format: "html" }) : download(`/api/app/drive/files/${i.id}/content`, i.name)),
         errorMessage,
       );
-      if (out.failed.length) say(told({ done: "Downloaded", doing: "download" }, out));
+      if (out.failed.length) say(told({ done: t("Downloaded"), doing: t("download") }, out));
       else if (only.length < list.length) toast(t("Downloaded {value}. Folders cannot be downloaded.", { value: files(only.length) }));
     },
 
@@ -134,7 +134,7 @@ export function useActions(o: {
         // One word on the whole upload when the last file is stored (the tray tells each one).
         const results = await Promise.allSettled(made.sent.map((s) => s.done));
         const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ item: made.sent[i], reason: errorMessage(r.reason) }] : []));
-        if (made.sent.length) say(told({ done: "Uploaded", doing: "upload" }, { done: made.sent.filter((_, i) => results[i].status === "fulfilled"), failed }, `to “${to.name}”`, files));
+        if (made.sent.length) say(told({ done: t("Uploaded"), doing: t("upload") }, { done: made.sent.filter((_, i) => results[i].status === "fulfilled"), failed }, t("to “{name}”", { name: to.name }), files));
         await o.after();
       } catch (e) {
         toast(errorMessage(e), "error");

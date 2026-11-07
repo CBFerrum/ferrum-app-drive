@@ -2,6 +2,7 @@
 // around it, and who it was sent to by link. Pure, so it is tested without a browser.
 
 import type { Crumb } from "./files";
+import { t } from "@ferrum/client";
 
 /** A grant to a person or to everyone holding a role (`list_shares`). */
 export interface Share {
@@ -41,7 +42,7 @@ export function groupShares(shares: Share[], path: Crumb[]): { direct: Share[]; 
 }
 
 /** Who a share is for, in words. */
-export const shareFor = (s: Pick<Share, "email" | "role">) => s.email ?? (s.role ? `Everyone with the role ${s.role}` : "Someone");
+export const shareFor = (s: Pick<Share, "email" | "role">) => s.email ?? (s.role ? t("Everyone with the role {role}", { role: s.role }) : "Someone");
 
 /** The addresses in text typed or pasted into a box: split at commas, semicolons, spaces and lines,
  *  lower-cased, each once, and only what looks like an address. `rest` is what was left over. */

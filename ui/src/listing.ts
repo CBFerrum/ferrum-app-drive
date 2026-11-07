@@ -180,7 +180,7 @@ export function nextOffset(offset: number, count: number, more: { total: number 
 
 /** How a count of items reads under a list: "300 of 1,340". */
 export function shownOf(shown: number, total: number | null): string {
-  return total !== null && total > shown ? `${shown.toLocaleString()} of ${total.toLocaleString()}` : shown.toLocaleString();
+  return total !== null && total > shown ? tr("{shown} of {total}", { shown: shown.toLocaleString(), total: total.toLocaleString() }) : shown.toLocaleString();
 }
 
 /** The line under an item's name: where a search found it or the words it found, who shared it, who
@@ -188,7 +188,7 @@ export function shownOf(shown: number, total: number | null): string {
 export function whereLine(i: Item, view: View, inFolder: boolean): string | null {
   if (i.snippet) return i.snippet;
   const parts: string[] = [];
-  if (view === "shared" && i.shared_by) parts.push(`Shared by ${i.shared_by}`);
+  if (view === "shared" && i.shared_by) parts.push(tr("Shared by {shared_by}", { shared_by: i.shared_by }));
   else if (!inFolder && i.owner) parts.push(i.owner);
   if (i.path) parts.push(i.path);
   return parts.length ? parts.join(" · ") : null;

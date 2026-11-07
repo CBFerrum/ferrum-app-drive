@@ -34,9 +34,9 @@ function facts(l: PublicLink, ended: boolean): string[] {
   const out: string[] = [];
   if (l.has_password) out.push("password");
   if (l.expires_at) out.push(`${ended ? "ended" : "ends"} ${day(l.expires_at)}`);
-  if (l.max_downloads) out.push(`${l.download_count ?? 0} of ${l.max_downloads} uses`);
+  if (l.max_downloads) out.push(t("{value} of {max_downloads} uses", { value: l.download_count ?? 0, max_downloads: l.max_downloads }));
   else if (l.download_count) out.push(`${l.download_count} ${l.download_count === 1 ? "use" : "uses"}`);
-  out.push(l.last_accessed_at ? `last opened ${relativeTime(l.last_accessed_at)}` : "not opened yet");
+  out.push(l.last_accessed_at ? t("last opened {value}", { value: relativeTime(l.last_accessed_at) }) : "not opened yet");
   return out;
 }
 

@@ -3,6 +3,7 @@
 // link is refused rather than after. Pure, so it is tested without a browser.
 
 import { daysAgo } from "./listing";
+import { t } from "@ferrum/client";
 
 /** What `list_links` says the workspace requires. */
 export interface LinkPolicy {
@@ -58,8 +59,8 @@ export function rules(p: LinkPolicy): string | null {
   if (!p.allow_public_links) return null;
   const asks: string[] = [];
   if (p.link_password_required) asks.push("need a password");
-  if (p.max_link_days > 0) asks.push(`end within ${p.max_link_days === 1 ? "a day" : `${p.max_link_days} days`}`);
-  return asks.length ? `Links in this workspace ${asks.join(" and ")}.` : null;
+  if (p.max_link_days > 0) asks.push((p.max_link_days === 1 ? t("end within a day") : t("end within {days} days", { days: Number(p.max_link_days) })));
+  return asks.length ? t("Links in this workspace {asks}.", { asks: asks.join(" and ") }) : null;
 }
 
 export type Problems = Partial<Record<keyof LinkDraft, string>>;
@@ -70,11 +71,11 @@ export function problems(d: LinkDraft, p: LinkPolicy, today: string): Problems {
   const latest = latestEnd(p, today);
   if (latest && !d.expires) out.expires = "Pick the day the link ends";
   else if (d.expires && d.expires <= daysAgo(today, 1)) out.expires = "Pick a day that has not passed";
-  else if (latest && d.expires > latest) out.expires = `The latest is ${latest}`;
+  else if (latest && d.expires > latest) out.expires = t("The latest is {latest}", { latest });
   if (p.link_password_required && !d.password) out.password = "This workspace needs a password on links";
-  else if (d.password && (d.password.length < PASSWORD_MIN || d.password.length > PASSWORD_MAX)) out.password = `Use ${PASSWORD_MIN} to ${PASSWORD_MAX} characters`;
+  else if (d.password && (d.password.length < PASSWORD_MIN || d.password.length > PASSWORD_MAX)) out.password = t("Use {PASSWORD_MIN} to {PASSWORD_MAX} characters", { PASSWORD_MIN, PASSWORD_MAX });
   if (d.limit && !/^[1-9]\d{0,8}$/.test(d.limit.trim())) out.limit = "Use a whole number, or leave it empty";
-  if (d.note.length > NOTE_MAX) out.note = `At most ${NOTE_MAX} characters`;
+  if (d.note.length > NOTE_MAX) out.note = t("At most {NOTE_MAX} characters", { NOTE_MAX });
   return out;
 }
 

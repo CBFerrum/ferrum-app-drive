@@ -151,7 +151,7 @@ export function editorsFor(
   const ext = extension(file.name);
   for (const b of e.browser.filter((b) => b.types.includes(ext))) {
     const tooLarge = b.max_mb && (file.size ?? 0) > b.max_mb * 1024 * 1024;
-    out.push({ key: b.id, label: b.title, to: `/drive/edit/${id}/${encodeURIComponent(b.id)}`, unavailable: tooLarge ? `larger than ${b.max_mb} MB` : undefined });
+    out.push({ key: b.id, label: b.title, to: `/drive/edit/${id}/${encodeURIComponent(b.id)}`, unavailable: tooLarge ? t("larger than {max_mb} MB", { max_mb: String(b.max_mb) }) : undefined });
   }
   if (viewable(file.name)) out.push(view);
   return out.sort((a, b) => Number(!!a.unavailable) - Number(!!b.unavailable));

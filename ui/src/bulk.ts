@@ -1,3 +1,4 @@
+import { t } from "@ferrum/client";
 // Acting on several items at once: one after another (a move locks the folders it touches), every
 // one tried, and what happened told in words. Pure, so it is tested without a browser.
 
@@ -21,7 +22,7 @@ export async function each<T>(items: T[], run: (item: T) => Promise<unknown>, re
   return out;
 }
 
-export const items = (n: number) => (n === 1 ? "1 item" : `${n} items`);
+export const items = (n: number) => (n === 1 ? t("1 item") : t("{n} items", { n }));
 
 /** What a run did: "Moved 3 items to “Reports”", or what went wrong, with the server's reason for
  *  the first that failed. `verb` is what was done ("Moved") and `doing` what was tried ("move");
@@ -31,7 +32,7 @@ export function told(verb: { done: string; doing: string }, out: Outcome<{ name:
   const to = where ? ` ${where}` : "";
   if (!out.failed.length) return { message: `${verb.done} ${noun(total)}${to}`, error: false };
   const [first] = out.failed;
-  const more = out.failed.length > 1 ? ` (and ${out.failed.length - 1} more)` : "";
-  const head = out.done.length ? `${verb.done} ${out.done.length} of ${noun(total)}${to}. ` : `Could not ${verb.doing} “${first.item.name}”: `;
+  const more = out.failed.length > 1 ? t(" (and {value} more)", { value: out.failed.length - 1 }) : "";
+  const head = out.done.length ? t("{done} {length} of {total}{to}. ", { done: verb.done, length: out.done.length, total: noun(total), to }) : t("Could not {doing} “{name}”: ", { doing: verb.doing, name: first.item.name });
   return { message: out.done.length ? `${head}“${first.item.name}”: ${first.reason}${more}` : `${head}${first.reason}${more}`, error: true };
 }

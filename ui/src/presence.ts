@@ -4,7 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api } from "@ferrum/client";
+import { api, t } from "@ferrum/client";
 
 export interface Present {
   name: string;
@@ -65,6 +65,6 @@ export function presenceLabel(people: Present[]): string {
   const editing = people.some((p) => p.mode === "edit");
   const doing = people.every((p) => p.mode === "edit") ? "editing" : people.every((p) => p.mode === "view") ? "viewing" : "here";
   const verb = people.length === 1 ? "is" : "are";
-  const who = people.length === 1 ? people[0].name : people.length === 2 ? `${people[0].name} and ${people[1].name}` : `${people[0].name} and ${people.length - 1} others`;
+  const who = people.length === 1 ? people[0].name : people.length === 2 ? t("{name} and {name2}", { name: people[0].name, name2: people[1].name }) : t("{name} and {value} others", { name: people[0].name, value: people.length - 1 });
   return `${who} ${verb} ${editing && doing === "here" ? "here, editing" : doing}`;
 }

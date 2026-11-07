@@ -25,7 +25,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
     setBusy(true);
     const out = await each(items, (i) => api.post(`/api/v1/DriveSpace/${space}/actions/share`, { item: i.id, email: who, permission, expires_at: until || undefined }), errorMessage);
     await qc.invalidateQueries({ queryKey: ["drive"] });
-    const said = told({ done: "Shared", doing: "share" }, out, `with ${who} as ${roleLabel(permission)}`);
+    const said = told({ done: t("Shared"), doing: t("share") }, out, t("with {who} as {permission}", { who, permission: roleLabel(permission) }));
     toast(said.message, said.error ? "error" : "success");
     onDone(out.failed.map((f) => f.item));
     onClose();
