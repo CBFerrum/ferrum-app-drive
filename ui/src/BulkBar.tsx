@@ -60,7 +60,7 @@ export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boo
           </>
         )}
       </div>
-      <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="Choose nothing" title="Choose nothing (Esc)" onClick={actions.clear}>
+      <Button size="icon-sm" variant="ghost" className="ms-auto" aria-label="Choose nothing" title="Choose nothing (Esc)" onClick={actions.clear}>
         <X />
       </Button>
     </div>

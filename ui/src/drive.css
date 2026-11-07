@@ -124,7 +124,8 @@
   align-items: center;
   justify-content: space-between;
   margin-top: 8px;
-  padding: 0 4px 0 10px;
+  padding-block: 0 0;
+  padding-inline: 10px 4px;
 }
 .drive-rail-head h2 {
   color: var(--muted-foreground);
@@ -267,7 +268,8 @@
   align-items: center;
   gap: 8px 12px;
   margin-bottom: 8px;
-  padding: 6px 8px 6px 12px;
+  padding-block: 6px 6px;
+  padding-inline: 12px 8px;
   border: 1px solid var(--primary);
   border-radius: var(--radius);
   background: var(--surface);
@@ -306,7 +308,7 @@
   cursor: pointer;
 }
 .drive-line {
-  padding-left: 30px;
+  padding-inline-start: 30px;
   color: var(--muted-foreground);
   font-size: 12.5px;
   overflow-wrap: anywhere;
@@ -350,7 +352,7 @@
 .drive-ghost {
   position: fixed;
   top: -100px;
-  left: -100px;
+  inset-inline-start: -100px;
   padding: 6px 12px;
   border-radius: 999px;
   background: var(--primary);
@@ -439,8 +441,8 @@
   .drive-rail.is-open {
     position: fixed;
     top: calc(var(--ferrum-bar-height, 48px) + 8px);
-    right: 8px;
-    left: 8px;
+    inset-inline-end: 8px;
+    inset-inline-start: 8px;
     z-index: 30;
     display: flex;
     max-height: calc(100dvh - var(--ferrum-bar-height, 48px) - 24px);
@@ -618,7 +620,7 @@ a.drive-name:focus-visible > span {
   margin-bottom: 4px;
 }
 .drive-comment-head .btn {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .drive-versions li {
   display: flex;
@@ -638,7 +640,7 @@ a.drive-name:focus-visible > span {
   .drive-shell .drive-details {
     position: fixed;
     top: calc(var(--ferrum-bar-height, 48px) + 8px);
-    right: 8px;
+    inset-inline-end: 8px;
     bottom: 8px;
     z-index: 35;
     width: min(26rem, calc(100vw - 16px));
@@ -772,18 +774,18 @@ a.drive-name:focus-visible > span {
 
 /* Who else is in the online editor (Edit.tsx, C2), and its panel beside the editor. */
 .editor-bar-end {
-  margin-left: auto;
+  margin-inline-start: auto;
 }
 .editor-people {
   display: inline-flex;
-  padding-left: 6px;
+  padding-inline-start: 6px;
 }
 .editor-person {
   display: inline-grid;
   place-items: center;
   width: 26px;
   height: 26px;
-  margin-left: -6px;
+  margin-inline-start: -6px;
   border-radius: 50%;
   border: 2px solid var(--surface);
   font-size: 0.7rem;
@@ -878,7 +880,7 @@ a.drive-name:focus-visible > span {
   row-gap: 2px;
   width: 100%;
   padding: 8px 12px;
-  text-align: left;
+  text-align: start;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -916,16 +918,17 @@ a.drive-name:focus-visible > span {
 /* Threads: a document's words a comment is on, its replies, and threads that are done. */
 .drive-comment-quote {
   margin: 0 0 4px;
-  padding-left: 8px;
-  border-left: 3px solid var(--warning);
+  padding-inline-start: 8px;
+  border-inline-start: 3px solid var(--warning);
   color: var(--muted-foreground);
   font-size: 0.85em;
   overflow-wrap: anywhere;
 }
 .drive-comment-reply {
-  margin: 6px 0 0 12px;
-  padding-left: 10px;
-  border-left: 2px solid var(--border);
+  margin-block: 6px 0;
+  margin-inline: 12px 0;
+  padding-inline-start: 10px;
+  border-inline-start: 2px solid var(--border);
 }
 .drive-comment.is-resolved {
   opacity: 0.75;
