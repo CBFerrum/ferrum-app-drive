@@ -7,7 +7,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { api, download, errorMessage, formatDateTime, shell, type IntentRequest, t } from "@ferrum/client";
+import { api, download, errorMessage, formatDateTime, shell, type IntentRequest, t, isolate } from "@ferrum/client";
 import { Button, EmptyState, Spinner, toast } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import { FileGlyph } from "./FileGlyph";
@@ -67,7 +67,7 @@ export function Viewer({ item }: { item: Pick<ItemInfo, "id" | "name"> }) {
   if (isLiveDoc(item.name)) return <iframe className="drive-viewer" title={item.name} src={`${url}?format=html&inline=1`} sandbox="" />;
   return (
     <div className="drive-viewer-none">
-      <p className="muted">{isPdf(item.name) ? "PDFs open in your browser's viewer." : "Drive cannot show this kind of file; download it to open it."}</p>
+      <p className="muted">{isPdf(item.name) ? t("PDFs open in your browser's viewer.") : t("Drive cannot show this kind of file; download it to open it.")}</p>
       <div className="row" style={{ gap: 8 }}>
         {isPdf(item.name) && (
           <a className="btn btn-default btn-sm" href={`${url}?inline=1`} target="_blank" rel="noopener noreferrer">
@@ -92,7 +92,7 @@ export function ViewPage() {
   if (item.error)
     return (
       <EmptyState title={t("This file cannot be opened")} icon="file">
-        <p className="muted">{errorMessage(item.error)}</p>
+        <p className="muted">{isolate(errorMessage(item.error))}</p>
         <Link to="/drive">{t("Go to Drive")}</Link>
       </EmptyState>
     );
@@ -104,9 +104,9 @@ export function ViewPage() {
         <Link className="btn btn-default btn-sm" to={back}>
           {t("Back")}
         </Link>
-        <strong>{shownName(item.data.name)}</strong>
+        <strong>{isolate(shownName(item.data.name))}</strong>
         <span className="faint">
-          {sizeLabel(item.data.size ?? null)} · {formatDateTime(item.data.modified_at)}
+          {isolate(sizeLabel(item.data.size ?? null))} · {isolate(formatDateTime(item.data.modified_at))}
         </span>
       </div>
       <Viewer item={item.data} />
@@ -129,7 +129,7 @@ export function ItemPage() {
   if (item.error)
     return (
       <EmptyState title={t("This item cannot be opened")} icon="file">
-        <p className="muted">{errorMessage(item.error)}</p>
+        <p className="muted">{isolate(errorMessage(item.error))}</p>
         <Link to="/drive">{t("Go to Drive")}</Link>
       </EmptyState>
     );
@@ -154,14 +154,14 @@ export function PickPage() {
       ).then((r) => r.items.filter((i) => i.kind === "file")),
     enabled: !!req,
   });
-  if (error) return <EmptyState title={t("Nothing to pick")}>{error}</EmptyState>;
+  if (error) return <EmptyState title={t("Nothing to pick")}>{isolate(error)}</EmptyState>;
   if (!req) return <Spinner label={t("Opening Drive")} />;
   const toggle = (f: Found) =>
     setChosen((c) => (c.some((x) => x.id === f.id) ? c.filter((x) => x.id !== f.id) : opts.multiple ? [...c, f] : [f]));
   const done = () => shell().intent.done({ files: chosen.map((f) => ({ id: f.id, name: f.name, size: f.size, url: contentUrl(f.id) })) });
   return (
     <div className="drive-intent">
-      <h1 className="page-title">{opts.title ?? (opts.multiple ? "Choose files from Drive" : "Choose a file from Drive")}</h1>
+      <h1 className="page-title">{opts.title ?? (opts.multiple ? t("Choose files from Drive") : t("Choose a file from Drive"))}</h1>
       <form
         role="search"
         className="drive-search"
@@ -175,11 +175,11 @@ export function PickPage() {
         </label>
         <input id={fieldId} className="input" type="search" placeholder={t("Search Drive")} value={typed} onChange={(e) => setTyped(e.target.value)} autoFocus />
       </form>
-      <p className="faint">{query ? `Files named like “${query}”` : "Files you worked on lately"}</p>
+      <p className="faint">{query ? t("Files named like “{query}”", { query }) : t("Files you worked on lately")}</p>
       {found.isPending ? (
         <Spinner label={t("Looking")} />
       ) : found.error ? (
-        <p className="muted">{errorMessage(found.error)}</p>
+        <p className="muted">{isolate(errorMessage(found.error))}</p>
       ) : !found.data?.length ? (
         <p className="muted">{t("No files here.")}</p>
       ) : (
@@ -190,9 +190,9 @@ export function PickPage() {
               <li key={f.id} role="option" aria-selected={on}>
                 <button type="button" className={on ? "drive-pick-item drive-pick-on" : "drive-pick-item"} onClick={() => toggle(f)} onDoubleClick={() => !opts.multiple && shell().intent.done({ files: [{ id: f.id, name: f.name, size: f.size, url: contentUrl(f.id) }] })}>
                   <FileGlyph kind="file" name={f.name} size={20} />
-                  <span className="drive-pick-name">{shownName(f.name)}</span>
+                  <span className="drive-pick-name">{isolate(shownName(f.name))}</span>
                   <span className="faint">
-                    {sizeLabel(f.size)} · {formatDateTime(f.modified_at)}
+                    {isolate(sizeLabel(f.size))} · {isolate(formatDateTime(f.modified_at))}
                     {f.path ? ` · ${f.path}` : ""}
                   </span>
                 </button>
@@ -204,7 +204,7 @@ export function PickPage() {
       <div className="drive-intent-actions">
         <Button onClick={() => shell().intent.cancel()}>{t("Cancel")}</Button>
         <Button variant="primary" disabled={!chosen.length} onClick={done}>
-          {chosen.length > 1 ? `Choose ${chosen.length} files` : "Choose"}
+          {chosen.length > 1 ? t("Choose {length} files", { length: chosen.length }) : t("Choose")}
         </Button>
       </div>
     </div>
@@ -222,8 +222,8 @@ export function PreviewPage() {
   return (
     <div className="drive-intent">
       <div className="editor-bar">
-        <strong>{shownName(item.data.name)}</strong>
-        <span className="faint">{sizeLabel(item.data.size ?? null)}</span>
+        <strong>{isolate(shownName(item.data.name))}</strong>
+        <span className="faint">{isolate(sizeLabel(item.data.size ?? null))}</span>
         <span className="editor-bar-end">
           <a className="btn btn-default btn-sm" href={item.data.parent ? `/drive/${item.data.parent}?item=${item.data.id}` : "/drive"} onClick={(e) => (e.preventDefault(), shell().navigate(e.currentTarget.getAttribute("href")!))}>
             {t("Open in Drive")}
@@ -262,7 +262,7 @@ export function DetailsPanelPage() {
     return () => off?.();
   }, []);
   if (!file) return <EmptyState title={t("No file")}>{t("Open the panel from a file.")}</EmptyState>;
-  if (space.error) return <EmptyState title={t("Drive is not available")}>{errorMessage(space.error)}</EmptyState>;
+  if (space.error) return <EmptyState title={t("Drive is not available")}>{isolate(errorMessage(space.error))}</EmptyState>;
   if (!space.data) return <Spinner label={t("Loading")} />;
   return (
     <div className="drive-panel">

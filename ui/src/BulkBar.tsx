@@ -22,7 +22,7 @@ export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boo
   const files = chosen.filter((i) => i.kind === "file").length;
   return (
     <div className="drive-bulk" role="toolbar" aria-label={t("Chosen items")}>
-      <strong aria-live="polite">{count(chosen.length)} chosen</strong>
+      <strong aria-live="polite">{t("{value} chosen", { value: count(chosen.length) })}</strong>
       <div className="drive-bulk-actions">
         {trash ? (
           <>
@@ -50,7 +50,7 @@ export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boo
                 <Share2 /> {t("Share")}
               </Button>
             )}
-            <Button size="sm" variant="outline" disabled={!files} title={files ? (files < chosen.length ? "Folders cannot be downloaded; the files are" : undefined) : "Only files can be downloaded"} onClick={actions.download}>
+            <Button size="sm" variant="outline" disabled={!files} title={files ? (files < chosen.length ? t("Folders cannot be downloaded; the files are") : undefined) : t("Only files can be downloaded")} onClick={actions.download}>
               <Download /> {t("Download")}
             </Button>
             {every("Edit") && (

@@ -1,3 +1,4 @@
+import { t } from "@ferrum/client";
 // What Drive's screens know about files and folders: their shape as the server lists them, what a
 // name says about them, the person's level on them, and which editor opens a file. Pure, so it is
 // tested without a browser.
@@ -143,10 +144,10 @@ export function editorsFor(
   e: { online: boolean; browser: BrowserEditor[]; docs?: boolean },
 ): EditorChoice[] {
   const id = encodeURIComponent(file.id);
-  const view: EditorChoice = { key: "view", label: "Viewer", to: `/drive/view/${id}` };
-  if (isLiveDoc(file.name)) return e.docs === false ? [view] : [{ key: "live", label: "Document editor", to: `/docs/d/${id}`, external: true }, view];
+  const view: EditorChoice = { key: "view", label: t("Viewer"), to: `/drive/view/${id}` };
+  if (isLiveDoc(file.name)) return e.docs === false ? [view] : [{ key: "live", label: t("Document editor"), to: `/docs/d/${id}`, external: true }, view];
   const out: EditorChoice[] = [];
-  if (e.online && editable(file.name)) out.push({ key: "online", label: "Online editor", to: `/drive/edit/${id}` });
+  if (e.online && editable(file.name)) out.push({ key: "online", label: t("Online editor"), to: `/drive/edit/${id}` });
   const ext = extension(file.name);
   for (const b of e.browser.filter((b) => b.types.includes(ext))) {
     const tooLarge = b.max_mb && (file.size ?? 0) > b.max_mb * 1024 * 1024;

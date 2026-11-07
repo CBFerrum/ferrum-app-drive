@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import { Button, Dialog } from "@ferrum/kit";
 import { Kbd } from "@ferrum/kit/primitives";
 import { SHORTCUTS, keyName } from "./shortcuts";
-import { t } from "@ferrum/client";
+import { t, isolate } from "@ferrum/client";
 
 const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
@@ -24,24 +24,24 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
       <div className="drive-keys">
         {SHORTCUTS.map((g) => (
           <section key={g.group} aria-label={g.group}>
-            <h3 className="share-head">{g.group}</h3>
+            <h3 className="share-head">{isolate(g.group)}</h3>
             <dl>
               {g.keys.map((s) => (
                 <div key={s.does}>
                   <dt>
                     {s.keys.map((alternative, i) => (
                       <Fragment key={alternative}>
-                        {i > 0 && <span className="faint"> or </span>}
+                        {i > 0 && <span className="faint"> {t("or")} </span>}
                         {alternative.split("+").map((key, j) => (
                           <Fragment key={key}>
                             {j > 0 && <span className="faint"> + </span>}
-                            <Kbd>{keyName(key, mac)}</Kbd>
+                            <Kbd>{isolate(keyName(key, mac))}</Kbd>
                           </Fragment>
                         ))}
                       </Fragment>
                     ))}
                   </dt>
-                  <dd>{s.does}</dd>
+                  <dd>{isolate(s.does)}</dd>
                 </div>
               ))}
             </dl>

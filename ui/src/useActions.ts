@@ -2,7 +2,7 @@
 // upload. Each acts on a list one item after another, shows the result at once and takes it back,
 // with the server's reason, for an item the server refused; then the lists are fetched again.
 
-import { api, download, errorMessage, shell, uploadInParts } from "@ferrum/client";
+import { api, download, errorMessage, shell, uploadInParts, t } from "@ferrum/client";
 import { confirmDialog, toast } from "@ferrum/kit";
 import { type Outcome, each, items as count, told } from "./bulk";
 import { type Tree, describe } from "./dropped";
@@ -54,7 +54,7 @@ export function useActions(o: {
     /** Asks first (a keyboard can do this by accident), then moves the items to the trash. */
     async trash(list: Item[]) {
       if (!list.length) return;
-      const ok = await confirmDialog({ title: `Move ${called(list)} to the trash?`, message: "You can restore them from Trash.", confirmLabel: "Move to trash", danger: true });
+      const ok = await confirmDialog({ title: t("Move {list} to the trash?", { list: called(list) }), message: t("You can restore them from Trash."), confirmLabel: t("Move to trash"), danger: true });
       if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: "Moved", doing: "trash" }, "to the trash");
     },
 
@@ -63,12 +63,12 @@ export function useActions(o: {
     },
 
     async destroy(list: Item[]) {
-      const ok = await confirmDialog({ title: `Delete ${called(list)} for good?`, message: "This cannot be undone.", confirmLabel: "Delete forever", danger: true });
+      const ok = await confirmDialog({ title: t("Delete {list} for good?", { list: called(list) }), message: t("This cannot be undone."), confirmLabel: t("Delete forever"), danger: true });
       if (ok) await run(list, (i) => act("delete_forever", { item: i.id }), { done: "Deleted", doing: "delete" });
     },
 
     async emptyTrash() {
-      const ok = await confirmDialog({ title: "Empty the trash?", message: "Everything in it is deleted for good. This cannot be undone.", confirmLabel: "Empty the trash", danger: true });
+      const ok = await confirmDialog({ title: t("Empty the trash?"), message: t("Everything in it is deleted for good. This cannot be undone."), confirmLabel: t("Empty the trash"), danger: true });
       if (!ok) return;
       try {
         let gone = 0;
@@ -78,7 +78,7 @@ export function useActions(o: {
           gone += r.deleted;
           more = r.more && r.deleted > 0;
         }
-        toast(gone ? `Deleted ${count(gone)} for good` : "The trash was empty");
+        toast(gone ? t("Deleted {gone} for good", { gone: count(gone) }) : t("The trash was empty"));
       } catch (e) {
         toast(errorMessage(e), "error");
       }
@@ -101,20 +101,20 @@ export function useActions(o: {
     /** Downloads the files one after another; folders cannot be downloaded. */
     async download(list: Item[]) {
       const only = list.filter((i) => i.kind === "file");
-      if (!only.length) return toast("Only files can be downloaded", "error");
+      if (!only.length) return toast(t("Only files can be downloaded"), "error");
       const out = await each(
         only,
         (i) => (isLiveDoc(i.name) ? download(`/api/app/drive/files/${i.id}/content`, i.name.replace(/\.fdoc$/i, ".html"), { format: "html" }) : download(`/api/app/drive/files/${i.id}/content`, i.name)),
         errorMessage,
       );
       if (out.failed.length) say(told({ done: "Downloaded", doing: "download" }, out));
-      else if (only.length < list.length) toast(`Downloaded ${files(only.length)}. Folders cannot be downloaded.`);
+      else if (only.length < list.length) toast(t("Downloaded {value}. Folders cannot be downloaded.", { value: files(only.length) }));
     },
 
     /** Uploads what was dropped or chosen into a folder; the shell carries on with the files. */
     async upload(tree: Tree, to: Where) {
       if (!tree.files.length && !tree.dirs.length) return;
-      toast(`Uploading ${describe(tree)} to “${to.name}”`);
+      toast(t("Uploading {tree} to “{name}”", { tree: describe(tree), name: to.name }));
       try {
         const made = await uploadTree(tree, to.id, o.most, {
           makeFolder: (parent, name) => act("create_folder", { parent, name }) as Promise<{ id: string }>,
@@ -129,7 +129,7 @@ export function useActions(o: {
         });
         if (made.left.length) {
           const [first] = made.left;
-          toast(`“${first.name}” was left out: ${first.reason}${made.left.length > 1 ? ` (and ${made.left.length - 1} more)` : ""}`, "error");
+          toast(t("“{name}” was left out: {reason}{value}", { name: first.name, reason: first.reason, value: made.left.length > 1 ? ` (and ${made.left.length - 1} more)` : "" }), "error");
         }
         // One word on the whole upload when the last file is stored (the tray tells each one).
         const results = await Promise.allSettled(made.sent.map((s) => s.done));
