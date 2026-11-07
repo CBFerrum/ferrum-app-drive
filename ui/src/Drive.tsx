@@ -251,7 +251,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
     }
   };
   const newFolder = () =>
-    setNaming({ title: tr("New folder"), label: tr("Name"), initial: "", done: (name) => attempt(() => actions.act("create_folder", { parent: id, name }), `Folder “${name}” made`) });
+    setNaming({ title: tr("New folder"), label: tr("Name"), initial: "", done: (name) => attempt(() => actions.act("create_folder", { parent: id, name }), tr("Folder “{name}” made", { name })) });
   const rename = (it: Item) =>
     setNaming({
       title: tr("Rename “{value}”", { value: shownName(it.name) }),

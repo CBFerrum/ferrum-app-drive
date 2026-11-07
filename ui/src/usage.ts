@@ -2,6 +2,7 @@
 // turns amber near the limit. Pure, so it is tested without a browser.
 
 import { sizeLabel } from "./files";
+import { t } from "@ferrum/client";
 
 /** `usage` as the server answers (`GET /api/app/drive/usage`); a quota of null is no limit. */
 export interface Usage {
@@ -29,12 +30,12 @@ export function toneOf(s: Space): Tone {
 }
 
 /** "1.2 GB of 5 GB", or "1.2 GB" when nothing limits it. */
-export const spaceLabel = (s: Space): string => (s.quota ? `${sizeLabel(s.used)} of ${sizeLabel(s.quota)}` : `${sizeLabel(s.used)} used`);
+export const spaceLabel = (s: Space): string => (s.quota ? t("{value} of {value2}", { value: sizeLabel(s.used), value2: sizeLabel(s.quota) }) : t("{value} used", { value: sizeLabel(s.used) }));
 
 /** What is left, for the line under a meter that is nearly full. */
 export function leftLabel(s: Space): string | null {
   if (!s.quota) return null;
-  return s.used >= s.quota ? "No space left" : `${sizeLabel(s.quota - s.used)} left`;
+  return s.used >= s.quota ? "No space left" : t("{value} left", { value: sizeLabel(s.quota - s.used) });
 }
 
 const MB = 1024 * 1024;

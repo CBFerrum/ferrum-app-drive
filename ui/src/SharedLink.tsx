@@ -167,8 +167,8 @@ function Unlock({ base, onGrant }: { base: string; onGrant: (grant: string) => v
 function SharedItem({ s, content, more }: { s: Shared; content: (file: string, inline: boolean) => string; more?: { loading: boolean; load: () => void } }) {
   const download = s.link.access === "Download";
   const footer = [
-    s.link.expires_at ? `This link works until ${formatDateTime(s.link.expires_at)}.` : null,
-    s.link.downloads_left != null ? `${s.link.downloads_left} downloads left.` : null,
+    s.link.expires_at ? t("This link works until {value}.", { value: formatDateTime(s.link.expires_at) }) : null,
+    s.link.downloads_left != null ? t("{downloads_left} downloads left.", { downloads_left: s.link.downloads_left }) : null,
   ].filter(Boolean);
   const actions = (e: Entry) => (
     <div className="flex shrink-0 gap-1">

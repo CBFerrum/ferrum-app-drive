@@ -48,7 +48,7 @@ function AddPeople({ role, setRole, text, setText, id }: { role: string; setRole
   );
 }
 
-const persons = (n: number) => (n === 1 ? "1 person" : `${n} people`);
+const persons = (n: number) => (n === 1 ? "1 person" : tr("{n} people", { n }));
 
 /** Adds each address as a member with `role`; says how it went. Those it could not add come back. */
 async function addAll(act: (action: string, body: Record<string, unknown>) => Promise<unknown>, folder: string, emails: string[], role: string) {
@@ -56,7 +56,7 @@ async function addAll(act: (action: string, body: Record<string, unknown>) => Pr
   if (!out.failed.length) toast(tr("Added {value} as {role}", { value: persons(emails.length), role }));
   else {
     const [first] = out.failed;
-    toast(`${out.done.length ? `Added ${persons(out.done.length)}. ` : ""}${first.item}: ${first.reason}${out.failed.length > 1 ? ` (and ${out.failed.length - 1} more)` : ""}`, "error");
+    toast(`${out.done.length ? tr("Added {value}. ", { value: persons(out.done.length) }) : ""}${first.item}: ${first.reason}${out.failed.length > 1 ? tr(" (and {value} more)", { value: out.failed.length - 1 }) : ""}`, "error");
   }
   return out;
 }

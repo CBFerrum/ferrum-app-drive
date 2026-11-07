@@ -125,7 +125,7 @@ function Row({
   const drop = useDropTarget(it.kind === "folder" && !trash ? { id: it.id, name, permission: it.permission } : null);
   const draggable = !trash && allows(it.permission, "Edit");
   const line = whereLine(it, view, inFolder);
-  const when = trash && it.trashed_at ? `Deleted ${formatDateTime(it.trashed_at)}` : formatDateTime(it.modified_at);
+  const when = trash && it.trashed_at ? tr("Deleted {value}", { value: formatDateTime(it.trashed_at) }) : formatDateTime(it.modified_at);
 
   const dragStart = (e: DragEvent) => {
     const carrying = actions.dragStart(it);
@@ -136,7 +136,7 @@ function Row({
     if (carrying.length > 1) {
       const ghost = document.createElement("div");
       ghost.className = "drive-ghost";
-      ghost.textContent = `${carrying.length} items`;
+      ghost.textContent = tr("{length} items", { length: carrying.length });
       document.body.append(ghost);
       e.dataTransfer.setDragImage(ghost, 12, 12);
       setTimeout(() => ghost.remove(), 0);

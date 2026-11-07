@@ -1,3 +1,4 @@
+import { t } from "@ferrum/client";
 // Files and folders dropped from the computer (or chosen with the folder picker): the folders to
 // make in Drive, outermost first, and the files to put in them. Pure, so it is tested without a
 // browser; the browser's own types are asked for only what this needs.
@@ -28,7 +29,7 @@ export const MOST_FILES = 1000;
 
 export class TooMany extends Error {
   constructor() {
-    super(`That is more than ${MOST_FILES.toLocaleString()} files at once. Drop fewer, or put them in a zip file.`);
+    super(t("That is more than {MOST_FILES} files at once. Drop fewer, or put them in a zip file.", { MOST_FILES: MOST_FILES.toLocaleString() }));
   }
 }
 
@@ -48,7 +49,7 @@ const readAll = (reader: NonNullable<ReturnType<NonNullable<Entry["createReader"
     more();
   });
 
-const fileOf = (e: Entry): Promise<File> => new Promise((resolve, reject) => (e.file ? e.file(resolve, reject) : reject(new Error(`${e.name} cannot be read`))));
+const fileOf = (e: Entry): Promise<File> => new Promise((resolve, reject) => (e.file ? e.file(resolve, reject) : reject(new Error(t("{name} cannot be read", { name: e.name })))));
 
 /** Everything under `entries`: their files with the folders above them, and those folders. */
 export async function walk(entries: Entry[]): Promise<Tree> {
@@ -116,7 +117,7 @@ export function creationOrder(dirs: string[][]): string[][] {
 
 /** How a drop reads: "3 files and 2 folders". */
 export function describe(tree: Tree): string {
-  const files = tree.files.length === 1 ? "1 file" : `${tree.files.length} files`;
-  const dirs = tree.dirs.length === 1 ? "1 folder" : `${tree.dirs.length} folders`;
-  return tree.dirs.length ? `${files} in ${dirs}` : files;
+  const files = tree.files.length === 1 ? "1 file" : t("{length} files", { length: tree.files.length });
+  const dirs = tree.dirs.length === 1 ? "1 folder" : t("{length} folders", { length: tree.dirs.length });
+  return tree.dirs.length ? t("{files} in {dirs}", { files, dirs }) : files;
 }
