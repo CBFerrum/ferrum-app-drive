@@ -1,6 +1,6 @@
 id: drive
 name: Drive
-version: 0.14.9
+version: 0.14.10
 publisher: cbferrum
 summary: "Team and personal file storage: folders, versions, documents edited together live, sharing with people and teams, expiring public links, trash, quotas and search"
 description: README.md
@@ -49,6 +49,20 @@ contributes:
 # docs/plan/browser-editors.md). `program` is a directory of the operator's editor server
 # (FERRUM_EDITORS_URL) holding a web app that speaks the host bridge; `types` are lower-case
 # extensions; files over `max_mb` are not offered to it.
+  # What the assistant should know in Drive's pages, and what it suggests asking there.
+  shell.assistant:
+    - id: drive
+      title: "Drive"
+      instructions: >-
+        Files and folders (DriveFile, DriveFolder) are in a person's own space or a team's (DriveSpace). A DriveShare
+        gives people or teams access; a DriveLink is a public link that may expire or need a password. Versions keep
+        earlier copies, and DriveActivity records who did what. What a space holds counts toward the workspace's
+        quota.
+      suggestions:
+        - "Which files did I change this week?"
+        - "Which files are shared outside with a link?"
+        - "What takes the most space?"
+        - "Find the latest price list"
 extension_points:
   drive.editor:
     description: An editor for files of given types, run in the browser from the editor server
