@@ -37,12 +37,12 @@ export function groupShares(shares: Share[], path: Crumb[]): { direct: Share[]; 
   const depth = (id: string) => path.findIndex((c) => c.id === id);
   const inherited = [...from.entries()]
     .sort(([a], [b]) => depth(b) - depth(a))
-    .map(([folder, list]) => ({ folder, name: path.find((c) => c.id === folder)?.name ?? "a folder above", shares: list }));
+    .map(([folder, list]) => ({ folder, name: path.find((c) => c.id === folder)?.name ?? t("a folder above"), shares: list }));
   return { direct, inherited };
 }
 
 /** Who a share is for, in words. */
-export const shareFor = (s: Pick<Share, "email" | "role">) => s.email ?? (s.role ? t("Everyone with the role {role}", { role: s.role }) : "Someone");
+export const shareFor = (s: Pick<Share, "email" | "role">) => s.email ?? (s.role ? t("Everyone with the role {role}", { role: s.role }) : t("Someone"));
 
 /** The addresses in text typed or pasted into a box: split at commas, semicolons, spaces and lines,
  *  lower-cased, each once, and only what looks like an address. `rest` is what was left over. */

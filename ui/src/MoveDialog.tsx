@@ -59,17 +59,17 @@ export function MoveDialog({
   const folders = (list.data?.pages ?? []).flatMap((p) => p.items).filter((i) => i.kind === "folder" && !moving.has(i.id));
   const here = first?.folder;
   const name = (c: Crumb) => (c.id === root ? tr("My files") : c.name);
-  const verb = copy ? "Copy" : "Move";
+  const verb = copy ? tr("Copy") : tr("Move");
   const title = items.length === 1 ? tr("{verb} “{value}” to…", { verb, value: shownName(items[0].name) }) : tr("{verb} {value} to…", { verb, value: count(items.length) });
   // The reasons the button waits, in words.
   const why = !at
-    ? "Open a folder to choose it."
+    ? tr("Open a folder to choose it.")
     : !here
       ? null
       : !allows(here.permission, "Edit")
-        ? "You cannot add to this folder. Choose another."
+        ? tr("You cannot add to this folder. Choose another.")
         : !copy && items.every((i) => (i.parent ?? null) === here.id)
-          ? "They are in this folder already."
+          ? tr("They are in this folder already.")
           : null;
   const place = (id: string, label: string, icon: "drive" | "folder") => (
     <li key={id}>
@@ -91,7 +91,7 @@ export function MoveDialog({
           {why && <span className="faint drive-dest-why">{isolate(why)}</span>}
           <span className="spacer" />
           <Button onClick={onClose}>{tr("Cancel")}</Button>
-          <Button variant="primary" disabled={!at || !here || !!why} onClick={() => here && onChoose({ id: here.id, name: here.id === root ? "My files" : here.name })}>
+          <Button variant="primary" disabled={!at || !here || !!why} onClick={() => here && onChoose({ id: here.id, name: here.id === root ? tr("My files") : here.name })}>
             {tr("{verb} here", { verb })}
           </Button>
         </>

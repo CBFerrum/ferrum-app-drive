@@ -1,6 +1,7 @@
 // Drive's keys: what each does, which key press means which, and the list the help dialog shows.
 // Pure, so it is tested without a browser.
 
+import { t } from "@ferrum/client";
 export type Command =
   | "help"
   | "search"
@@ -84,41 +85,41 @@ export interface Shortcut {
  *  two keys together, `Mod` being Ctrl, or Command on a Mac. */
 export const SHORTCUTS: { group: string; keys: Shortcut[] }[] = [
   {
-    group: "Move around",
+    get group() { return t("Move around"); },
     keys: [
-      { keys: ["j", "↓"], does: "Next item" },
-      { keys: ["k", "↑"], does: "Previous item" },
-      { keys: ["Home", "End"], does: "Go to the first or the last item" },
-      { keys: ["Enter"], does: "Open" },
-      { keys: ["/"], does: "Search" },
+      { keys: ["j", "↓"], get does() { return t("Next item"); } },
+      { keys: ["k", "↑"], get does() { return t("Previous item"); } },
+      { get keys() { return [t("Home"), t("End")]; }, get does() { return t("Go to the first or the last item"); } },
+      { get keys() { return [t("Enter")]; }, get does() { return t("Open"); } },
+      { keys: ["/"], get does() { return t("Search"); } },
     ],
   },
   {
-    group: "Choose",
+    get group() { return t("Choose"); },
     keys: [
-      { keys: ["x", "Space"], does: "Choose or unchoose the item" },
-      { keys: ["Mod+A"], does: "Choose every item shown" },
-      { keys: ["Esc"], does: "Choose nothing" },
+      { keys: ["x", "Space"], get does() { return t("Choose or unchoose the item"); } },
+      { keys: ["Mod+A"], get does() { return t("Choose every item shown"); } },
+      { get keys() { return [t("Esc")]; }, get does() { return t("Choose nothing"); } },
     ],
   },
   {
-    group: "Do",
+    get group() { return t("Do"); },
     keys: [
-      { keys: ["m"], does: "Move to…" },
-      { keys: ["c"], does: "Copy to…" },
-      { keys: ["h"], does: "Share" },
-      { keys: ["s"], does: "Star or unstar" },
-      { keys: ["F2"], does: "Rename" },
-      { keys: ["d"], does: "Show details" },
-      { keys: ["Delete"], does: "Move to the trash" },
+      { keys: ["m"], get does() { return t("Move to…"); } },
+      { keys: ["c"], get does() { return t("Copy to…"); } },
+      { keys: ["h"], get does() { return t("Share"); } },
+      { keys: ["s"], get does() { return t("Star or unstar"); } },
+      { keys: ["F2"], get does() { return t("Rename"); } },
+      { keys: ["d"], get does() { return t("Show details"); } },
+      { get keys() { return [t("Delete")]; }, get does() { return t("Move to the trash"); } },
     ],
   },
   {
-    group: "Make",
+    get group() { return t("Make"); },
     keys: [
-      { keys: ["n"], does: "New folder" },
-      { keys: ["u"], does: "Upload files" },
-      { keys: ["?"], does: "Show these keys" },
+      { keys: ["n"], get does() { return t("New folder"); } },
+      { keys: ["u"], get does() { return t("Upload files"); } },
+      { keys: ["?"], get does() { return t("Show these keys"); } },
     ],
   },
 ];

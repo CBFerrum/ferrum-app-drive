@@ -34,9 +34,9 @@ type Status = "starting" | "ready" | "saving" | "saved" | "unsaved";
 const START_MS = 45_000;
 
 const FAILURES: Record<string, string> = {
-  unknown: "This editor is not on the editor server. Ask your administrator to update it.",
-  missing: "This editor is not on the editor server. Ask your administrator to update it.",
-  timeout: "The editor did not start in time. It needs a recent browser with WebGL.",
+  get unknown() { return t("This editor is not on the editor server. Ask your administrator to update it."); },
+  get missing() { return t("This editor is not on the editor server. Ask your administrator to update it."); },
+  get timeout() { return t("The editor did not start in time. It needs a recent browser with WebGL."); },
 };
 
 /** `report.xlsx` → `report (copy).xlsx`; Drive adds a number if that name is taken. */
@@ -143,7 +143,7 @@ export function BrowserEditPage() {
   // The editor must say it started.
   useEffect(() => {
     if (!session || status !== "starting" || failure) return;
-    const timer = setTimeout(() => setFailure("The editor server did not answer."), START_MS);
+    const timer = setTimeout(() => setFailure(t("The editor server did not answer.")), START_MS);
     return () => clearTimeout(timer);
   }, [session, status, failure]);
 

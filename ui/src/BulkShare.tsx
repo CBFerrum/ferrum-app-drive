@@ -47,7 +47,7 @@ export function BulkShareDialog({ items, space, onClose, onDone }: { items: Item
       <form onSubmit={submit} className="grid gap-3">
         <p className="muted share-names">{isolate(items.slice(0, 4).map((i) => shownName(i.name)).join(", "))}{items.length > 4 ? t(" and {value} more", { value: items.length - 4 }) : ""}</p>
         <Field label={t("Person")} htmlFor={`${id}-email`} hint={t("Someone outside the workspace gets a link by email, as a Viewer")}>
-          <input id={`${id}-email`} className="input" type="email" list={`${id}-people`} placeholder="name@company.com" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+          <input id={`${id}-email`} className="input" type="email" list={`${id}-people`} placeholder={t("name@company.com")} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
           <datalist id={`${id}-people`}>
             {people.map((p) => (
               <option key={p.id} value={p.email}>

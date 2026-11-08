@@ -55,7 +55,7 @@ export async function uploadTree(tree: Tree, to: string, most: number | null, de
   for (const { path, file } of tree.files) {
     const folder = ids.get(keyOf(path));
     const label = [...path, file.name].join("/");
-    if (!folder) left.push({ name: label, reason: failed.get(keyOf(path)) ?? "its folder could not be made" });
+    if (!folder) left.push({ name: label, reason: failed.get(keyOf(path)) ?? t("its folder could not be made") });
     else if (most && file.size > most) left.push({ name: label, reason: t("it is {value} and the most Drive takes is {most}", { value: sizeLabel(file.size), most: sizeLabel(most) }) });
     else if (deps.carries && file.size > deps.carries && deps.sendLarge) sent.push({ name: label, done: deps.sendLarge(file, folder, label).done });
     else if (deps.carries && file.size > deps.carries) left.push({ name: label, reason: t("it is {value} and one upload carries at most {value2}", { value: sizeLabel(file.size), value2: sizeLabel(deps.carries) }) });
