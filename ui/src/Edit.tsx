@@ -117,7 +117,7 @@ export function EditPage() {
         {launch.action === "view" && <Badge>{t("Read only")}</Badge>}
         {others ? (
           others.length > 0 && (
-            <span className="editor-people" role="group" aria-label={t("Also in the file: {value}", { value: others.map((v) => v.name + (v.readOnly ? " (viewing)" : "")).join(", ") })}>
+            <span className="editor-people" role="group" aria-label={t("Also in the file: {value}", { value: others.map((v) => v.name + (v.readOnly ? t(" (viewing)") : "")).join(", ") })}>
               {others.slice(0, 6).map((v) => (
                 <span key={v.id} className="editor-person" style={{ background: v.color, color: inkOn(v.color) }} title={v.readOnly ? t("{name} (viewing)", { name: v.name }) : v.name} aria-hidden>
                   {isolate(initials(v.name))}

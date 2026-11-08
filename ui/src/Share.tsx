@@ -36,7 +36,7 @@ function facts(l: PublicLink, ended: boolean): string[] {
   if (l.expires_at) out.push(`${ended ? "ended" : "ends"} ${day(l.expires_at)}`);
   if (l.max_downloads) out.push(t("{value} of {max_downloads} uses", { value: l.download_count ?? 0, max_downloads: l.max_downloads }));
   else if (l.download_count) out.push(`${l.download_count} ${l.download_count === 1 ? "use" : "uses"}`);
-  out.push(l.last_accessed_at ? t("last opened {value}", { value: relativeTime(l.last_accessed_at) }) : "not opened yet");
+  out.push(l.last_accessed_at ? t("last opened {value}", { value: relativeTime(l.last_accessed_at) }) : t("not opened yet"));
   return out;
 }
 
@@ -73,12 +73,12 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
   const guestNote = !outside
     ? null
     : !policy.allow_public_links
-      ? { stop: true, text: "Public links are turned off in this workspace, so this can only be shared with people in it." }
+      ? { stop: true, text: t("Public links are turned off in this workspace, so this can only be shared with people in it.") }
       : policy.link_password_required
-        ? { stop: true, text: "Links in this workspace need a password. Make a link with a password under Link, and send them both." }
+        ? { stop: true, text: t("Links in this workspace need a password. Make a link with a password under Link, and send them both.") }
         : permission !== "View"
-          ? { stop: true, text: "Someone outside the workspace can only be a Viewer." }
-          : { stop: false, text: "Outside the workspace: they get a link by email, as a Viewer." };
+          ? { stop: true, text: t("Someone outside the workspace can only be a Viewer.") }
+          : { stop: false, text: t("Outside the workspace: they get a link by email, as a Viewer.") };
 
   const copy = async (text: string, what: string) => {
     try {
@@ -108,7 +108,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
       if (!done.guest) toast(t("Shared with {typed} as {permission}", { typed, permission: roleLabel(permission) }));
       else if (done.mailed) toast(t("{typed} is outside the workspace: a link was sent to them", { typed }));
       // A guest's link comes whole, on the server's public address.
-      else if (done.page) await copy(done.page, "Their link");
+      else if (done.page) await copy(done.page, t("Their link"));
       setEmail("");
       setUntil("");
     });
@@ -211,7 +211,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 className="input"
                 type="email"
                 list={`${formId}-people-list`}
-                placeholder="name@company.com"
+                placeholder={t("name@company.com")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="off"
@@ -277,7 +277,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   <li key={l.id} className="share-row">
                     <span className="share-who">
                       <strong>{isolate(l.email ?? "")}</strong>
-                      <span className="faint">{t("guest")}{l.expires_at ? t(" · until {value}", { value: day(l.expires_at) }) : ""}</span>
+                      <span className="faint">{(l.expires_at ? t("guest · until {value}", { value: day(l.expires_at) }) : t("guest"))}</span>
                     </span>
                     <Badge tone="amber">{t("Guest")}</Badge>
                     <Button size="sm" variant="ghost" aria-label={t("Remove {email}", { email: String(l.email) })} loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
@@ -330,8 +330,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                     </Button>
                   </div>
                   <p className="faint">
-                    {t("It is copied. Drive cannot show it again once you close this.")}
-                    {made.password ? t(" Send the password separately.") : ""}
+                    {(made.password ? t("It is copied. Drive cannot show it again once you close this. Send the password separately.") : t("It is copied. Drive cannot show it again once you close this."))}
                   </p>
                 </div>
               )}
@@ -347,7 +346,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   htmlFor={`${formId}-ends`}
                   required={!!latest}
                   error={errors.expires}
-                  hint={latest ? t("Required: at most {max_link_days} {value}", { max_link_days: policy.max_link_days, value: policy.max_link_days === 1 ? "day" : "days" }) : t("Optional")}
+                  hint={latest ? (policy.max_link_days === 1 ? t("Required: at most {max_link_days} day", { max_link_days: policy.max_link_days }) : t("Required: at most {max_link_days} days", { max_link_days: policy.max_link_days })) : t("Optional")}
                 >
                   <input id={`${formId}-ends`} className="input" type="date" min={today} max={latest ?? undefined} value={form.expires} onChange={(e) => edit({ expires: e.target.value })} />
                 </Field>

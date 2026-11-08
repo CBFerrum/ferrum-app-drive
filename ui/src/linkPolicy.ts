@@ -58,7 +58,7 @@ export function blankDraft(p: LinkPolicy, today: string): LinkDraft {
 export function rules(p: LinkPolicy): string | null {
   if (!p.allow_public_links) return null;
   const asks: string[] = [];
-  if (p.link_password_required) asks.push("need a password");
+  if (p.link_password_required) asks.push(t("need a password"));
   if (p.max_link_days > 0) asks.push((p.max_link_days === 1 ? t("end within a day") : t("end within {days} days", { days: Number(p.max_link_days) })));
   return asks.length ? t("Links in this workspace {asks}.", { asks: asks.join(" and ") }) : null;
 }
@@ -69,12 +69,12 @@ export type Problems = Partial<Record<keyof LinkDraft, string>>;
 export function problems(d: LinkDraft, p: LinkPolicy, today: string): Problems {
   const out: Problems = {};
   const latest = latestEnd(p, today);
-  if (latest && !d.expires) out.expires = "Pick the day the link ends";
-  else if (d.expires && d.expires <= daysAgo(today, 1)) out.expires = "Pick a day that has not passed";
+  if (latest && !d.expires) out.expires = t("Pick the day the link ends");
+  else if (d.expires && d.expires <= daysAgo(today, 1)) out.expires = t("Pick a day that has not passed");
   else if (latest && d.expires > latest) out.expires = t("The latest is {latest}", { latest });
-  if (p.link_password_required && !d.password) out.password = "This workspace needs a password on links";
+  if (p.link_password_required && !d.password) out.password = t("This workspace needs a password on links");
   else if (d.password && (d.password.length < PASSWORD_MIN || d.password.length > PASSWORD_MAX)) out.password = t("Use {PASSWORD_MIN} to {PASSWORD_MAX} characters", { PASSWORD_MIN, PASSWORD_MAX });
-  if (d.limit && !/^[1-9]\d{0,8}$/.test(d.limit.trim())) out.limit = "Use a whole number, or leave it empty";
+  if (d.limit && !/^[1-9]\d{0,8}$/.test(d.limit.trim())) out.limit = t("Use a whole number, or leave it empty");
   if (d.note.length > NOTE_MAX) out.note = t("At most {NOTE_MAX} characters", { NOTE_MAX });
   return out;
 }

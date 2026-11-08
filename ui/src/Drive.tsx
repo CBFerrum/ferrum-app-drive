@@ -56,7 +56,7 @@ const NEW = [
 export const KINDS = {
   Spreadsheet: { get title() { return tr("Sheets"); }, noun: "spreadsheets", fresh: { kind: "xlsx", get label() { return tr("New spreadsheet"); } } },
   Presentation: { get title() { return tr("Slides"); }, noun: "presentations", fresh: { kind: "pptx", get label() { return tr("New presentation"); } } },
-  PDF: { get title() { return tr("PDF"); }, noun: "PDFs", fresh: null },
+  PDF: { get title() { return tr("PDF"); }, get noun() { return tr("PDFs"); }, fresh: null },
 } as const;
 export type FileKind = keyof typeof KINDS;
 
@@ -214,7 +214,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const title = query ? tr("Search: {query}", { query }) : kind ? KINDS[kind].title : inFolder ? (id === root ? tr("My files") : (current?.name ?? tr("Drive"))) : VIEWS.find((v) => v.id === view)!.label;
   useShellTitle(title);
   const canAdd = (inFolder && !!current && allows(current.permission, "Edit")) || (!!kind && !query && !!space.data);
-  const targetName = !target || target === root ? "My files" : (current?.name ?? "this folder");
+  const targetName = !target || target === root ? tr("My files") : (current?.name ?? "this folder");
   // A folder in someone else's space belongs to what is shared with the person, not to their own files.
   const others = !!current?.owner && !!usage.data && current.owner.toLowerCase() !== usage.data.space.owner.toLowerCase();
   const place: Place = kind || query ? null : inFolder ? (current?.team ? { team: current.team } : others ? "shared" : "mine") : view;
@@ -258,7 +258,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       label: tr("New name"),
       initial: shownName(it.name),
       // A live document stays one: its name keeps `.fdoc`, which people never see.
-      done: (name) => attempt(() => actions.act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name }), "Renamed"),
+      done: (name) => attempt(() => actions.act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name }), tr("Renamed")),
     });
   const openItem = (it: Item) => {
     if (it.kind === "folder") return navigate(`/drive/${it.id}`);

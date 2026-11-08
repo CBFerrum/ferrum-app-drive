@@ -35,7 +35,7 @@ export const spaceLabel = (s: Space): string => (s.quota ? t("{value} of {value2
 /** What is left, for the line under a meter that is nearly full. */
 export function leftLabel(s: Space): string | null {
   if (!s.quota) return null;
-  return s.used >= s.quota ? "No space left" : t("{value} left", { value: sizeLabel(s.quota - s.used) });
+  return s.used >= s.quota ? t("No space left") : t("{value} left", { value: sizeLabel(s.quota - s.used) });
 }
 
 const MB = 1024 * 1024;

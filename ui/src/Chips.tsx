@@ -22,10 +22,10 @@ import { t as tr, isolate } from "@ferrum/client";
 
 /** How each sort's two directions read. */
 const WAYS: Record<string, [string, string]> = {
-  name: ["A to Z", "Z to A"],
+  get name(): [string, string] { return [tr("A to Z"), tr("Z to A")]; },
   type: ["A to Z", "Z to A"],
-  modified: ["Oldest first", "Newest first"],
-  size: ["Smallest first", "Largest first"],
+  get modified(): [string, string] { return [tr("Oldest first"), tr("Newest first")]; },
+  get size(): [string, string] { return [tr("Smallest first"), tr("Largest first")]; },
 };
 
 /** The chip changes the address: a value of null takes its key out. */
@@ -130,7 +130,7 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
               <label htmlFor={field} className="text-sm font-medium">
                 {tr("Files owned by")}
               </label>
-              <input id={field} className="input" type="email" list={`${field}-people`} placeholder="name@company.com" value={owner} onChange={(e) => setOwner(e.target.value)} autoComplete="off" />
+              <input id={field} className="input" type="email" list={`${field}-people`} placeholder={tr("name@company.com")} value={owner} onChange={(e) => setOwner(e.target.value)} autoComplete="off" />
               <datalist id={`${field}-people`}>
                 {people.map((p) => (
                   <option key={p.id} value={p.email}>

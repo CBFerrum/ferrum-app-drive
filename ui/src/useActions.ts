@@ -55,7 +55,7 @@ export function useActions(o: {
     async trash(list: Item[]) {
       if (!list.length) return;
       const ok = await confirmDialog({ title: t("Move {list} to the trash?", { list: called(list) }), message: t("You can restore them from Trash."), confirmLabel: t("Move to trash"), danger: true });
-      if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: t("Moved"), doing: t("trash") }, "to the trash");
+      if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: t("Moved"), doing: t("trash") }, t("to the trash"));
     },
 
     async restore(list: Item[]) {
@@ -129,7 +129,7 @@ export function useActions(o: {
         });
         if (made.left.length) {
           const [first] = made.left;
-          toast(t("“{name}” was left out: {reason}{value}", { name: first.name, reason: first.reason, value: made.left.length > 1 ? ` (and ${made.left.length - 1} more)` : "" }), "error");
+          toast((made.left.length > 1 ? t("“{name}” was left out: {reason} (and {value1} more)", { name: first.name, reason: first.reason, value1: made.left.length - 1 }) : t("“{name}” was left out: {reason}", { name: first.name, reason: first.reason })), "error");
         }
         // One word on the whole upload when the last file is stored (the tray tells each one).
         const results = await Promise.allSettled(made.sent.map((s) => s.done));

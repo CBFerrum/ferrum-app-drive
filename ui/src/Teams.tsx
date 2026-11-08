@@ -5,7 +5,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
 import { api, errorMessage, t as tr, isolate } from "@ferrum/client";
-import { Button, Dialog, EmptyState, Field, Spinner, confirmDialog, toast } from "@ferrum/kit";
+import { Button, Dialog, EmptyState, Field, Spinner, confirmDialog, toast, placed } from "@ferrum/kit";
 import { usePeople } from "@ferrum/records";
 import { type Shares, addresses } from "./access";
 import { each } from "./bulk";
@@ -37,10 +37,10 @@ function AddPeople({ role, setRole, text, setText, id }: { role: string; setRole
   return (
     <>
       <Field label={tr("People")} htmlFor={`${id}-people`} hint={tr("Addresses, one after another: separate them with commas, spaces or lines")}>
-        <textarea id={`${id}-people`} className="textarea" rows={2} placeholder="ana@company.com, ben@company.com" value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
+        <textarea id={`${id}-people`} className="textarea" rows={2} placeholder={tr("ana@company.com, ben@company.com")} value={text} onChange={(e) => setText(e.target.value)} autoComplete="off" />
       </Field>
       {typed.rest.length > 0 && <p className="share-note share-note-stop">{tr("Not an address:")} {isolate(typed.rest.join(", "))}</p>}
-      {unknown.length > 0 && <p className="share-note">{tr("Not people of this workspace:")} {isolate(unknown.join(", "))}{tr(". Drive will say so for each.")}</p>}
+      {unknown.length > 0 && <p className="share-note">{placed(tr("Not people of this workspace: {p1}. Drive will say so for each."), { p1: isolate(unknown.join(", ")) })}</p>}
       <Field label={tr("Role")} htmlFor={`${id}-role`} hint={TEAM_ROLES.find((r) => r.id === role)?.hint}>
         <RoleSelect id={`${id}-role`} value={role} onChange={setRole} />
       </Field>
@@ -162,7 +162,7 @@ export function TeamDialog({ team, space, onClose }: { team: string; space: stri
                   if (wanted !== null) void run("quota", async () => { await act("set_team_quota", { folder: team, quota_mb: wanted }); setLimit(null); toast(wanted ? tr("The space limit is changed") : tr("The team folder has no space limit")); });
                 }}
               >
-                <Field label={tr("Space limit (GB)")} htmlFor={`${id}-quota`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint={tr("Empty for no limit. Versions and the trash count")}>
+                <Field label={tr("Space limit (GB)")} htmlFor={`${id}-quota`} error={wanted === null ? tr("Use a number of gigabytes, or leave it empty") : undefined} hint={tr("Empty for no limit. Versions and the trash count")}>
                   <input id={`${id}-quota`} className="input" inputMode="decimal" value={quota} onChange={(e) => setLimit(e.target.value)} />
                 </Field>
                 <Button type="submit" loading={busy === "quota"} disabled={wanted === null || limit === null}>
@@ -235,7 +235,7 @@ export function NewTeamDialog({ space, onClose, onMade }: { space: string; onClo
         <Field label={tr("Name")} htmlFor={`${id}-name`} required>
           <input id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={255} autoFocus />
         </Field>
-        <Field label={tr("Space limit (GB)")} htmlFor={`${id}-limit`} error={wanted === null ? "Use a number of gigabytes, or leave it empty" : undefined} hint={tr("Empty for the workspace's usual limit; 0 for no limit")}>
+        <Field label={tr("Space limit (GB)")} htmlFor={`${id}-limit`} error={wanted === null ? tr("Use a number of gigabytes, or leave it empty") : undefined} hint={tr("Empty for the workspace's usual limit; 0 for no limit")}>
           <input id={`${id}-limit`} className="input" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} />
         </Field>
         <AddPeople id={id} role={role} setRole={setRole} text={text} setText={setText} />

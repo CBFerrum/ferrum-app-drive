@@ -238,11 +238,11 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
   // A live document's editors hold its content: an old version comes back as a document of its own.
   const live = isLiveDoc(item.name);
   const restore = async (v: Version) => {
-    const message = live ? "A copy of it is made beside this document, which stays as it is." : "It becomes the newest version; the others stay in the history.";
+    const message = live ? tr("A copy of it is made beside this document, which stays as it is.") : tr("It becomes the newest version; the others stay in the history.");
     if (!(await confirmDialog({ title: tr("Restore version {version}?", { version: v.version }), message, confirmLabel: tr("Restore") }))) return;
     try {
       const made = await act("restore_version", { file: item.id, version: v.version });
-      toast(live ? tr("Version {version} is now “{value}”", { version: v.version, value: (made as { name?: string }).name ?? "a copy" }) : tr("Version {version} restored", { version: v.version }));
+      toast(live ? tr("Version {version} is now “{value}”", { version: v.version, value: (made as { name?: string }).name ?? tr("a copy") }) : tr("Version {version} restored", { version: v.version }));
       await qc.invalidateQueries({ queryKey: ["drive"] });
       await onRestored();
     } catch (e) {

@@ -38,7 +38,7 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
     } catch {
       /* not JSON */
     }
-    throw new ApiError(r.status, body.error ?? "error", body.message ?? "This link does not work.");
+    throw new ApiError(r.status, body.error ?? "error", body.message ?? t("This link does not work."));
   }
   return r.json() as Promise<T>;
 }

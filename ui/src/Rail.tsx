@@ -62,7 +62,7 @@ export function Rail({
           const Icon = ICONS[v.id];
           return (
             <li key={v.id}>
-              <Entry to={v.id === "mine" ? "/drive" : `/drive?view=${v.id}`} current={place === v.id} drop={v.id === "mine" && root ? { id: root, name: "My files", permission: "Manage" } : undefined} onPick={onPick}>
+              <Entry to={v.id === "mine" ? "/drive" : `/drive?view=${v.id}`} current={place === v.id} drop={v.id === "mine" && root ? { id: root, name: tr("My files"), permission: tr("Manage") } : undefined} onPick={onPick}>
                 <Icon aria-hidden size={16} />
                 <span>{isolate(v.label)}</span>
               </Entry>

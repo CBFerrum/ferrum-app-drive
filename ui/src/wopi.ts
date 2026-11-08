@@ -3,6 +3,7 @@
 // history and closing (Drive's own panels answer them), and whether it has unsaved changes.
 // Messages are JSON strings: `{"MessageId", "SendTime", "Values"}`.
 
+import { t } from "@ferrum/client";
 export interface EditorView {
   id: number;
   userId: string;
@@ -58,7 +59,7 @@ function viewOf(v: unknown): EditorView | null {
   const r = v as Record<string, unknown>;
   const id = Number(r.ViewId);
   if (r.ViewId === undefined || r.ViewId === null || !Number.isFinite(id)) return null;
-  const name = typeof r.UserName === "string" && r.UserName.trim() ? r.UserName.trim() : "Someone";
+  const name = typeof r.UserName === "string" && r.UserName.trim() ? r.UserName.trim() : t("Someone");
   return { id, userId: String(r.UserId ?? name), name, color: colourOf(r.Color), readOnly: yes(r.ReadOnly), current: yes(r.IsCurrentView) };
 }
 
