@@ -18,6 +18,7 @@ import {
   OPEN_POLICY,
   type PublicLink,
   blankDraft,
+  departure,
   latestEnd,
   linkBody,
   makePassword,
@@ -385,6 +386,22 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                 <Field label={t("Note")} htmlFor={`${formId}-note`} error={errors.note} hint={t("Optional: shown to people who open the link ({length} of {NOTE_MAX})", { length: form.note.length, NOTE_MAX })}>
                   <textarea id={`${formId}-note`} className="textarea" rows={2} maxLength={NOTE_MAX + 40} value={form.note} onChange={(e) => edit({ note: e.target.value })} />
                 </Field>
+                <Field
+                  label={t("Answered for by")}
+                  htmlFor={`${formId}-answerable`}
+                  error={errors.answerable}
+                  hint={t("Optional: someone who can manage this. The link is then the workspace's and stays when you leave; otherwise it goes with you.")}
+                >
+                  <input
+                    id={`${formId}-answerable`}
+                    className="input"
+                    type="email"
+                    list={`${formId}-people-list`}
+                    autoComplete="off"
+                    value={form.answerable}
+                    onChange={(e) => edit({ answerable: e.target.value })}
+                  />
+                </Field>
                 <Button type="submit" variant="primary" loading={busy === "publish"}>
                   {t("Make a link")}
                 </Button>
@@ -396,6 +413,7 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                   <ul className="share-list">
                     {open.map((l) => {
                       const state = stateOf(l);
+                      const left = departure(l, (e) => nameOf(e) || e);
                       return (
                         <li key={l.id} className="share-link">
                           <div className="share-who">
@@ -404,6 +422,10 @@ export function ShareDialog({ item, space, onClose, onOpenFolder }: { item: Shar
                               <Badge tone={state === "active" ? "green" : "neutral"}>{state === "active" ? t("Working") : state === "ended" ? t("Ended") : t("Used up")}</Badge>
                             </span>
                             <span className="faint">{isolate(facts(l, state === "ended").join(" · "))}</span>
+                            {l.belongs_to === "The Workspace" && (
+                              <span className="faint">{t("The workspace's, answered for by {who}", { who: isolate(nameOf(l.answerable) || l.answerable || "") })}</span>
+                            )}
+                            {left && <span className="faint">{left}</span>}
                             {l.note && <span className="share-link-note">“{isolate(l.note)}”</span>}
                           </div>
                           <Button size="sm" variant="ghost" loading={busy === `link-${l.id}`} onClick={() => void revoke(l)}>
