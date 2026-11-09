@@ -1805,6 +1805,21 @@ async fn scenario() {
     let kept = uid(&t.upload(&leaver, leaver.root, "handover notes.txt", b"what I was doing").await);
     t.ok(&leaver, "check_out", json!({"file": kept})).await;
     let link = uid(&t.ok(&leaver, "create_link", json!({"item": kept})).await);
+    // A link of the workspace's own (FEO-036): someone of the workspace who can manage what it shares
+    // answers for it, and it outlives its maker.
+    let refused = |e: Error| match e {
+        Error::Validation(v) => (v[0].field.clone(), v[0].message.clone()),
+        e => panic!("{e:?}"),
+    };
+    t.ok(&leaver, "share", json!({"item": kept, "email": "alice@acme.test", "permission": "Manage"})).await;
+    let (field, why) = refused(t.no(&leaver, "create_link", json!({"item": kept, "answerable": "successor@acme.test"})).await);
+    assert_eq!((field.as_str(), why.contains("manage")), ("answerable", true), "the heir cannot manage it yet: {why}");
+    let (field, why) = refused(t.no(&leaver, "create_link", json!({"item": kept, "answerable": "stranger@elsewhere.test"})).await);
+    assert_eq!((field.as_str(), why.contains("workspace")), ("answerable", true), "{why}");
+    let stays = t.ok(&leaver, "create_link", json!({"item": kept, "answerable": " Alice@acme.test"})).await;
+    assert_eq!((stays["belongs_to"].clone(), stays["answerable"].clone()), (json!("The Workspace"), json!("alice@acme.test")));
+    let stays = uid(&stays);
+    let answered = uid(&t.ok(&leaver, "create_link", json!({"item": kept, "answerable": "parting@acme.test"})).await);
     let theirs = uid(&t.upload(&alice, alice.root, "for leaver.txt", b"a note").await);
     t.ok(&alice, "share", json!({"item": theirs, "email": "parting@acme.test", "permission": "View"})).await;
     t.no(&heir, "item_info", json!({"item": kept})).await;
@@ -1826,6 +1841,24 @@ async fn scenario() {
         1,
         "their link has someone to answer for it"
     );
+    let outcome = |id: Uuid, wanted: &'static str| {
+        let t = &t;
+        async move {
+            let sql = format!("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and {wanted} and left_at is not null");
+            t.scalar(&sql, Some(id)).await
+        }
+    };
+    assert_eq!(outcome(link, "on_leaving = 'Passed On' and left_by = 'parting@acme.test'").await, 1, "and says so");
+    assert_eq!(
+        outcome(stays, "not revoked and on_leaving = 'Stayed' and answerable = 'alice@acme.test' and shared_by = 'parting@acme.test'").await,
+        1,
+        "the workspace's link stays as it was, answered for by Alice"
+    );
+    assert_eq!(
+        outcome(answered, "not revoked and on_leaving = 'Passed On' and answerable = 'successor@acme.test' and belongs_to = 'The Workspace'").await,
+        1,
+        "the one they answered for passes to the heir and stays the workspace's"
+    );
     assert!(t.act(&heir, "item_info", json!({"item": kept})).await.is_ok(), "and the heir reaches what they kept");
     let again = t.k.hand_over_work(&admin, leaver.id, heir.id, "repeated").await;
     assert!(again.is_ok(), "{again:?}");
@@ -1836,9 +1869,25 @@ async fn scenario() {
     let gone = t.user("departed@acme.test", &["Drive User"]).await;
     let orphan = uid(&t.upload(&gone, gone.root, "public.txt", b"for the world").await);
     let orphan_link = uid(&t.ok(&gone, "create_link", json!({"item": orphan})).await);
+    t.ok(&gone, "share", json!({"item": orphan, "email": "alice@acme.test", "permission": "Manage"})).await;
+    let independent = uid(&t.ok(&gone, "create_link", json!({"item": orphan, "answerable": "alice@acme.test"})).await);
+    let joint = uid(&t.upload(&alice, alice.root, "joint.txt", b"ours").await);
+    t.ok(&alice, "share", json!({"item": joint, "email": "departed@acme.test", "permission": "Manage"})).await;
+    let answered_by_gone = uid(&t.ok(&alice, "create_link", json!({"item": joint, "answerable": "departed@acme.test"})).await);
     t.k.deprovision_user(&admin, gone.id, None, "left").await.unwrap();
     drain().await;
-    assert_eq!(t.scalar("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and revoked", Some(orphan_link)).await, 1);
+    assert_eq!(outcome(orphan_link, "revoked and on_leaving = 'Stopped' and left_by = 'departed@acme.test'").await, 1, "the link that depended on them stops");
+    assert_eq!(outcome(independent, "not revoked and on_leaving = 'Stayed'").await, 1, "the one the workspace owns stays, with Alice answering for it");
+    assert_eq!(outcome(answered_by_gone, "revoked and on_leaving = 'Stopped'").await, 1, "one nobody answers for any more stops");
+    let listed = t.ok(&alice, "list_links", json!({"item": orphan})).await;
+    let row = listed["links"].as_array().unwrap().iter().find(|l| uid(l) == independent).unwrap().clone();
+    assert_eq!(
+        (row["belongs_to"].clone(), row["answerable"].clone(), row["left_by"].clone(), row["on_leaving"].clone(), row["active"].clone()),
+        (json!("The Workspace"), json!("alice@acme.test"), json!("departed@acme.test"), json!("Stayed"), json!(true)),
+        "the share dialog says whose it is and what became of it"
+    );
+    let row = listed["links"].as_array().unwrap().iter().find(|l| uid(l) == orphan_link).unwrap().clone();
+    assert_eq!((row["belongs_to"].clone(), row["on_leaving"].clone(), row["active"].clone()), (json!("Its Maker"), json!("Stopped"), json!(false)));
     let keeps = t.user("staying-links@acme.test", &["Drive User"]).await;
     let public = uid(&t.upload(&keeps, keeps.root, "brochure.txt", b"for the world").await);
     let kept_link = uid(&t.ok(&keeps, "create_link", json!({"item": public})).await);
@@ -1851,6 +1900,32 @@ async fn scenario() {
         t.scalar("select count(*) from e_drive_link where tenant_id = $1 and id = $2 and not revoked", Some(kept_link)).await,
         1,
         "the workspace chose to keep them"
+    );
+    assert_eq!(outcome(kept_link, "on_leaving = 'Kept' and left_by = 'staying-links@acme.test'").await, 1);
+    // The access review: every link a departure went through, and what became of it.
+    let review =
+        ferrum_domain::reports::run(&k, &erin.ctx, "drive_shared_externally", &HashMap::from([("status".to_string(), "Through Departures".to_string())]))
+            .await
+            .expect("the access review");
+    let mut seen: Vec<(String, String, bool)> = review["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| (r["left_by"].as_str().unwrap().to_string(), r["on_leaving"].as_str().unwrap().to_string(), r["active"] == json!(true)))
+        .collect();
+    seen.sort();
+    let who = |a: &str, b: &str, c: bool| (a.to_string(), b.to_string(), c);
+    assert_eq!(
+        seen,
+        [
+            who("departed@acme.test", "Stayed", true),
+            who("departed@acme.test", "Stopped", false),
+            who("departed@acme.test", "Stopped", false),
+            who("parting@acme.test", "Passed On", true),
+            who("parting@acme.test", "Passed On", true),
+            who("parting@acme.test", "Stayed", true),
+            who("staying-links@acme.test", "Kept", true),
+        ]
     );
 
     // A file past the most one request carries goes to the platform in parts that survive a

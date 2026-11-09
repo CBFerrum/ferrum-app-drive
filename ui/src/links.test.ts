@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { type LinkDraft, type LinkPolicy, OPEN_POLICY, blankDraft, latestEnd, linkBody, makePassword, problems, rules, stateOf } from "./linkPolicy";
+import { type LinkDraft, type LinkPolicy, OPEN_POLICY, blankDraft, departure, latestEnd, linkBody, makePassword, problems, rules, stateOf } from "./linkPolicy";
 
 const today = "2026-11-10";
-const draft = (extra: Partial<LinkDraft> = {}): LinkDraft => ({ access: "View", expires: "", password: "", limit: "", note: "", ...extra });
+const draft = (extra: Partial<LinkDraft> = {}): LinkDraft => ({ access: "View", expires: "", password: "", limit: "", note: "", answerable: "", ...extra });
 const strict: LinkPolicy = { allow_public_links: true, max_link_days: 7, link_password_required: true };
 
 describe("public links and the workspace's rules", () => {
@@ -38,6 +38,8 @@ describe("public links and the workspace's rules", () => {
     expect(problems(draft({ limit: "2.5" }), OPEN_POLICY, today).limit).toBeDefined();
     expect(problems(draft({ limit: "25" }), OPEN_POLICY, today)).toEqual({});
     expect(problems(draft({ note: "x".repeat(281) }), OPEN_POLICY, today).note).toBe("At most 280 characters");
+    expect(problems(draft({ answerable: "alice" }), OPEN_POLICY, today).answerable).toBe("Pick someone of this workspace");
+    expect(problems(draft({ answerable: " alice@acme.test " }), OPEN_POLICY, today)).toEqual({});
   });
 
   it("makes the parameters of create_link, leaving out what is empty", () => {
@@ -50,6 +52,17 @@ describe("public links and the workspace's rules", () => {
       max_downloads: 5,
       note: "For the audit",
     });
+    expect(linkBody("i1", draft({ answerable: " alice@acme.test " }))).toEqual({ item: "i1", access: "View", answerable: "alice@acme.test" });
+  });
+
+  it("says what became of a link when someone left", () => {
+    const link = { id: "l", access: "View", has_password: false };
+    const name = (email: string) => (email === "pat@acme.test" ? "Pat" : email);
+    expect(departure(link, name)).toBeNull();
+    expect(departure({ ...link, left_by: "pat@acme.test", on_leaving: "Stayed" }, name)).toBe("Stayed when Pat left: it is the workspace's");
+    expect(departure({ ...link, left_by: "pat@acme.test", on_leaving: "Passed On" }, name)).toBe("Passed on when Pat left");
+    expect(departure({ ...link, left_by: "bo@acme.test", on_leaving: "Stopped" }, name)).toBe("Stopped when bo@acme.test left: nobody took over");
+    expect(departure({ ...link, left_by: "pat@acme.test", on_leaving: "Kept" }, name)).toBe("Kept when Pat left, as the workspace keeps such links");
   });
 
   it("says how a link stands", () => {

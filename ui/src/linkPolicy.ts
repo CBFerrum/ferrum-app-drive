@@ -30,6 +30,14 @@ export interface PublicLink {
   /** The guest it was sent to; none for a link anyone may hold. */
   email?: string | null;
   note?: string | null;
+  /** Its maker's (it goes with them when they leave) or the workspace's (it stays). */
+  belongs_to?: "Its Maker" | "The Workspace";
+  /** Who answers for a link of the workspace's. */
+  answerable?: string | null;
+  /** Whose leaving it went through, and what became of it then. */
+  left_by?: string | null;
+  on_leaving?: "Stayed" | "Passed On" | "Stopped" | "Kept" | null;
+  left_at?: string | null;
 }
 
 /** What a person fills in for a new link. Dates are `YYYY-MM-DD`. */
@@ -39,6 +47,8 @@ export interface LinkDraft {
   password: string;
   limit: string;
   note: string;
+  /** Someone of the workspace who answers for it, which makes it the workspace's; empty: its maker's. */
+  answerable: string;
 }
 
 export const NOTE_MAX = 280;
@@ -51,7 +61,7 @@ export const latestEnd = (p: LinkPolicy, today: string): string | null => (p.max
 
 /** A fresh form: the longest the rules allow when they ask for an end, else no end. */
 export function blankDraft(p: LinkPolicy, today: string): LinkDraft {
-  return { access: "View", expires: latestEnd(p, today) ?? "", password: "", limit: "", note: "" };
+  return { access: "View", expires: latestEnd(p, today) ?? "", password: "", limit: "", note: "", answerable: "" };
 }
 
 /** The rules in a sentence, or none when there are none to tell. */
@@ -76,6 +86,7 @@ export function problems(d: LinkDraft, p: LinkPolicy, today: string): Problems {
   else if (d.password && (d.password.length < PASSWORD_MIN || d.password.length > PASSWORD_MAX)) out.password = t("Use {PASSWORD_MIN} to {PASSWORD_MAX} characters", { PASSWORD_MIN, PASSWORD_MAX });
   if (d.limit && !/^[1-9]\d{0,8}$/.test(d.limit.trim())) out.limit = t("Use a whole number, or leave it empty");
   if (d.note.length > NOTE_MAX) out.note = t("At most {NOTE_MAX} characters", { NOTE_MAX });
+  if (d.answerable.trim() && !/^\S+@\S+\.\S+$/.test(d.answerable.trim())) out.answerable = t("Pick someone of this workspace");
   return out;
 }
 
@@ -88,7 +99,24 @@ export function linkBody(item: string, d: LinkDraft): Record<string, unknown> {
     password: d.password || undefined,
     max_downloads: d.limit.trim() ? Number(d.limit) : undefined,
     note: d.note.trim() || undefined,
+    answerable: d.answerable.trim() || undefined,
   };
+}
+
+/** What became of a link when someone left, in a sentence; none if nobody has. */
+export function departure(l: PublicLink, name: (email: string) => string): string | null {
+  if (!l.left_by || !l.on_leaving) return null;
+  const who = name(l.left_by);
+  switch (l.on_leaving) {
+    case "Stayed":
+      return t("Stayed when {who} left: it is the workspace's", { who });
+    case "Passed On":
+      return t("Passed on when {who} left", { who });
+    case "Stopped":
+      return t("Stopped when {who} left: nobody took over", { who });
+    case "Kept":
+      return t("Kept when {who} left, as the workspace keeps such links", { who });
+  }
 }
 
 export type LinkState = "active" | "ended" | "used up" | "off";

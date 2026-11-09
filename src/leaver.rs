@@ -1,8 +1,11 @@
 //! When someone leaves the workspace (`ferrum.user.deprovisioned`): what Drive does beyond moving
 //! names, which `handover` in the package declares. What they had checked out opens up, shares made
-//! to them end, and whoever takes over gets to what they kept in their own space. Their public links
-//! need someone to answer for them: the successor if there is one, or else they stop, unless the
-//! workspace says to keep them (Drive Settings). All of it is safe to repeat.
+//! to them end, and whoever takes over gets to what they kept in their own space. Their own public
+//! links need someone to answer for them: the successor if there is one, or else they stop, unless the
+//! workspace says to keep them (Drive Settings). A link that belongs to the workspace stays, answered
+//! for by whoever it names; one they answered for passes to their successor, or stops. Every link it
+//! touches says whose departure it went through and what became of it, for an access review (FEO-036).
+//! All of it is safe to repeat.
 
 use crate::acl::Level;
 use crate::tree;
@@ -45,14 +48,51 @@ impl EventSink for Departures {
             }
             None => None,
         };
+        // The workspace's links someone else answers for stay as they are; it is noted.
+        sqlx::query(
+            "update e_drive_link set left_by = $2, on_leaving = 'Stayed', left_at = now() \
+             where tenant_id = $1 and lower(shared_by::text) = $2 and belongs_to = 'The Workspace' and lower(answerable::text) <> $2 and not revoked \
+             and lower(coalesce(left_by::text, '')) <> $2",
+        )
+        .bind(tenant)
+        .bind(&email)
+        .execute(&mut *tx)
+        .await?;
+        // The workspace's links they answered for: their successor answers now, or they stop.
         match &successor {
             Some(next) => {
-                sqlx::query("update e_drive_link set shared_by = $3 where tenant_id = $1 and lower(shared_by::text) = $2 and not revoked")
-                    .bind(tenant)
-                    .bind(&email)
-                    .bind(next)
-                    .execute(&mut *tx)
-                    .await?;
+                sqlx::query(
+                    "update e_drive_link set answerable = $3, left_by = $2, on_leaving = 'Passed On', left_at = now() \
+                 where tenant_id = $1 and belongs_to = 'The Workspace' and lower(answerable::text) = $2 and not revoked",
+                )
+                .bind(tenant)
+                .bind(&email)
+                .bind(next)
+                .execute(&mut *tx)
+                .await?
+            }
+            None => {
+                sqlx::query(
+                    "update e_drive_link set revoked = true, revoked_at = now(), left_by = $2, on_leaving = 'Stopped', left_at = now() \
+                 where tenant_id = $1 and belongs_to = 'The Workspace' and lower(answerable::text) = $2 and not revoked",
+                )
+                .bind(tenant)
+                .bind(&email)
+                .execute(&mut *tx)
+                .await?
+            }
+        };
+        match &successor {
+            Some(next) => {
+                sqlx::query(
+                    "update e_drive_link set shared_by = $3, left_by = $2, on_leaving = 'Passed On', left_at = now() \
+                     where tenant_id = $1 and lower(shared_by::text) = $2 and coalesce(belongs_to, 'Its Maker') = 'Its Maker' and not revoked",
+                )
+                .bind(tenant)
+                .bind(&email)
+                .bind(next)
+                .execute(&mut *tx)
+                .await?;
                 if let Some(space) = tree::space_of(&mut tx, tenant, &email).await? {
                     let shared: bool =
                         sqlx::query_scalar("select exists (select 1 from e_drive_share where tenant_id = $1 and folder = $2 and lower(email::text) = $3)")
@@ -81,15 +121,19 @@ impl EventSink for Departures {
                     .fetch_optional(&mut *tx)
                     .await?
                     .flatten();
-                if keep.as_deref() != Some("Keep") {
-                    sqlx::query(
-                        "update e_drive_link set revoked = true, revoked_at = now() where tenant_id = $1 and lower(shared_by::text) = $2 and not revoked",
-                    )
-                    .bind(tenant)
-                    .bind(&email)
-                    .execute(&mut *tx)
-                    .await?;
-                }
+                // Links made before Drive knew whose a link is have no `belongs_to`: they are their maker's.
+                let (revoke, outcome) = if keep.as_deref() == Some("Keep") { (false, "Kept") } else { (true, "Stopped") };
+                sqlx::query(
+                    "update e_drive_link set revoked = $3, revoked_at = case when $3 then now() end, left_by = $2, on_leaving = $4, left_at = now() \
+                     where tenant_id = $1 and lower(shared_by::text) = $2 and coalesce(belongs_to, 'Its Maker') = 'Its Maker' and not revoked \
+                     and lower(coalesce(left_by::text, '')) <> $2",
+                )
+                .bind(tenant)
+                .bind(&email)
+                .bind(revoke)
+                .bind(outcome)
+                .execute(&mut *tx)
+                .await?;
             }
         }
         tx.commit().await?;

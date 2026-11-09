@@ -32,7 +32,7 @@ impl ReportSource for DriveReports {
                 "Largest Drive Files",
                 vec![select("limit", "Show", &["50", "100", "500"]), select("include_trash", "Include Trash", &["No", "Yes"])],
             ),
-            r("drive_shared_externally", "Drive Public Links", vec![select("status", "Links", &["Active", "All"])]),
+            r("drive_shared_externally", "Drive Public Links", vec![select("status", "Links", &["Active", "All", "Through Departures"])]),
         ]
     }
 
@@ -146,7 +146,8 @@ async fn largest(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
 }
 
 async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
-    let all = p.str("status") == Some("All");
+    // `Through Departures`: the access review of what became of links when people left (FEO-036).
+    let status = p.str("status").unwrap_or("Active");
     type R = (
         uuid::Uuid,
         Option<String>,
@@ -162,11 +163,13 @@ async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
         Option<chrono::DateTime<chrono::Utc>>,
         bool,
         Option<String>,
+        Value,
     );
     let rows: Vec<R> = sqlx::query_as(
         "select l.id, coalesce(f.name, d.name), case when l.file is null then 'Folder' else 'File' end, l.access, coalesce(l.has_password, false), l.expires_at, \
          l.max_downloads, coalesce(l.download_count, 0), l.revoked, l.shared_by, l.created_at, l.last_accessed_at, \
-         (not l.revoked and (l.expires_at is null or l.expires_at > now()) and (coalesce(l.max_downloads, 0) = 0 or coalesce(l.download_count, 0) < l.max_downloads)), l.email::text \
+         (not l.revoked and (l.expires_at is null or l.expires_at > now()) and (coalesce(l.max_downloads, 0) = 0 or coalesce(l.download_count, 0) < l.max_downloads)), l.email::text, \
+         jsonb_build_object('belongs_to', coalesce(l.belongs_to, 'Its Maker'), 'answerable', l.answerable, 'left_by', l.left_by, 'on_leaving', l.on_leaving, 'left_at', l.left_at) \
          from e_drive_link l left join e_drive_file f on f.tenant_id = l.tenant_id and f.id = l.file \
          left join e_drive_folder d on d.tenant_id = l.tenant_id and d.id = l.folder where l.tenant_id = $1 order by l.created_at desc limit 5000",
     )
@@ -175,10 +178,16 @@ async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
     .await?;
     let rows: Vec<Value> = rows
         .into_iter()
-        .filter(|r| all || r.12)
-        .map(|(id, name, kind, access, pw, exp, max, count, revoked, by, at, last, active, email)| {
-            json!({"id": id, "item": name, "kind": kind, "access": access, "password": pw, "expires_at": exp, "max_downloads": max, "downloads": count,
-                   "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "sent_to": email})
+        .filter(|r| match status {
+            "All" => true,
+            "Through Departures" => !r.14["left_by"].is_null(),
+            _ => r.12,
+        })
+        .map(|(id, name, kind, access, pw, exp, max, count, revoked, by, at, last, active, email, owner)| {
+            let mut v = json!({"id": id, "item": name, "kind": kind, "access": access, "password": pw, "expires_at": exp, "max_downloads": max, "downloads": count,
+                   "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "sent_to": email});
+            crate::sharing::merge(&mut v, owner);
+            v
         })
         .collect();
     Ok(json!({
@@ -186,7 +195,8 @@ async fn public_links(tx: &mut Tx, ctx: &Ctx, p: &Params<'_>) -> Result<Value> {
                     col("expires_at", "Expires", "datetime"), col("downloads", "Downloads", "int"), col("max_downloads", "Download Limit", "int"),
                     col("shared_by", "Created By", "data"), col("sent_to", "Sent To", "data"), col("created_at", "Created", "datetime"),
                     col("last_accessed_at", "Last Opened", "datetime"),
-                    col("active", "Active", "check")],
+                    col("active", "Active", "check"), col("belongs_to", "Belongs To", "data"), col("answerable", "Answered For By", "data"),
+                    col("left_by", "Departure", "data"), col("on_leaving", "On Their Leaving", "data"), col("left_at", "Left On", "datetime")],
         "totals": {"links": rows.len()},
         "rows": rows,
     }))
