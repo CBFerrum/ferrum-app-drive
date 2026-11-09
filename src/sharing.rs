@@ -227,8 +227,8 @@ async fn insert_link(
 ) -> Result<()> {
     sqlx::query(
         "insert into e_drive_link (tenant_id, id, file, folder, access, token_hash, password_hash, has_password, expires_at, max_downloads, \
-         download_count, revoked, shared_by, failed_attempts, email, note, created_by, updated_by) \
-         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $13, $14, $14)",
+         download_count, revoked, shared_by, failed_attempts, email, note, created_by, updated_by, belongs_to) \
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 0, false, $11, 0, $12, $13, $14, $14, 'Its Maker')",
     )
     .bind(ctx.tenant)
     .bind(id)
@@ -371,8 +371,9 @@ async fn tenant_slug(tx: &mut Tx, tenant: Uuid) -> Result<String> {
 
 /// `create_link` (Manage access): `access` View or Download, optional `expires_at`, `password`
 /// (8+ characters), `max_downloads` and a `note` the people who open the link read, within the
-/// workspace's link policy. The token is in the answer only.
-pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
+/// workspace's link policy. `answerable`, an active member's address, makes the link the workspace's,
+/// answered for by them: it stays when its maker leaves (FEO-036). The token is in the answer only.
+pub async fn create_link(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
     let s = tree::settings(tx, ctx.tenant).await?;
     if !s.allow_public_links {
         return Err(Error::Forbidden("public links are turned off for this workspace".into()));
@@ -404,6 +405,27 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     if note.is_some_and(|n| n.chars().count() > NOTE_MAX) {
         return Err(Error::field("note", format!("at most {NOTE_MAX} characters")));
     }
+    // The workspace's own link: someone of the workspace who can manage what it shares answers for
+    // it, and it outlives its maker.
+    let answerable = match p.str("answerable").map(|a| a.trim().to_lowercase()).filter(|a| !a.is_empty()) {
+        Some(a) => {
+            let who: Option<Uuid> =
+                sqlx::query_scalar("select id from app_user where tenant_id = $1 and lower(email::text) = $2 and is_active and kind = 'member'")
+                    .bind(ctx.tenant)
+                    .bind(&a)
+                    .fetch_optional(&mut **tx)
+                    .await?;
+            let Some(who) = who else {
+                return Err(Error::field("answerable", "someone of this workspace, signed in, answers for a link that belongs to it"));
+            };
+            let theirs = k.load_ctx(ctx.tenant, who, None, ctx.request_id.clone()).await?;
+            if item.level(&Grants::load(tx, &theirs).await?) < Level::Manage {
+                return Err(Error::field("answerable", "who answers for a link must be able to manage what it shares"));
+            }
+            Some(a)
+        }
+        None => None,
+    };
     let password_hash = match password {
         Some(pw) => Some(ferrum_kernel::auth::hash_password(pw.to_string()).await?),
         None => None,
@@ -412,18 +434,27 @@ pub async fn create_link(_k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Pa
     let id = Uuid::now_v7();
     let (file, folder) = item_columns(&item);
     insert_link(tx, ctx, id, file, folder, access, &hash, password_hash.as_deref(), expires, max_downloads, None, note).await?;
+    if let Some(a) = &answerable {
+        sqlx::query("update e_drive_link set belongs_to = 'The Workspace', answerable = $3 where tenant_id = $1 and id = $2")
+            .bind(ctx.tenant)
+            .bind(id)
+            .bind(a)
+            .execute(&mut **tx)
+            .await?;
+    }
     tree::log(
         tx,
         ctx,
         &item,
         "Link Created",
-        json!({"link": id, "access": access, "expires_at": expires, "password": password.is_some(), "max_downloads": max_downloads, "note": note.is_some()}),
+        json!({"link": id, "access": access, "expires_at": expires, "password": password.is_some(), "max_downloads": max_downloads, "note": note.is_some(), "answerable": answerable}),
     )
     .await?;
     let slug = tenant_slug(tx, ctx.tenant).await?;
     Ok(
         json!({"id": id, "item": item.id, "token": token, "url": format!("/api/site/{slug}/drive/links/{token}"), "page": format!("/drive/s/{slug}/{token}"), "access": access,
-              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads, "note": note}),
+              "expires_at": expires, "has_password": password.is_some(), "max_downloads": max_downloads, "note": note,
+              "belongs_to": if answerable.is_some() { "The Workspace" } else { "Its Maker" }, "answerable": answerable}),
     )
 }
 
@@ -475,10 +506,12 @@ pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> O
         Option<DateTime<Utc>>,
         Option<String>,
         Option<String>,
+        Value,
     );
+    // Whose link it is and what became of it when someone left (FEO-036), as one object.
     let rows: Vec<R> = sqlx::query_as(
-        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, email::text, note \
-         from e_drive_link where tenant_id = $1 and (file = $2 or folder = $2) order by created_at desc",
+        "select id, access, coalesce(has_password, false), expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, email::text, note, \
+         jsonb_build_object('belongs_to', coalesce(l.belongs_to, 'Its Maker'), 'answerable', l.answerable, 'left_by', l.left_by, 'on_leaving', l.on_leaving, 'left_at', l.left_at) from e_drive_link l where tenant_id = $1 and (file = $2 or folder = $2) order by created_at desc",
     )
     .bind(ctx.tenant)
     .bind(item.id)
@@ -487,12 +520,21 @@ pub async fn list_links(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> O
     let now = Utc::now();
     Ok(json!({"item": item.id,
         "policy": {"allow_public_links": policy.allow_public_links, "max_link_days": policy.max_link_days, "link_password_required": policy.link_password_required},
-        "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last, email, note)| {
+        "links": rows.into_iter().map(|(id, access, pw, exp, max, count, revoked, by, at, last, email, note, owner)| {
         let count = count.unwrap_or(0);
         let active = !revoked && exp.is_none_or(|t| t > now) && max.is_none_or(|m| m == 0 || count < m);
-        json!({"id": id, "access": access, "has_password": pw, "expires_at": exp, "max_downloads": max, "download_count": count,
-               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "email": email, "note": note})
+        let mut v = json!({"id": id, "access": access, "has_password": pw, "expires_at": exp, "max_downloads": max, "download_count": count,
+               "revoked": revoked, "shared_by": by, "created_at": at, "last_accessed_at": last, "active": active, "email": email, "note": note});
+        merge(&mut v, owner);
+        v
     }).collect::<Vec<_>>()}))
+}
+
+/// Adds the fields of `more` (an object) to `v`.
+pub(crate) fn merge(v: &mut Value, more: Value) {
+    if let (Some(v), Value::Object(more)) = (v.as_object_mut(), more) {
+        v.extend(more);
+    }
 }
 
 // ───────────────────────────── guests ─────────────────────────────

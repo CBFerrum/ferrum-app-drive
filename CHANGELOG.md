@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0
+
+Links that belong to the workspace (FEO-036). A public link names someone of the workspace who can manage what it shares to answer for it (`create_link` `answerable`, "Answered for by" in the share dialog), and then stays when its maker leaves; one its maker made alone still goes to their successor or stops. When someone leaves, every link it touches says whose leaving it went through and what became of it (Stayed, Passed On, Stopped or Kept), in the share dialog and in the Drive Public Links report, whose new Through Departures choice is the access review of a departure. A link they answered for passes to their successor, or stops when nobody takes over.
+
 ## 0.14.12
 
 Rebuilt with Ferrum-Frontend c59c9a2: the names of its models, fields and manifest in Arabic and Hindi (266 each in ui/src/locales/names, which the platform serves to every page of the workspace, so a record's labels, the launcher and the bar read in the person's language), and the sentences its pages still showed in English (split around a link or a figure, built in code from a template or word by word) whole and translated (430 words each in ui/src/locales). Translated by the model, to be reviewed by native speakers.
