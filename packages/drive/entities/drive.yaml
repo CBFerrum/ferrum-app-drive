@@ -271,6 +271,13 @@
     - {name: failed_attempts, type: int, default: 0, read_only: true, hidden: true}
     - {name: locked_until, type: datetime, read_only: true, hidden: true}
     - {name: last_accessed_at, type: datetime, read_only: true}
+    - {name: belongs_to, type: select, options: [Its Maker, The Workspace], default: Its Maker, read_only: true, in_list: true, in_filter: true, label: Belongs To,
+       description: "Its maker's: when they leave, it goes to their successor or stops. The workspace's: it stays when its maker leaves, and the person named answers for it"}
+    - {name: answerable, type: email, read_only: true, in_list: true, label: Answered For By, description: "Who answers for a link that belongs to the workspace"}
+    - {name: left_by, type: email, read_only: true, in_filter: true, label: Departure, description: "Whose leaving the workspace it went through"}
+    - {name: on_leaving, type: select, options: [Stayed, Passed On, Stopped, Kept], read_only: true, in_filter: true, label: On Their Leaving,
+       description: "Stayed: the workspace's, answered for by someone else. Passed On: to their successor. Stopped: nobody took over. Kept: the workspace keeps the links of people who leave"}
+    - {name: left_at, type: datetime, read_only: true, label: Left On}
   indexes: [[expires_at]]
   list: {columns: [file, folder, access, shared_by, expires_at, download_count, revoked], sort: created_at desc}
 

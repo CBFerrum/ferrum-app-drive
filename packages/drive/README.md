@@ -52,7 +52,7 @@ one the person may see.
 | **DriveFile** | master | `name` (unique per folder ignoring case, among items out of the trash), `folder`, `root`, `ancestors`, `owner`, `file_type`, `content_type` (from the bytes), `size`, `sha256`, `version_no`, `current_version`, `modified_at`, `modified_by`, `locked_by`, `locked_at` (check-out), `trashed`, `trashed_at`, `trashed_by` |
 | **DriveFileVersion** | master | `file`, `version_no`, `stored_file` (the platform file), `size`, `sha256`, `content_type`, `author`, `comment` |
 | **DriveShare** | master | `file` or `folder`; `email` or `role`; `permission` View/Comment/Edit/Manage; `expires_at`; `shared_by` |
-| **DriveLink** | master | `file` or `folder`, `access` View/Download, `token_hash` (SHA-256), `password_hash` (Argon2id), `has_password`, `expires_at`, `max_downloads`, `download_count`, `revoked`, `revoked_at`, `revoked_by`, `shared_by`, `last_accessed_at` (hashes are hidden from everyone but workspace administrators) |
+| **DriveLink** | master | `file` or `folder`, `access` View/Download, `token_hash` (SHA-256), `password_hash` (Argon2id), `has_password`, `expires_at`, `max_downloads`, `download_count`, `revoked`, `revoked_at`, `revoked_by`, `shared_by`, `last_accessed_at` (hashes are hidden from everyone but workspace administrators); `belongs_to` Its Maker/The Workspace and `answerable` (who answers for a workspace link); `left_by`, `on_leaving` Stayed/Passed On/Stopped/Kept and `left_at`: whose leaving it went through and what became of it |
 | **DriveActivity** | master | `file` / `folder`, `item_name`, `action`, `actor` (empty for public-link visitors and upkeep), `details` |
 | **DriveComment** | master | `file`, `author`, `body` (≤ 4000 characters) |
 | **DriveStar** | master | `email`, `file` / `folder` |
@@ -91,7 +91,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `list_versions` | `file` → `{versions: [{id, version, size, sha256, content_type, author, comment, created_at, current}]}`, newest first |
 | `download` | `file`, `version?` → `{name, version, content_type, size, sha256, content_base64, text}` (`text` for text files); up to 5 MB — larger files through `GET /files/{id}/content` |
 | `list_shares` | `item` → `{owner, team: {id, name, members} \| null, shares: [{id, email, role, permission, expires_at, shared_by, created_at, inherited_from}]}` |
-| `list_links` | `item` (Manage) → `{policy: {allow_public_links, max_link_days, link_password_required}, links: [{id, access, has_password, expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, active, email, note}]}` — tokens are never shown again; `policy` is what the next link must meet |
+| `list_links` | `item` (Manage) → `{policy: {allow_public_links, max_link_days, link_password_required}, links: [{id, access, has_password, expires_at, max_downloads, download_count, revoked, shared_by, created_at, last_accessed_at, active, email, note, belongs_to, answerable, left_by, on_leaving, left_at}]}` — tokens are never shown again; `policy` is what the next link must meet |
 | `activity` | `item`, `limit?` (≤ 200, 50) → `{activity: [{id, at, action, item_name, actor, file, folder, details}]}`; for a folder, everything inside it too |
 | `list_comments` | `file` → `{comments: [{id, author, body, created_at, mine}]}` |
 | `list_templates` | `kind?` (docx, xlsx, pptx, odt, ods, odp) → `{templates: [{id, kind, title, category, description, builtin, size}], manage}`: Drive's own first, then the workspace's; `manage` when you may add and delete them |
@@ -124,7 +124,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `restore_version` | `file`, `version` → Item (Edit): the old content becomes the newest version; for a live document, a new document beside it, `Name (version N).fdoc` |
 | `share` | `item`, `email` or `role`, `permission?` (View), `expires_at?` → `{id, item, email, role, permission, expires_at}` (Manage); sharing again replaces the grant; the person is notified in the app and, with the Mail app, by email (the email names no item). An email outside the workspace (a guest): see below |
 | `unshare` | `item`, `share?` / `email?` / `role?` → `{removed}` (Manage; anyone may remove their own share) |
-| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?`, `note?` (280 characters, shown to whoever opens the link) → `{id, item, token, url, page, access, expires_at, has_password, max_downloads, note}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
+| `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?`, `note?` (280 characters, shown to whoever opens the link), `answerable?` (an active member who can manage the item: the link is then the workspace's and outlives its maker) → `{id, item, token, url, page, access, expires_at, has_password, max_downloads, note, belongs_to, answerable}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
 | `revoke_link` | `link` → `{link, revoked}` (Manage on its item, even in the trash) |
 | `star` / `unstar` | `item` → `{item, starred}` (View) |
 | `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
@@ -209,7 +209,25 @@ Responses carry `Cache-Control: no-store`, `X-Robots-Tag: noindex, nofollow` and
 
 `drive_storage_by_user`, `drive_storage_by_team` (quota, used, used %, files, all-version and trash
 bytes), `drive_storage_by_type`, `drive_largest_files` (`limit` 50/100/500, `include_trash`),
-`drive_shared_externally` (public links; `status` Active/All).
+`drive_shared_externally` (public links; `status` Active/All/Through Departures, the last the access
+review of every link someone's leaving went through: whose it was, who answers for it, and what became
+of it).
+
+## When someone leaves
+
+On `ferrum.user.deprovisioned`, beside the names `handover` moves (files and folders they own, team
+membership): what they had checked out opens up, shares made to them end, and their successor gets
+Manage on their own space. Each of their public links goes by whose it is, and says so (`left_by`,
+`on_leaving`, `left_at`):
+
+| The link | With a successor | With nobody taking over |
+|---|---|---|
+| Theirs (`belongs_to` Its Maker, and links made before 0.15) | Passed On: the successor's | Stopped, or Kept when Drive Settings' `links_after_leaving` is Keep |
+| The workspace's, someone else answering for it | Stayed | Stayed |
+| The workspace's, they answering for it (whoever made it) | Passed On: the successor answers for it | Stopped |
+
+All of it is safe to repeat. A link passed on to a successor who cannot manage its item still works,
+and whoever manages the item can turn it off.
 
 ## Upkeep (every minute)
 
