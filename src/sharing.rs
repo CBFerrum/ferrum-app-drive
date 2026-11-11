@@ -809,7 +809,7 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
     if let Some(format) = format {
         // Guests see the document's own images (not ones pasted from documents they cannot open).
         let images = crate::images::for_export(k, &guest, None, file.id, &data).await?;
-        let mut resp = crate::site::export(k, &file.name, &data, if preview { "html" } else { format }, preview, &images).await?;
+        let mut resp = crate::site::export(k, &file.name, &data, if preview { "html" } else { format }, preview, &images, &[]).await?;
         resp.headers.retain(|(h, _)| h != "cache-control");
         resp.headers.extend(guest_headers());
         return Ok(resp);
