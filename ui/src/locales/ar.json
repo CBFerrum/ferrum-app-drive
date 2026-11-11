@@ -361,6 +361,7 @@
   "Stop": "إيقاف",
   "Stop uploading {name}": "إيقاف رفع {name}",
   "Stopped when {who} left: nobody took over": "توقف عند مغادرة {who}: لم يتولَّه أحد",
+  "Stopped. What was sent has been discarded.": "تم الإيقاف. تم تجاهل ما أُرسل.",
   "Stopped. What was sent is kept for a day, so sending it again goes on from there.": "تم الإيقاف. يُحتفظ بما أُرسل ليوم واحد، فإعادة الإرسال تكمل من حيث توقف.",
   "Table": "جدول",
   "Take a filter off to see more.": "أزل عامل تصفية لرؤية المزيد.",
