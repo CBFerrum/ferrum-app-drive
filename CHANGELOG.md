@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.16.0
+
+Drive works the way people expect a drive to. Built with Ferrum-Frontend 60402fa; needs a platform at 7ccc85c or later (the exporters) and, for office files, the online editor the platform now ships on by default.
+
+**Previews in place.** Opening a file shows it inside Drive, with the arrow keys moving through the folder and Escape closing: pictures (fit, zoom, rotate), video and audio (ranged requests, so they seek), PDF drawn in the page with page numbers, zoom, selectable text and a search that marks the matched word, text, Markdown, CSV as a table, JSON and code. Office files open read-only in the online editor; without one, the page says what the administrator has to turn on, with Download. Pictures up to 1 MB show themselves in the grid.
+
+**A preview can never change a file.** A preview's editor session gets a token that cannot write, whoever is looking: saves and locks are refused for it. "Edit online" starts a real session. The editor follows Ferrum's light or dark theme and language, relaunches when the theme changes, no longer shows a second Share button or user list, and when it does not answer the page says so ("The office editor is not answering. Your file is safe in Drive.") with Retry and Download, never an internal address.
+
+**Versions.** Upload a new version of a file, name a version and keep it, restore or download any version. Drive says how many versions it keeps; a kept version is never pruned and does not count against the limit (at most 25 kept per file).
+
+**Download and upload.** A folder or a selection downloads as one zip (names made safe, duplicates numbered, live documents as web pages, capped at 128 MB and 5,000 files). Files over the single-request limit upload in resumable parts; a connection that drops or stalls for 30 seconds retries with backoff from the last part the server has, going offline waits instead of using up tries, and an Uploads panel shows going, retrying and stopped with Retry. A name clash asks once: keep both, replace as a new version, or skip, for one or for all. The upload limit is said before the upload starts.
+
+**Organising.** Move and copy with a folder picker or by dragging onto folders and breadcrumbs, rename inline (F2), star, Ctrl or ⌘ C, X, V and A, Space to preview; move, copy, trash and rename say what happened and offer Undo, and trash no longer asks first. Trash says when it is purged; Empty trash and Delete forever name and count what goes. Filters for type, owner, date and location combine with search, which says what it searches (names, and the contents of Ferrum documents). Recent shows 100 items.
+
+**Live documents.** They export from Drive and from public links as Word, PDF, HTML, text and Markdown through the platform's exporters, which now keep the formatting; when a format could not carry something the download says so (`x-ferrum-not-carried`, and `not_carried` in `read_document`). A Word file offers "Open as a Ferrum document" when Docs is installed (Docs 0.8), last in Open with and never the default; the Word file is left as it is.
+
+**The activity log** records a preview as a view, a download as a download, and grid thumbnails and the later parts of a ranged read as nothing.
+
+The first page loads less: the entry script is 150.7 KB (it was 183.0), with menus, the preview, uploads and the selection bar loaded when needed. 128 interface tests and 33 Rust tests. axe finds no violation of Drive's own on the list, grid, previews, share dialog and versions in both themes. File sizes read correctly right to left. The new words are in Arabic and Hindi.
+
+Not in this release: desktop sync, WebDAV and offline use; search inside office and PDF files; thumbnails made by the server (large pictures and PDFs show a type icon); transfer of ownership; downloading an office file as PDF; comments in a Word export; a resumable upload cannot be cancelled on the server (its parts expire after 24 hours) and does not appear in the bar's upload tray; the stall watchdog for single-request uploads lives in the bar and is being added there; the editor's own title bar still repeats the file name; resume after reloading the page and choosing the file again was not tried.
+
 ## 0.15.1
 
 The interface follows the upgraded design system, rebuilt with Ferrum-Frontend 0a47157. Text uses the kit's type roles (nothing under 12px) and controls its height tokens; loading shows skeletons shaped like what is coming; empty, no matches, denied, offline and failed are told apart; status colours come from stored state ids. The interface check now runs the UI lint against an empty baseline. A search or filter that hides every file offers to clear it; a refused folder is shown as refused, not as empty. A search result's snippet stays inside the name column, clamped to two lines. The share dialog fills the platform's frame instead of drawing a second one inside it.
