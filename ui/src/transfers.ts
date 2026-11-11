@@ -2,7 +2,9 @@
 // (what was dropped or chosen, a name that is taken, large files in parts). Loaded when the person
 // first downloads or uploads, not with the page.
 
-import { ApiError, api, download as save, errorMessage, shell, uploadInParts, t } from "@ferrum/client";
+import { ApiError, api, download as save, errorMessage, shell, t } from "@ferrum/client";
+import { track } from "./largeUploads";
+import { uploadResumable } from "./partsUpload";
 import { toast } from "@ferrum/kit";
 import { each, told } from "./bulk";
 import { type Choice, nameKey } from "./clash";
@@ -79,9 +81,11 @@ export async function upload(o: { act: (action: string, body: Record<string, unk
       // Past the most a request carries: in parts that survive a dropped connection (and, chosen
       // again after a reload, go on from where they stood), then adopted into the folder.
       carries: o.carries,
-      sendLarge: (file, folder, _label, clash) => ({
-        done: uploadInParts(file).then((stored) => api.post(`/api/app/drive/adopt?${new URLSearchParams({ folder, name: file.name, file: stored.id, on_conflict: clash })}`)),
-      }),
+      sendLarge: (file, folder, _label, clash) => {
+        // Drive's own list shows it (real progress, Stop, Retry), and it is kept going through drops and stalls; once the parts are in, the file is adopted into the folder.
+        const adopt = (stored: { id: string }) => api.post(`/api/app/drive/adopt?${new URLSearchParams({ folder, name: file.name, file: stored.id, on_conflict: clash })}`);
+        return { done: track(file, (report, signal) => uploadResumable(file, report, signal).then(adopt), () => void o.after()) };
+      },
       clash: on,
       reason: errorMessage,
     });

@@ -35,6 +35,7 @@ import { Rail, type Place } from "./Rail";
 import { NOTHING, type Chosen, all as chooseEvery, click, keep } from "./selection";
 import { commandFor, typing } from "./shortcuts";
 import { useTemplates } from "./templateList";
+import { useRows } from "./largeUploads";
 import { useActions } from "./useActions";
 import { useFolder, useFresh, useListing, useSpace, useUsage } from "./useDrive";
 
@@ -49,6 +50,7 @@ const savedLayout = (): "list" | "grid" => {
 };
 
 /** New files: a live document always; office files open in the online or a browser editor. */
+const UploadsPanel = lazy(() => import("./UploadsPanel"));
 const AddMenus = lazy(() => import("./AddMenus"));
 const Chips = lazy(() => import("./Chips").then((m) => ({ default: m.Chips })));
 
@@ -129,6 +131,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const [choosingPlace, setChoosingPlace] = useState(false);
   const [versionFor, setVersionFor] = useState<Item | null>(null);
   const versionPicker = useRef<HTMLInputElement>(null);
+  const sending = useRows();
   const clipboard = useRef<{ items: Item[]; cut: boolean } | null>(null);
   const [gallery, setGallery] = useState(false);
   const [saving, setSaving] = useState<Item | null>(null);
@@ -764,6 +767,11 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
             onChoose={(to) => (setChoosingPlace(false), setQuery({ in: to.id }))}
           />
         </Later>
+      )}
+      {sending.length > 0 && (
+        <Suspense fallback={<div className="drive-uploads" role="status" aria-label={tr("Loading…")} />}>
+          <UploadsPanel rows={sending} />
+        </Suspense>
       )}
       {naming && (
         <Later>

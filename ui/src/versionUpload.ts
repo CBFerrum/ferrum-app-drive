@@ -3,7 +3,7 @@
 // size against what one upload carries (a version has no upload in parts yet), and hands the file to
 // the shell, whose tray shows it going.
 
-import { errorMessage, shell, t } from "@ferrum/client";
+import { errorMessage, t } from "@ferrum/client";
 import { confirmDialog, toast } from "@ferrum/kit";
 import { shownName, sizeLabel } from "./files";
 
@@ -44,8 +44,11 @@ export async function addVersion(file: { id: string; name: string }, content: Fi
   });
   if (!ok) return false;
   try {
-    const started = await shell().uploads.start({ file: content, url: `/api/app/drive/files/${file.id}/versions?${new URLSearchParams({ comment: t("Uploaded “{name}”", { name: content.name }) })}`, label: shownName(file.name) });
-    await started.done;
+    // Sent by Drive itself, with a watchdog on the bytes moving, tries again after drops and stalls, and its own line in the uploads list.
+    const { track } = await import("./largeUploads");
+    const { uploadSingle } = await import("./partsUpload");
+    const url = `/api/app/drive/files/${file.id}/versions?${new URLSearchParams({ comment: t("Uploaded “{name}”", { name: content.name }) })}`;
+    await track({ name: shownName(file.name), size: content.size }, (report, signal) => uploadSingle(content, url, report, signal));
     toast(t("“{name}” has a new version", { name: shownName(file.name) }));
     return true;
   } catch (e) {
