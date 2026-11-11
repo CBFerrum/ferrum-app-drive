@@ -145,7 +145,7 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
         ("POST", ["editor", file]) if p.str("kind") == Some("browser") => {
             crate::office::launch_browser(k, ctx, id(file)?, p.str("action") != Some("view"), p.flag("take_over"), p.str("session")).await?
         }
-        ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view")).await?,
+        ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view"), p.str("theme"), p.str("lang")).await?,
         ("GET", ["editors"]) => crate::office::available(),
         ("POST", ["presence", file]) => crate::collab::heartbeat(k, ctx, id(file)?, p.str("mode").unwrap_or("view")).await?,
         ("GET", ["presence"]) => {
