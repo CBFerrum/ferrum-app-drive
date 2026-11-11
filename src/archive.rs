@@ -183,6 +183,7 @@ pub async fn build(k: &Kernel, ctx: &Ctx, p: &Params<'_>) -> Result<SiteResponse
     }
     tx.commit().await?;
 
+    let mut not_carried: Vec<String> = Vec::new();
     let fail = |e: &dyn std::fmt::Display| Error::internal(format!("building a zip file: {e}"));
     let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for entry in &placed {
@@ -204,7 +205,8 @@ pub async fn build(k: &Kernel, ctx: &Ctx, p: &Params<'_>) -> Result<SiteResponse
         let Some(item) = item else { continue };
         let (path, data) = if let Some(state) = live.get(&item.id) {
             let images = crate::images::for_export(k, ctx, Some(&g), item.id, state).await?;
-            let page = crate::site::live_page(&item.name, state, &images);
+            let (page, lost) = crate::site::live_page(k, &item.name, state, &images);
+            not_carried.extend(lost);
             // A live document goes in as a page: its name says so.
             let path = match entry.path.strip_suffix(".fdoc") {
                 Some(stem) => format!("{stem}.html"),
@@ -219,11 +221,15 @@ pub async fn build(k: &Kernel, ctx: &Ctx, p: &Params<'_>) -> Result<SiteResponse
         zip.write_all(&data).map_err(|e| fail(&e))?;
     }
     let body = zip.finish().map_err(|e| fail(&e))?.into_inner();
-    let headers = vec![
+    let mut headers = vec![
         ("content-disposition".to_string(), content::disposition(false, &archive_name(&tops))),
         ("x-content-type-options".into(), "nosniff".into()),
         ("cache-control".into(), "private, no-store".into()),
     ];
+    // What the live documents in it could not carry as web pages, once each.
+    not_carried.sort();
+    not_carried.dedup();
+    headers.extend(crate::site::not_carried_header(&not_carried));
     Ok(SiteResponse { status: 200, content_type: "application/zip".into(), headers, body })
 }
 

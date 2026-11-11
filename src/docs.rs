@@ -256,13 +256,15 @@ pub async fn read(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>
         None => (current(k, ctx, tx, &file).await?, file.version_no),
     };
     let doc = coedit::decode(&state);
-    let content = match format {
-        "text" => coedit::plain_text(&doc),
-        "html" => coedit::html(&doc),
-        _ => coedit::markdown(&doc),
+    // What the format could not carry says so (links to other documents become links on this workspace's address).
+    let origin = crate::office::web_origin(k.settings.public_url.as_deref());
+    let (content, not_carried) = match format {
+        "text" => (coedit::plain_text(&doc), Vec::new()),
+        "html" => (coedit::html(&doc), coedit::html_page_export("", &doc, origin.as_deref(), &|_| None).1),
+        _ => coedit::markdown_export(&doc, origin.as_deref(), &|_| None),
     };
     tree::log(tx, ctx, &file, "Download", json!({"version": version, "format": format})).await?;
-    Ok(json!({"file": file.id, "name": file.name, "version": version, "format": format, "content": content}))
+    Ok(json!({"file": file.id, "name": file.name, "version": version, "format": format, "content": content, "not_carried": not_carried}))
 }
 
 /// `append_to_document`: `markdown` added at the end of a live document (Edit), as a change
