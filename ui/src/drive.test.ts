@@ -10,6 +10,17 @@ describe("drive", () => {
     for (const n of ["photo.png", "report.pdf", "docx", "archive.zip"]) expect(editable(n), n).toBe(false);
   });
 
+  it("keeps a size as one left-to-right run in a right-to-left page", () => {
+    const was = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = { documentElement: { dir: "rtl" }, dir: "rtl" };
+    try {
+      expect(sizeLabel(11 * 1024)).toBe("\u206611 KB\u2069");
+    } finally {
+      (globalThis as { document?: unknown }).document = was;
+    }
+    expect(sizeLabel(11 * 1024)).toBe("11 KB");
+  });
+
   it("shows sizes the way people read them", () => {
     expect([null, 0, 1023, 1024, 15_360, 5_242_880, 3 * 1024 ** 3].map(sizeLabel)).toEqual(["", "0 B", "1023 B", "1.0 KB", "15 KB", "5.0 MB", "3.0 GB"]);
   });
@@ -26,6 +37,18 @@ describe("drive", () => {
     expect(editorsFor(file("budget.xlsx"), { online: false, browser: [sheets] }).map((c) => c.key)).toEqual(["sheets"]);
     expect(editorsFor(file("photo.png"), both).map((c) => c.key)).toEqual(["view"]);
     expect(editorsFor(file("README"), both)).toEqual([]);
+  });
+
+  it("offers a Word file as a Ferrum document when Docs is there: last, and never as the default", () => {
+    const some = { online: false, browser: [] as BrowserEditor[] };
+    expect(editorsFor(file("Policy.docx"), { ...some, docs: true }).map((c) => [c.key, c.to])).toEqual([["to-ferrum-doc", "/docs/open/f1"]]);
+    expect(defaultEditor(editorsFor(file("Policy.docx"), { ...some, docs: true }), false)).toBeUndefined();
+    const withEditor = editorsFor(file("Policy.docx"), { online: true, browser: [], docs: true });
+    expect(withEditor.map((c) => c.key)).toEqual(["online", "to-ferrum-doc"]);
+    expect(defaultEditor(withEditor, false)?.key).toBe("online");
+    expect(editorsFor(file("Policy.docx"), { ...some, docs: false })).toEqual([]);
+    expect(editorsFor(file("Budget.xlsx"), { ...some, docs: true })).toEqual([]);
+    expect(editorsFor(file("notes.doc"), { ...some, docs: true })).toEqual([]);
   });
 
   it("puts editors that cannot take a file last, saying why", () => {

@@ -1,19 +1,20 @@
 // What a folder or file looks like in a list: an icon for its kind, in that kind's colour (the
 // theme's chart colours, so dark mode and high contrast follow by themselves).
 
-import { File, FileArchive, FileAudio, FileImage, FileText, FileVideo, Folder, type LucideIcon, Presentation, Sheet } from "lucide-react";
+import { File, FileArchive, FileAudio, FileCode, FileImage, FileSpreadsheet, FileText, FileType, FileVideo, Folder, type LucideIcon, Presentation } from "lucide-react";
 import { type Look, lookOf } from "./files";
 
 const GLYPHS: Record<Look, LucideIcon> = {
   folder: Folder,
   text: FileText,
-  sheet: Sheet,
+  sheet: FileSpreadsheet,
   slides: Presentation,
-  pdf: FileText,
+  pdf: FileType,
   image: FileImage,
   video: FileVideo,
   audio: FileAudio,
   archive: FileArchive,
+  code: FileCode,
   file: File,
 };
 

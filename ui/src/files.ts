@@ -59,6 +59,9 @@ export interface Listing {
   offset: number;
 }
 
+/** Where a file's bytes are (add `?inline=1` to show it in place, `?version=` for an older one). */
+export const contentUrl = (id: string) => `/api/app/drive/files/${encodeURIComponent(id)}/content`;
+
 /** Documents edited live (`.fdoc`): Docs' editor opens them. */
 export const isLiveDoc = (name: string) => /\.fdoc$/i.test(name);
 
@@ -71,8 +74,16 @@ export const extension = (name: string) => (name.includes(".") ? name.slice(name
 const LEVELS = ["View", "Comment", "Edit", "Manage"];
 export const allows = (permission: string, needed: string) => LEVELS.indexOf(permission) >= LEVELS.indexOf(needed);
 
+/** A size as people read it ("11 KB"), as one run of left-to-right text: in a right-to-left page a number and
+ *  its unit would otherwise swap places ("KB 11"). Every size in Drive is made here. */
 export function sizeLabel(bytes: number | null): string {
   if (bytes === null) return "";
+  const text = plainSize(bytes);
+  const rtl = typeof document !== "undefined" && (document.documentElement.dir === "rtl" || document.dir === "rtl");
+  return rtl ? `\u2066${text}\u2069` : text;
+}
+
+function plainSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let n = bytes / 1024;
@@ -85,7 +96,7 @@ export function sizeLabel(bytes: number | null): string {
 }
 
 /** What a glyph shows: a folder, or the kind of file its name says. */
-export type Look = "folder" | "text" | "sheet" | "slides" | "pdf" | "image" | "video" | "audio" | "archive" | "file";
+export type Look = "folder" | "text" | "sheet" | "slides" | "pdf" | "image" | "video" | "audio" | "archive" | "code" | "file";
 
 const LOOKS: [RegExp, Look][] = [
   [/\.(fdoc|docx?|odt|rtf|txt|md)$/i, "text"],
@@ -96,6 +107,7 @@ const LOOKS: [RegExp, Look][] = [
   [/\.(mp4|mov|webm|mkv|avi)$/i, "video"],
   [/\.(mp3|wav|ogg|m4a|flac|aac)$/i, "audio"],
   [/\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i, "archive"],
+  [/\.(json|jsonl|geojson|m?[jt]sx?|cjs|py|rb|go|rs|java|kt|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|sql|css|scss|less|html?|xml|ya?ml|toml|ini|conf|env|lua|swift|r|pl|vue|svelte|diff|patch|gradle|tf|proto)$/i, "code"],
 ];
 
 export const lookOf = (kind: "file" | "folder", name: string): Look => (kind === "folder" ? "folder" : (LOOKS.find(([re]) => re.test(name))?.[1] ?? "file"));
@@ -129,13 +141,17 @@ export interface EditorChoice {
   unavailable?: string;
 }
 
+/** The offer to open a Word file as a new live Ferrum document (Docs' page makes it, beside the original). */
+export const TO_DOC = "to-ferrum-doc";
+
 /** Editors several people use at once on one file (browser editors are one person's at a time). */
 export const shared = (key: string) => key === "online" || key === "live";
 
 /** The editor "Open" uses: the first that can take the file. On narrow screens browser editors,
  *  made for a mouse and keyboard, are offered under "Open with" only. */
 export function defaultEditor(choices: EditorChoice[], narrow: boolean): EditorChoice | undefined {
-  return choices.find((c) => !c.unavailable && (c.key === "online" || c.key === "live" || c.key === "view" || !narrow));
+  // Making a Ferrum document of a Word file is an offer, never what "Open" does.
+  return choices.find((c) => !c.unavailable && c.key !== TO_DOC && (c.key === "online" || c.key === "live" || c.key === "view" || !narrow));
 }
 
 /** The editors that open a file, the default first: Docs' editor for live documents, the online
@@ -155,6 +171,8 @@ export function editorsFor(
     out.push({ key: b.id, label: b.title, to: `/drive/edit/${id}/${encodeURIComponent(b.id)}`, unavailable: tooLarge ? t("larger than {max_mb} MB", { max_mb: String(b.max_mb) }) : undefined });
   }
   if (viewable(file.name)) out.push(view);
+  // A Word file can also become a live Ferrum document beside it, when Docs is there: after the editors, never the default.
+  if (e.docs && /\.docx$/i.test(file.name)) out.push({ key: TO_DOC, label: t("Open as a Ferrum document"), to: `/docs/open/${id}`, external: true });
   return out.sort((a, b) => Number(!!a.unavailable) - Number(!!b.unavailable));
 }
 

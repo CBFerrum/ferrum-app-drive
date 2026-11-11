@@ -5,13 +5,14 @@
 // app's page. They talk to the asking page only through the shell.
 
 import { useQuery } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useId, useState } from "react";
+import { type FormEvent, lazy, Suspense, useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, download, errorMessage, formatDateTime, shell, type IntentRequest, t, isolate } from "@ferrum/client";
 import { Button, EmptyState, ReaderSkeleton, Spinner, StatePanel, toast } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import { FileGlyph } from "./FileGlyph";
-import { type ItemInfo, type Shareable, isLiveDoc, problemKind, shownName, sizeLabel } from "./files";
+import { type ItemInfo, type Shareable, problemKind, shownName, sizeLabel } from "./files";
+import { useEditors } from "./editors";
 import { ShareDialog } from "./Share";
 import { useSpace } from "./useDrive";
 
@@ -34,8 +35,6 @@ export interface PickedFile {
 }
 
 const contentUrl = (id: string) => `/api/app/drive/files/${encodeURIComponent(id)}/content`;
-const isImage = (name: string) => /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(name);
-const isPdf = (name: string) => /\.pdf$/i.test(name);
 
 function useItem(id: string | undefined) {
   return useQuery({
@@ -58,26 +57,17 @@ function useIntent() {
   return { req, error };
 }
 
-/** A file as Drive's viewer shows it: images and live documents in the page, PDFs in the
- *  browser's own viewer; anything else offers its download. */
-export function Viewer({ item }: { item: Pick<ItemInfo, "id" | "name"> }) {
-  const url = contentUrl(item.id);
-  if (isImage(item.name)) return <img className="drive-viewer-image" src={`${url}?inline=1`} alt={item.name} />;
-  // Its page runs nothing (the response is sandboxed), and so is the frame.
-  if (isLiveDoc(item.name)) return <iframe className="drive-viewer" title={item.name} src={`${url}?format=html&inline=1`} sandbox="" />;
+const FileBody = lazy(() => import("./Preview").then((m) => ({ default: m.FileBody })));
+
+/** A file as Drive's viewer shows it (the same as the preview over the list): by its kind, and for anything it cannot show, its download. */
+export function Viewer({ item }: { item: Pick<ItemInfo, "id" | "name"> & { file_type?: string | null } }) {
+  const editors = useEditors();
+  const down = () => void download(contentUrl(item.id), item.name).catch((e: unknown) => toast(errorMessage(e), "error"));
   return (
-    <div className="drive-viewer-none">
-      <p className="muted">{isPdf(item.name) ? t("PDFs open in your browser's viewer.") : t("Drive cannot show this kind of file; download it to open it.")}</p>
-      <div className="row" style={{ gap: 8 }}>
-        {isPdf(item.name) && (
-          <a className="btn btn-default btn-sm" href={`${url}?inline=1`} target="_blank" rel="noopener noreferrer">
-            {t("Open")}
-          </a>
-        )}
-        <Button size="sm" icon="download" onClick={() => void download(url, item.name).catch((e: unknown) => toast(errorMessage(e), "error"))}>
-          {t("Download")}
-        </Button>
-      </div>
+    <div className="drive-viewer-body">
+      <Suspense fallback={<ReaderSkeleton />}>
+        <FileBody id={item.id} item={item} online={editors.online} admin={false} down={down} />
+      </Suspense>
     </div>
   );
 }

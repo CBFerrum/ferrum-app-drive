@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { SHORTCUTS, commandFor, keyName, typing } from "./shortcuts";
+import { commandFor, typing } from "./shortcuts";
+import { SHORTCUTS, keyName } from "./shortcutHelp";
 
 const press = (key: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }> = {}) =>
   commandFor({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
 
 describe("Drive's keys", () => {
   it("means one command by each key", () => {
-    expect(["?", "/", "j", "ArrowDown", "k", "ArrowUp", "Home", "End", "Enter", " ", "x", "Escape", "F2", "Delete", "Backspace", "s", "d", "m", "c", "h", "n", "u"].map((k) => press(k))).toEqual([
+    expect(["?", "/", "j", "ArrowDown", "k", "ArrowUp", "Home", "End", "Enter", " ", "x", "Escape", "ArrowLeft", "ArrowRight", "F2", "Delete", "Backspace", "s", "d", "m", "c", "h", "n", "u"].map((k) => press(k))).toEqual([
       "help",
       "search",
       "next",
@@ -16,9 +17,11 @@ describe("Drive's keys", () => {
       "first",
       "last",
       "open",
-      "choose",
+      "preview",
       "choose",
       "clear",
+      "left",
+      "right",
       "rename",
       "trash",
       "trash",
@@ -35,7 +38,7 @@ describe("Drive's keys", () => {
   it("chooses everything with Ctrl or Command and A, and leaves the browser's own shortcuts alone", () => {
     expect(press("a", { ctrlKey: true })).toBe("all");
     expect(press("A", { metaKey: true })).toBe("all");
-    expect(press("c", { ctrlKey: true })).toBeNull();
+    expect([press("c", { ctrlKey: true }), press("X", { metaKey: true }), press("v", { ctrlKey: true })]).toEqual(["clipcopy", "clipcut", "paste"]);
     expect(press("s", { metaKey: true })).toBeNull();
     expect(press("d", { ctrlKey: true })).toBeNull();
     expect(press("k", { metaKey: true })).toBeNull();
@@ -56,8 +59,8 @@ describe("Drive's keys", () => {
   });
 
   it("does not take keys typed into a field", () => {
-    const inside = (selector: string) => ({ closest: (s: string) => (s.split(",").map((x) => x.trim()).includes(selector) ? {} : null) }) as unknown as EventTarget;
-    expect(typing(inside("input"))).toBe(true);
+    const inside = (selector: string) => ({ closest: (s: string) => (s.split(", ").includes(selector) ? {} : null) }) as unknown as EventTarget;
+    expect(typing(inside("input:not([type='checkbox'])"))).toBe(true);
     expect(typing(inside("textarea"))).toBe(true);
     expect(typing(inside("[role='menu']"))).toBe(true);
     expect(typing(inside("dialog[open]"))).toBe(true);

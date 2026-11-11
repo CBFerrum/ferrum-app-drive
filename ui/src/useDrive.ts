@@ -67,7 +67,8 @@ export function request(src: Source, q: Query, today: string): [string, Record<s
     case "trash":
       return ["list_trash", { limit: PAGE }];
     case "view":
-      return [ACTIONS[src.view], {}];
+      // Recent shows the last hundred; the server's own default is twenty.
+      return [ACTIONS[src.view], src.view === "recent" ? { limit: 100 } : {}];
   }
 }
 

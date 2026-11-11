@@ -19,8 +19,8 @@ const folder = (id: string, name: string, extra: Partial<Item> = {}) => item(id,
 describe("a page's list", () => {
   it("reads the sort and the chips from the address, and ignores what it does not know", () => {
     const q = readQuery(new URLSearchParams("sort=size&order=asc&type=PDF&since=7&owner=Ana@Acme.test"));
-    expect(q).toEqual({ sort: "size", order: "asc", type: "PDF", since: 7, owner: "ana@acme.test" });
-    expect(readQuery(new URLSearchParams("sort=colour&order=up&type=Spaceship&since=3"))).toEqual({ sort: null, order: null, type: null, since: null, owner: null });
+    expect(q).toEqual({ sort: "size", order: "asc", type: "PDF", since: 7, owner: "ana@acme.test", within: null });
+    expect(readQuery(new URLSearchParams("sort=colour&order=up&type=Spaceship&since=3"))).toEqual({ sort: null, order: null, type: null, since: null, owner: null, within: null });
     expect(filtersOn(q)).toBe(3);
     expect(viewOf("starred")).toBe("starred");
     expect(viewOf("nonsense")).toBe("mine");

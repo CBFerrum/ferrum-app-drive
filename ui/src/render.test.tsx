@@ -74,7 +74,8 @@ describe("Drive's home", () => {
     });
     expect(html).toContain("My files");
     for (const word of ["Shared with me", "Recent", "Starred", "Trash", "Team folders", "Engineering", "Your storage", "4.4 GB of 5.0 GB"]) expect(html, word).toContain(word);
-    for (const word of ["Reports", "plan.docx", "Launch notes", "Sort: Name", "Type", "Modified", "Owner", "New", "Upload"]) expect(html, word).toContain(word);
+    for (const word of ["Reports", "plan.docx", "Launch notes", "New", "Upload"]) expect(html, word).toContain(word);
+    // The chips and menus load just after the page (their own test draws them); their places are held meanwhile.
     expect(html).not.toContain("Launch notes.fdoc");
     expect(html).toContain("Choose Reports");
     expect(html).toContain("Choose every item shown");
@@ -140,7 +141,8 @@ describe("what opens over the list", () => {
   it("lists the chosen items' actions, only those the person may do to all of them", () => {
     const actions = { move: () => {}, share: () => {}, download: () => {}, trash: () => {}, restore: () => {}, destroy: () => {}, clear: () => {} };
     const all = draw(<BulkBar chosen={[item("a", "a.txt"), item("b", "b.txt", { permission: "Manage" })]} trash={false} actions={actions} />, "/", () => {});
-    expect(all).toContain("2 items chosen");
+    expect(all).toContain("2 selected");
+    expect(all).toContain("Clear selection");
     for (const word of ["Move to…", "Copy to…", "Download", "Move to trash"]) expect(all, word).toContain(word);
     expect(all).not.toContain("Share");
     const view = draw(<BulkBar chosen={[item("a", "a.txt", { permission: "View" })]} trash={false} actions={actions} />, "/", () => {});

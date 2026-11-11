@@ -157,6 +157,7 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "check_out" => files::check_out(k, ctx, tx, g, &p).await,
         "check_in" => files::check_in(k, ctx, tx, g, &p).await,
         "restore_version" => files::restore_version(k, ctx, tx, g, &p).await,
+        "keep_version" => files::keep_version(k, ctx, tx, g, &p).await,
         "share" => sharing::share(k, ctx, tx, g, &p).await,
         "unshare" => sharing::unshare(k, ctx, tx, g, &p).await,
         "create_link" => sharing::create_link(k, ctx, tx, g, &p).await,
@@ -580,7 +581,7 @@ async fn usage(tx: &mut Tx, ctx: &Ctx, g: &Grants, space: &Space) -> Out {
         // limits screens tell people about before they run into them.
         "admin": g.admin,
         // `request_bytes`: the most one upload request carries; a file past it goes in parts.
-        "limits": {"max_upload_bytes": s.max_upload_bytes, "request_bytes": crate::site::max_file_bytes(), "trash_days": s.trash_days},
+        "limits": {"max_upload_bytes": s.max_upload_bytes, "request_bytes": crate::site::max_file_bytes(), "trash_days": s.trash_days, "max_versions": s.max_versions},
     }))
 }
 

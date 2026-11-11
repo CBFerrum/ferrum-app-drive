@@ -145,7 +145,7 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
         ("POST", ["editor", file]) if p.str("kind") == Some("browser") => {
             crate::office::launch_browser(k, ctx, id(file)?, p.str("action") != Some("view"), p.flag("take_over"), p.str("session")).await?
         }
-        ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view")).await?,
+        ("POST", ["editor", file]) => crate::office::launch(k, ctx, id(file)?, p.str("action") != Some("view"), p.str("theme"), p.str("lang")).await?,
         ("GET", ["editors"]) => crate::office::available(),
         ("POST", ["presence", file]) => crate::collab::heartbeat(k, ctx, id(file)?, p.str("mode").unwrap_or("view")).await?,
         ("GET", ["presence"]) => {
@@ -298,7 +298,12 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             }
             return Ok(SiteResponse::json(201, &res?));
         }
-        ("GET", ["files", file, "content"]) => return download(k, ctx, id(file)?, &p).await,
+        ("GET", ["files", file, "content"]) => {
+            let how = files::access_log(p.flag("thumb"), p.flag("inline"), req.headers.get("range").and_then(Value::as_str));
+            return download(k, ctx, id(file)?, &p, how).await;
+        }
+        // A folder, or several items, as one zip file ([`crate::archive`]).
+        ("GET", ["archive"]) => return crate::archive::build(k, ctx, &p).await,
         // Images in a live document: the bytes go up as the body; they come back by their id.
         ("POST", ["files", file, "images"]) => return Ok(SiteResponse::json(201, &crate::images::upload(k, ctx, id(file)?, &req.body).await?)),
         ("GET", ["files", file, "images", image]) => return crate::images::serve(k, ctx, id(file)?, id(image)?).await,
@@ -311,7 +316,7 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
 /// else downloads, and types a browser could run arrive as opaque bytes. A live document serves
 /// its current content (or a version's) as `format=html`, `pdf`, `docx` or `txt`, its images
 /// inside; without a format, its state for Ferrum.
-async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<SiteResponse> {
+async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>, log: Option<&str>) -> Result<SiteResponse> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
     let d = files::prepare_download(&mut tx, ctx, &g, file, p.int("version")?).await?;
@@ -324,15 +329,19 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
             None => files::read(k, ctx, d.object).await?,
         };
         let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-        files::logged(&mut tx, ctx, &d).await?;
+        if let Some(action) = log {
+            tree::log(&mut tx, ctx, &d.file, action, json!({"version": d.version})).await?;
+        }
         let g = Grants::load(&mut tx, ctx).await?;
         tx.commit().await?;
         let images = if format == "txt" { HashMap::new() } else { crate::images::for_export(k, ctx, Some(&g), d.file.id, &data).await? };
         return export(k, &d.file.name, &data, format, p.flag("inline"), &images).await;
     }
-    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-    files::logged(&mut tx, ctx, &d).await?;
-    tx.commit().await?;
+    if let Some(action) = log {
+        let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+        tree::log(&mut tx, ctx, &d.file, action, json!({"version": d.version})).await?;
+        tx.commit().await?;
+    }
     let preview = p.flag("inline") && crate::content::inline_ok(&d.content_type);
     let ctype = if preview { d.content_type.clone() } else { crate::content::served_type(&d.content_type).to_string() };
     let mut headers = vec![
@@ -353,6 +362,45 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
     })
 }
 
+/// The response header that says what a live document's export could not carry (for the interface to tell the person).
+pub const NOT_CARRIED: &str = "x-ferrum-not-carried";
+
+/// `x-ferrum-not-carried: a; b`, or none when nothing was left out. The kernel's items are plain
+/// ASCII without `;`; anything else is made so here, so the header is always valid.
+pub fn not_carried_header(lost: &[String]) -> Option<(String, String)> {
+    let items: Vec<String> = lost
+        .iter()
+        .map(|i| {
+            i.chars()
+                .map(|c| {
+                    if c == ';' {
+                        ','
+                    } else if c.is_ascii_graphic() || c == ' ' {
+                        c
+                    } else {
+                        '?'
+                    }
+                })
+                .collect::<String>()
+                .trim()
+                .to_string()
+        })
+        .filter(|i| !i.is_empty())
+        .collect();
+    (!items.is_empty()).then(|| (NOT_CARRIED.to_string(), items.join("; ")))
+}
+
+/// A live document as a web page and what that page could not carry: its pictures inside it as
+/// data, so nothing is fetched to show them, and its links to other documents as links.
+pub fn live_page(k: &Kernel, name: &str, state: &[u8], images: &HashMap<String, crate::images::Image>) -> (Vec<u8>, Vec<String>) {
+    use ferrum_kernel::coedit;
+    let doc = coedit::decode(state);
+    let inline_src = |id: &str| images.get(id).map(|i| format!("data:{};base64,{}", i.content_type, STANDARD.encode(&i.bytes)));
+    let origin = crate::office::web_origin(k.settings.public_url.as_deref());
+    let (page, lost) = coedit::html_page_export(crate::content::stem(name, false), &doc, origin.as_deref(), &inline_src);
+    (page.into_bytes(), lost)
+}
+
 /// A live document as a page (`html`), a PDF (`pdf`), a Word file (`docx`) or its words
 /// (`txt`), carrying the `images` it shows. Pages run nothing.
 pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: bool, images: &HashMap<String, crate::images::Image>) -> Result<SiteResponse> {
@@ -361,30 +409,58 @@ pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: 
     let stem = crate::content::stem(name, false);
     // Pages and PDFs carry images as data: addresses, so nothing is fetched to show them.
     let inline_src = |id: &str| images.get(id).map(|i| format!("data:{};base64,{}", i.content_type, STANDARD.encode(&i.bytes)));
-    let (body, ctype, ext) = match format {
-        "html" => (coedit::html_page_with(stem, &doc, &inline_src).into_bytes(), "text/html; charset=utf-8", "html"),
-        "pdf" => (k.html_to_pdf(&coedit::html_page_with(stem, &doc, &inline_src)).await?, "application/pdf", "pdf"),
+    // Links to other documents and mentions of records become links on this workspace's address.
+    let origin = crate::office::web_origin(k.settings.public_url.as_deref());
+    let origin = origin.as_deref();
+    let (body, ctype, ext, lost) = match format {
+        "html" => {
+            let (page, lost) = coedit::html_page_export(stem, &doc, origin, &inline_src);
+            (page.into_bytes(), "text/html; charset=utf-8", "html", lost)
+        }
+        "pdf" => {
+            let (page, lost) = coedit::html_page_export(stem, &doc, origin, &inline_src);
+            (k.html_to_pdf(&page).await?, "application/pdf", "pdf", lost)
+        }
         "docx" => {
             let picture = |id: &str| {
                 images.get(id).map(|i| coedit::ImageData { bytes: i.bytes.clone(), content_type: i.content_type.clone(), width: i.width, height: i.height })
             };
-            (coedit::docx(&doc, stem, &picture)?, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx")
+            let (file, lost) = coedit::docx_export(&doc, stem, origin, &picture)?;
+            (file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", lost)
         }
-        "txt" => (coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt"),
-        other => return Err(Error::field("format", format!("must be html, pdf, docx or txt, not {other}"))),
+        "md" => {
+            let (md, lost) = coedit::markdown_export(&doc, origin, &inline_src);
+            (md.into_bytes(), "text/markdown; charset=utf-8", "md", lost)
+        }
+        "txt" => (coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt", Vec::new()),
+        other => return Err(Error::field("format", format!("must be html, pdf, docx, md or txt, not {other}"))),
     };
-    let headers = vec![
+    let mut headers = vec![
         ("content-disposition".to_string(), crate::content::disposition(inline, &format!("{stem}.{ext}"))),
         ("x-content-type-options".into(), "nosniff".into()),
         ("content-security-policy".into(), "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox".into()),
         ("cache-control".into(), "private, no-store".into()),
     ];
+    headers.extend(not_carried_header(&lost));
     Ok(SiteResponse { status: 200, content_type: ctype.into(), headers, body })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_an_export_could_not_carry_travels_as_one_header() {
+        assert_eq!(not_carried_header(&[]), None);
+        assert_eq!(not_carried_header(&[String::new(), "  ".into()]), None);
+        let lost = vec!["comments".to_string(), "text colour".to_string()];
+        assert_eq!(not_carried_header(&lost), Some(("x-ferrum-not-carried".into(), "comments; text colour".into())));
+        // Whatever the kernel hands over, the value stays plain ASCII and one list.
+        let odd = vec!["a;b".to_string(), "caf\u{e9}\r\nx".to_string()];
+        let (_, value) = not_carried_header(&odd).unwrap();
+        assert_eq!(value, "a,b; caf???x");
+        assert!(value.is_ascii() && !value.contains(['\r', '\n']));
+    }
 
     #[test]
     fn only_file_routes_take_large_bodies() {

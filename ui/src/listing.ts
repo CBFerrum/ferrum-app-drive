@@ -60,20 +60,22 @@ export interface Query {
   type: string | null;
   since: number | null;
   owner: string | null;
+  /** Looking only inside this folder (and the folders in it). */
+  within: string | null;
 }
 
-export const QUERY_KEYS = ["sort", "order", "type", "since", "owner"] as const;
+export const QUERY_KEYS = ["sort", "order", "type", "since", "owner", "in"] as const;
 
 export function readQuery(params: URLSearchParams): Query {
   const sort = SORTS.find((s) => s.id === params.get("sort"))?.id ?? null;
   const order = params.get("order");
   const type = TYPES.find((t) => t.id === params.get("type"))?.id ?? null;
   const since = SINCE.find((s) => String(s.days) === params.get("since"))?.days ?? null;
-  return { sort, order: order === "asc" || order === "desc" ? order : null, type, since, owner: params.get("owner")?.trim().toLowerCase() || null };
+  return { sort, order: order === "asc" || order === "desc" ? order : null, type, since, owner: params.get("owner")?.trim().toLowerCase() || null, within: params.get("in")?.trim() || null };
 }
 
 /** How many filters a page has on. */
-export const filtersOn = (q: Query) => [q.type, q.since, q.owner].filter(Boolean).length;
+export const filtersOn = (q: Query) => [q.type, q.since, q.owner, q.within].filter(Boolean).length;
 
 /** Where a page's items come from. */
 export type Source =
@@ -88,7 +90,7 @@ export type Source =
 
 /** The source of the page named by its address. Filters turn a folder into a search of it. */
 export function sourceOf(o: { view: View; folder?: string; query: string; fileType?: string; q: Query }): Source | null {
-  if (o.query || o.fileType) return { kind: "search", query: o.query || undefined, type: o.fileType };
+  if (o.query || o.fileType) return { kind: "search", query: o.query || undefined, type: o.fileType, folder: o.q.within || undefined };
   if (o.view === "mine") {
     if (!o.folder) return null;
     return o.q.type || o.q.since || o.q.owner ? { kind: "search", folder: o.folder } : { kind: "folder", folder: o.folder };
