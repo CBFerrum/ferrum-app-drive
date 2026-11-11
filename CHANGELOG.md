@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1
+
+The interface follows the upgraded design system, rebuilt with Ferrum-Frontend 0a47157. Text uses the kit's type roles (nothing under 12px) and controls its height tokens; loading shows skeletons shaped like what is coming; empty, no matches, denied, offline and failed are told apart; status colours come from stored state ids. The interface check now runs the UI lint against an empty baseline. A search or filter that hides every file offers to clear it; a refused folder is shown as refused, not as empty. A search result's snippet stays inside the name column, clamped to two lines. The share dialog fills the platform's frame instead of drawing a second one inside it.
+
 ## 0.15.0
 
 Links that belong to the workspace (FEO-036). A public link names someone of the workspace who can manage what it shares to answer for it (`create_link` `answerable`, "Answered for by" in the share dialog), and then stays when its maker leaves; one its maker made alone still goes to their successor or stops. When someone leaves, every link it touches says whose leaving it went through and what became of it (Stayed, Passed On, Stopped or Kept), in the share dialog and in the Drive Public Links report, whose new Through Departures choice is the access review of a departure. A link they answered for passes to their successor, or stops when nobody takes over.

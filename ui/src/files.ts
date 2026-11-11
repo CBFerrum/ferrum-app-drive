@@ -1,4 +1,5 @@
-import { t } from "@ferrum/client";
+import { ApiError, t } from "@ferrum/client";
+import type { StateKind } from "@ferrum/kit";
 // What Drive's screens know about files and folders: their shape as the server lists them, what a
 // name says about them, the person's level on them, and which editor opens a file. Pure, so it is
 // tested without a browser.
@@ -155,4 +156,10 @@ export function editorsFor(
   }
   if (viewable(file.name)) out.push(view);
   return out.sort((a, b) => Number(!!a.unavailable) - Number(!!b.unavailable));
+}
+
+/** Which state a failed request is: refused (403), unreachable (no answer, 502-504), or broken. */
+export function problemKind(e: unknown): StateKind {
+  const status = e instanceof ApiError ? e.status : -1;
+  return status === 403 ? "denied" : status === 0 || (status >= 502 && status <= 504) ? "offline" : "failed";
 }

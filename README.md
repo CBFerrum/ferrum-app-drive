@@ -279,6 +279,7 @@ CHANGELOG.md  what changed in each version
 
 | Version | Highlights |
 |---|---|
+| **0.15.1** | The redesigned interface: the upgraded design system, shaped loading, told-apart states. |
 | **0.15.0** | Links that belong to the workspace, and what became of each link when someone left. |
 | **0.14.12** | Its names in Arabic and Hindi; the last English sentences translated. |
 | **0.14.11** | Sentences built in code are words too, in Arabic and Hindi. |

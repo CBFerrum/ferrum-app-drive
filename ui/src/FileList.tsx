@@ -178,17 +178,17 @@ function Row({
           {it.kind === "folder" && !trash ? (
             <Link to={`/drive/${it.id}`} className="drive-name" draggable={false}>
               {glyph}
-              <span className="truncate">{isolate(name)}</span>
+              <span className="truncate" title={name}>{isolate(name)}</span>
             </Link>
           ) : open ? (
             <EditorLink choice={open} className="drive-name">
               {glyph}
-              <span className="truncate">{isolate(name)}</span>
+              <span className="truncate" title={name}>{isolate(name)}</span>
             </EditorLink>
           ) : (
             <span className="drive-name">
               {glyph}
-              <span className="truncate">{isolate(name)}</span>
+              <span className="truncate" title={name}>{isolate(name)}</span>
             </span>
           )}
           {it.starred && <Star aria-label={tr("Starred")} size={14} className="drive-starred" />}
@@ -200,7 +200,7 @@ function Row({
           )}
         </div>
         {line && (
-          <div className="drive-line">
+          <div className="drive-line drive-line-clamp" title={line.replace(/[«»]/g, "")}>
             <Marked text={line} />
           </div>
         )}
