@@ -33,6 +33,8 @@ use uuid::Uuid;
 
 /// How long a token opens a file for; reopening the editor gets a new one.
 const TOKEN_SECONDS: i64 = 10 * 3600;
+/// What a person is told when the editor server does not answer: no address, and the file is safe.
+pub const NOT_ANSWERING: &str = "The office editor is not answering. Your file is safe in Drive.";
 const DISCOVERY_TTL: Duration = Duration::from_secs(600);
 const MAX_DISCOVERY: usize = 4 << 20;
 
@@ -110,10 +112,14 @@ async fn discovery(k: &Kernel, cfg: &Config) -> Result<Arc<Discovery>> {
     {
         return Ok(d.clone());
     }
-    let unavailable = |e: String| Error::Unavailable(format!("the editor server: {e}"));
+    // What went wrong (with the editor's internal address) goes to the log, never to a person.
+    let unavailable = |e: String| {
+        tracing::warn!("the office editor did not answer: {e}");
+        Error::Unavailable(NOT_ANSWERING.into())
+    };
     let url = format!("{}/hosting/discovery", cfg.office);
     // The operator's own editor server, usually beside Ferrum: private addresses allowed.
-    let (client, parsed) = k.vetted_client(&url, true, Duration::from_secs(10), "Ferrum Drive").await?;
+    let (client, parsed) = k.vetted_client(&url, true, Duration::from_secs(10), "Ferrum Drive").await.map_err(|e| unavailable(e.to_string()))?;
     let res = client.get(parsed).send().await.map_err(|e| unavailable(e.to_string()))?;
     if !res.status().is_success() {
         return Err(unavailable(format!("{url} answered {}", res.status())));
@@ -377,7 +383,7 @@ pub async fn browser_lock(k: &Kernel, ctx: &Ctx, file: Uuid, lock: &str, op: &st
 
 /// `POST /api/app/drive/editor/{file}` (`action=view` to only read): the editor page for the file
 /// and the token to post to it, as `{url, access_token, access_token_ttl, name, action}`.
-pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool) -> Result<Value> {
+pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, theme: Option<&str>, lang: Option<&str>) -> Result<Value> {
     let cfg = config().ok_or_else(|| Error::Unavailable("online editing is not set up on this server (FERRUM_OFFICE_URL, FERRUM_OFFICE_WOPI_URL)".into()))?;
     let d = discovery(k, &cfg).await?;
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
@@ -407,13 +413,27 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool) -> Resul
     // which answers them (C2, as in `check_file_info`).
     let collabora = page.contains("/cool.html") || page.contains("/loleaflet.html");
     let buttons = if collabora && web_origin(k.settings.public_url.as_deref()).is_some() { "closebutton=1&revisionhistory=1&" } else { "" };
+    let look = if collabora { ui_params(theme, lang) } else { String::new() };
     Ok(json!({
-        "url": format!("{page}{sep}{buttons}WOPISrc={}", encode(&src)),
+        "url": format!("{page}{sep}{buttons}{look}WOPISrc={}", encode(&src)),
         "access_token": token,
         "access_token_ttl": exp * 1000,
         "name": item.name,
         "action": action,
     }))
+}
+
+/// The editor's look, as Collabora takes it on its address: `ui_theme=dark|light` and `lang=<tag>`,
+/// each only when it is a value the editor understands (a made-up one is left out, not passed on).
+pub fn ui_params(theme: Option<&str>, lang: Option<&str>) -> String {
+    let mut out = String::new();
+    if let Some(t) = theme.filter(|t| matches!(*t, "dark" | "light")) {
+        out.push_str(&format!("ui_theme={t}&"));
+    }
+    if let Some(l) = lang.filter(|l| (2..=12).contains(&l.len()) && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        out.push_str(&format!("lang={}&", l.replace('_', "-")));
+    }
+    out
 }
 
 fn status(code: u16) -> SiteResponse {
@@ -512,11 +532,12 @@ async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: U
     // buttons, which open Drive's own panels instead (UI_Share or UI_Sharing, UI_FileVersions,
     // UI_Close). Without the app's origin the editor keeps its own.
     if let Some(origin) = web_origin(k.settings.public_url.as_deref()) {
-        let share = item.level(g) >= Level::Manage;
         for (key, value) in [
             ("PostMessageOrigin", json!(origin)),
-            ("EnableShare", json!(share)),
-            ("FileSharingPostMessage", json!(share)),
+            // Drive's own header holds Share and the people in the file: the editor's are hidden.
+            ("EnableShare", json!(false)),
+            ("FileSharingPostMessage", json!(false)),
+            ("HideUserList", json!("desktop,tablet,mobile")),
             ("FileVersionPostMessage", json!(true)),
             ("ClosePostMessage", json!(true)),
         ] {
@@ -628,6 +649,16 @@ async fn lock(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, op: &str, given: O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_editor_is_given_the_look_it_understands_and_nothing_else() {
+        assert_eq!(ui_params(Some("dark"), Some("ar")), "ui_theme=dark&lang=ar&");
+        assert_eq!(ui_params(Some("light"), Some("pt_BR")), "ui_theme=light&lang=pt-BR&");
+        // Anything else is left out, so nothing a page makes up reaches the editor's address.
+        assert_eq!(ui_params(Some("blue&x=1"), Some("en&evil=1")), "");
+        assert_eq!(ui_params(None, Some("x")), "");
+        assert!(!NOT_ANSWERING.contains("http") && NOT_ANSWERING.contains("safe in Drive"));
+    }
 
     #[test]
     fn the_editor_posts_to_the_web_apps_origin() {
