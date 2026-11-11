@@ -543,6 +543,18 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   return (
     <DropContext.Provider value={dropApi}>
       <div ref={shellBox} className="drive-shell" data-details={selected ? "" : undefined} {...overPage}>
+          <input
+            ref={versionPicker}
+            type="file"
+            hidden
+            aria-hidden
+            tabIndex={-1}
+            onChange={(e) => {
+              const chosenFile = e.target.files?.[0];
+              e.target.value = "";
+              if (chosenFile && versionFor) void newVersionOf(versionFor, chosenFile);
+            }}
+          />
         <Rail
           id={railId}
           className={places ? "is-open" : undefined}
@@ -632,18 +644,6 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
                     </DropdownMenuContent>
                   </DropdownMenu>
                   <input ref={picker} type="file" multiple hidden aria-hidden tabIndex={-1} onChange={(e) => (chosenFiles(e.target.files, false), (e.target.value = ""))} />
-                  <input
-                    ref={versionPicker}
-                    type="file"
-                    hidden
-                    aria-hidden
-                    tabIndex={-1}
-                    onChange={(e) => {
-                      const chosenFile = e.target.files?.[0];
-                      e.target.value = "";
-                      if (chosenFile && versionFor) void newVersionOf(versionFor, chosenFile);
-                    }}
-                  />
                   <input
                     ref={folderPicker}
                     type="file"

@@ -193,7 +193,7 @@ export default function PdfView({ url, onFail }: { url: string; onFail: (why: "p
         <span className="drive-pdf-sep" aria-hidden="true" />
         <form className="drive-pdf-find" role="search" onSubmit={(e) => void search(e)}>
           <Search aria-hidden size={14} />
-          <input className="input" type="search" placeholder={tr("Find in the document")} aria-label={tr("Find in the document")} value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+          <input className="input" type="text" placeholder={tr("Find in the document")} aria-label={tr("Find in the document")} value={typed} onChange={(e) => setTyped(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
         </form>
         {found && (
           <span className="drive-pdf-count" role="status">

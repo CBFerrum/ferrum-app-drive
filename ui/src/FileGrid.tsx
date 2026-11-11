@@ -102,12 +102,12 @@ function Card({
         ) : to ? (
           <Link to={to} className="drive-name" draggable={false}>
             <FileGlyph kind={it.kind} name={it.name} size={16} />
-            <span className="truncate" title={name}>{isolate(name)}</span>
+            <span className="truncate" dir="auto" title={name}>{isolate(name)}</span>
           </Link>
         ) : (
           <span className="drive-name">
             <FileGlyph kind={it.kind} name={it.name} size={16} />
-            <span className="truncate" title={name}>{isolate(name)}</span>
+            <span className="truncate" dir="auto" title={name}>{isolate(name)}</span>
           </span>
         )}
       </div>

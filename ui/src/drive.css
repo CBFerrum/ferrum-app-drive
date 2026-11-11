@@ -603,10 +603,10 @@ a.drive-name:focus-visible > span {
   margin-inline-start: auto;
 }
 .drive-versions li {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  display: grid;
+  gap: 4px;
+  padding-block-end: 8px;
+  border-block-end: 1px solid var(--border);
 }
 .drive-activity li {
   font-size: var(--text-sm);
@@ -1269,6 +1269,8 @@ a.drive-name:focus-visible > span {
   background: var(--surface-2);
 }
 .drive-pdf-page {
+  /* A page is drawn the way it was written, whichever way the interface reads. */
+  direction: ltr;
   position: relative;
   flex: none;
   background: var(--surface);
@@ -1558,6 +1560,8 @@ a.drive-name:focus-visible > span {
 }
 .drive-card .drive-line {
   padding-inline-start: 0;
+  direction: ltr;
+  text-align: start;
 }
 .drive-card-badges {
   display: flex;
@@ -1693,8 +1697,9 @@ a.drive-name:focus-visible > span {
   flex: none;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
+  margin-inline-start: -8px;
 }
 .drive-retention {
   margin: 0;
