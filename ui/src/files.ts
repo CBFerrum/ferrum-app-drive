@@ -141,13 +141,17 @@ export interface EditorChoice {
   unavailable?: string;
 }
 
+/** The offer to open a Word file as a new live Ferrum document (Docs' page makes it, beside the original). */
+export const TO_DOC = "to-ferrum-doc";
+
 /** Editors several people use at once on one file (browser editors are one person's at a time). */
 export const shared = (key: string) => key === "online" || key === "live";
 
 /** The editor "Open" uses: the first that can take the file. On narrow screens browser editors,
  *  made for a mouse and keyboard, are offered under "Open with" only. */
 export function defaultEditor(choices: EditorChoice[], narrow: boolean): EditorChoice | undefined {
-  return choices.find((c) => !c.unavailable && (c.key === "online" || c.key === "live" || c.key === "view" || !narrow));
+  // Making a Ferrum document of a Word file is an offer, never what "Open" does.
+  return choices.find((c) => !c.unavailable && c.key !== TO_DOC && (c.key === "online" || c.key === "live" || c.key === "view" || !narrow));
 }
 
 /** The editors that open a file, the default first: Docs' editor for live documents, the online
@@ -167,6 +171,8 @@ export function editorsFor(
     out.push({ key: b.id, label: b.title, to: `/drive/edit/${id}/${encodeURIComponent(b.id)}`, unavailable: tooLarge ? t("larger than {max_mb} MB", { max_mb: String(b.max_mb) }) : undefined });
   }
   if (viewable(file.name)) out.push(view);
+  // A Word file can also become a live Ferrum document beside it, when Docs is there: after the editors, never the default.
+  if (e.docs && /\.docx$/i.test(file.name)) out.push({ key: TO_DOC, label: t("Open as a Ferrum document"), to: `/docs/open/${id}`, external: true });
   return out.sort((a, b) => Number(!!a.unavailable) - Number(!!b.unavailable));
 }
 

@@ -6,7 +6,7 @@
 // and offers the download. Loaded when the first file is opened.
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Download, ExternalLink, Info, Maximize2, Minus, Plus, RotateCcw, RotateCw, Share2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download, ExternalLink, FileText, Info, Maximize2, Minus, Plus, RotateCcw, RotateCw, Share2, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, errorMessage, formatDateTime, t as tr, isolate } from "@ferrum/client";
 import { Markdown, ReaderSkeleton, Spinner, StatePanel, type StateKind } from "@ferrum/kit";
@@ -17,7 +17,7 @@ import { splitTables } from "./markdownTables";
 import { type Editors } from "./FileList";
 import { FileGlyph } from "./FileGlyph";
 import { EditorLink } from "./editors";
-import { type Item, type ItemInfo, allows, contentUrl, defaultEditor, editorsFor, shownName, sizeLabel } from "./files";
+import { type Item, type ItemInfo, TO_DOC, allows, contentUrl, defaultEditor, editorsFor, shownName, sizeLabel } from "./files";
 
 const PdfView = lazy(() => import("./PdfView"));
 
@@ -512,6 +512,7 @@ export function Preview({ id, files, editors, narrow, admin, onClose, onGo, onDo
   const choices = item ? editorsFor({ id, name: item.name, size: item.size }, editors) : [];
   const open = defaultEditor(choices, narrow);
   const editor = open && open.key !== "view" ? open : undefined;
+  const toDoc = choices.find((c) => c.key === TO_DOC);
   const label = !editor ? "" : editor.key === "live" ? tr("Open in Docs") : editor.key === "online" ? (item && allows(item.permission, "Edit") ? tr("Edit online") : tr("Open")) : tr("Open in {label}", { label: editor.label });
 
   const body = () => {
@@ -545,6 +546,12 @@ export function Preview({ id, files, editors, narrow, admin, onClose, onGo, onDo
           {editor && (
             <EditorLink choice={editor} className="btn btn-primary btn-sm">
               <ExternalLink aria-hidden size={14} /> <span className="drive-preview-label">{label}</span>
+            </EditorLink>
+          )}
+          {toDoc && (
+            <EditorLink choice={toDoc} className="btn btn-default btn-sm">
+              <span className="drive-preview-label">{toDoc.label}</span>
+              <FileText aria-hidden size={14} className="drive-preview-icon" />
             </EditorLink>
           )}
           {item && allows(item.permission, "Manage") && (
