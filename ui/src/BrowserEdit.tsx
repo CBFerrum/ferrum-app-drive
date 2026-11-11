@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ApiError, bootstrap, download, errorMessage, fetchBlob, request, t, isolate } from "@ferrum/client";
-import { Alert, Badge, Button, Dialog, EmptyState, Spinner, confirmDialog, toast } from "@ferrum/kit";
+import { Alert, Badge, Button, Dialog, EmptyState, ReaderSkeleton, confirmDialog, toast } from "@ferrum/kit";
 import { useEditors } from "./editors";
 import { editable } from "./files";
 import { presenceLabel, usePresence } from "./presence";
@@ -267,7 +267,7 @@ export function BrowserEditPage() {
       </EmptyState>
     );
   }
-  if (!session || !editor) return <Spinner label={t("Opening the editor")} />;
+  if (!session || !editor) return <ReaderSkeleton />;
 
   const editing = session.action === "edit" && !lost;
   return (

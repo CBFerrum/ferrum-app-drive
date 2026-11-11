@@ -87,7 +87,7 @@
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-base);
   text-decoration: none;
 }
 .drive-place:hover {
@@ -129,7 +129,7 @@
 }
 .drive-rail-head h2 {
   color: var(--muted-foreground);
-  font-size: 11.5px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
   text-transform: uppercase;
@@ -138,8 +138,8 @@
   display: inline-grid;
   flex: none;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
   border: 0;
   border-radius: var(--radius-sm);
   background: none;
@@ -158,7 +158,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .drive-storage-head {
   display: flex;
@@ -201,14 +201,14 @@
   display: none;
   align-items: center;
   gap: 6px;
-  height: 32px;
+  height: var(--control-h-sm);
   padding: 0 10px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
@@ -223,14 +223,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: var(--control-h);
   padding: 0 10px;
   border: 1px solid var(--border-strong);
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .drive-chip:hover,
@@ -251,7 +251,7 @@
   background: none;
   color: var(--muted-foreground);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .drive-chip-clear:hover {
@@ -310,7 +310,7 @@
 .drive-line {
   padding-inline-start: 30px;
   color: var(--muted-foreground);
-  font-size: 12.5px;
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
 .drive-line mark {
@@ -340,14 +340,7 @@
   justify-content: center;
   gap: 12px;
   padding: 14px 0;
-  font-size: 13px;
-}
-.drive-skeleton-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 8px;
-  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
 }
 .drive-ghost {
   position: fixed;
@@ -481,7 +474,7 @@
   align-items: center;
   gap: 4px;
   margin-bottom: 8px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .drive-dest-path button {
   padding: 2px 4px;
@@ -507,7 +500,7 @@
   max-height: 50dvh;
 }
 .drive-dest-why {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 
 /* ── the keys ── */
@@ -578,7 +571,7 @@ a.drive-name:focus-visible > span {
   grid-template-columns: max-content 1fr;
   gap: 4px 12px;
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .drive-facts dt {
   color: var(--faint);
@@ -616,7 +609,7 @@ a.drive-name:focus-visible > span {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-sm);
   margin-bottom: 4px;
 }
 .drive-comment-head .btn {
@@ -629,7 +622,7 @@ a.drive-name:focus-visible > span {
   gap: 8px;
 }
 .drive-activity li {
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .drive-request {
   display: grid;
@@ -668,13 +661,13 @@ a.drive-name:focus-visible > span {
 }
 .share-head {
   margin: 14px 0 6px;
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 650;
 }
 .share-subhead {
   margin: 14px 0 6px;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 .share-list {
@@ -702,21 +695,21 @@ a.drive-name:focus-visible > span {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 .share-who .faint {
-  font-size: 12.5px;
+  font-size: var(--text-xs);
 }
 .share-role {
   flex: none;
   width: auto;
   max-width: 9.5rem;
-  height: 32px;
+  height: var(--control-h-sm);
 }
 .share-note {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .share-note-stop {
   color: var(--danger);
@@ -738,7 +731,7 @@ a.drive-name:focus-visible > span {
   justify-content: space-between;
   gap: 8px;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .share-made {
   display: grid;
@@ -767,7 +760,7 @@ a.drive-name:focus-visible > span {
   gap: 6px;
 }
 .share-link-note {
-  font-size: 13px;
+  font-size: var(--text-sm);
   font-style: italic;
   overflow-wrap: anywhere;
 }
@@ -783,12 +776,12 @@ a.drive-name:focus-visible > span {
 .editor-person {
   display: inline-grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
   margin-inline-start: -6px;
   border-radius: 50%;
   border: 2px solid var(--surface);
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   font-weight: 600;
 }
 .editor-person-more {
@@ -921,7 +914,7 @@ a.drive-name:focus-visible > span {
   padding-inline-start: 8px;
   border-inline-start: 3px solid var(--warning);
   color: var(--muted-foreground);
-  font-size: 0.85em;
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
 .drive-comment-reply {
@@ -942,7 +935,7 @@ a.drive-name:focus-visible > span {
 }
 .drive-templates-head {
   margin: 0 0 8px;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--muted-foreground);
 }
@@ -966,5 +959,5 @@ a.drive-name:focus-visible > span {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: var(--text-sm);
 }

@@ -8,10 +8,10 @@ import { useQuery } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { api, download, errorMessage, formatDateTime, shell, type IntentRequest, t, isolate } from "@ferrum/client";
-import { Button, EmptyState, Spinner, toast } from "@ferrum/kit";
+import { Button, EmptyState, ReaderSkeleton, Spinner, StatePanel, toast } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import { FileGlyph } from "./FileGlyph";
-import { type ItemInfo, type Shareable, isLiveDoc, shownName, sizeLabel } from "./files";
+import { type ItemInfo, type Shareable, isLiveDoc, problemKind, shownName, sizeLabel } from "./files";
 import { ShareDialog } from "./Share";
 import { useSpace } from "./useDrive";
 
@@ -91,12 +91,9 @@ export function ViewPage() {
   }, [item.data]);
   if (item.error)
     return (
-      <EmptyState title={t("This file cannot be opened")} icon="file">
-        <p className="muted">{isolate(errorMessage(item.error))}</p>
-        <Link to="/drive">{t("Go to Drive")}</Link>
-      </EmptyState>
+      <StatePanel kind={problemKind(item.error)} title={t("This file cannot be opened")} error={item.error} action={<Link to="/drive">{t("Go to Drive")}</Link>} />
     );
-  if (!item.data) return <Spinner label={t("Opening the file")} />;
+  if (!item.data) return <ReaderSkeleton />;
   const back = item.data.parent ? `/drive/${item.data.parent}?item=${item.data.id}` : "/drive";
   return (
     <div className="drive-view-page">
@@ -128,10 +125,7 @@ export function ItemPage() {
   }, [item.data, navigate]);
   if (item.error)
     return (
-      <EmptyState title={t("This item cannot be opened")} icon="file">
-        <p className="muted">{isolate(errorMessage(item.error))}</p>
-        <Link to="/drive">{t("Go to Drive")}</Link>
-      </EmptyState>
+      <StatePanel kind={problemKind(item.error)} title={t("This item cannot be opened")} error={item.error} action={<Link to="/drive">{t("Go to Drive")}</Link>} />
     );
   return <Spinner label={t("Opening")} />;
 }
@@ -218,7 +212,7 @@ export function PreviewPage() {
   const id = (req?.data as { id?: string } | null)?.id;
   const item = useItem(id);
   if (error || item.error) return <EmptyState title={t("This file cannot be shown")}>{error ?? errorMessage(item.error)}</EmptyState>;
-  if (!item.data) return <Spinner label={t("Opening the file")} />;
+  if (!item.data) return <ReaderSkeleton />;
   return (
     <div className="drive-intent">
       <div className="editor-bar">

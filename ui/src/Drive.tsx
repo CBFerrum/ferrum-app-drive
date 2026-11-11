@@ -14,7 +14,7 @@ import { ChevronDown, FileUp, FolderPlus, FolderUp, HardDrive, LayoutTemplate, P
 import { type DragEvent, type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api, errorMessage, shell, t as tr, isolate } from "@ferrum/client";
-import { Button, Dialog, EmptyState, ErrorState, FamilyNav, Field, Spinner, toast, useShellTitle } from "@ferrum/kit";
+import { Button, Dialog, FamilyNav, Field, ListSkeleton, Spinner, StatePanel, toast, useShellTitle } from "@ferrum/kit";
 import {
   Button as UiButton,
   DropdownMenu,
@@ -22,7 +22,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Skeleton,
 } from "@ferrum/kit/primitives";
 import { BulkBar } from "./BulkBar";
 import { Chips, type SetQuery } from "./Chips";
@@ -32,7 +31,7 @@ import { type Entry, type Tree, entriesOf, fromPicker, walk } from "./dropped";
 import { openChoice, useDocs, useEditors } from "./editors";
 import { FileGlyph } from "./FileGlyph";
 import { FileList, type RowActions } from "./FileList";
-import { type Item, type Shareable, allows, defaultEditor, editorsFor, isLiveDoc, shownName } from "./files";
+import { type Item, type Shareable, allows, problemKind, defaultEditor, editorsFor, isLiveDoc, shownName } from "./files";
 import { DetailsPanel, BulkShareDialog, Later, LaterPanel, MoveDialog, NewTeamDialog, SaveTemplateDialog, ShareDialog, ShortcutsDialog, TeamDialog, TemplateDialog } from "./later";
 import { VIEWS, abilities, defaultSort, emptyText, filtersOn, naturalOrder, readQuery, shownOf, sourceOf, viewOf } from "./listing";
 import { useFilesPresence } from "./presence";
@@ -69,20 +68,6 @@ function Crumb({ id, name, last }: { id: string; name: string; last: boolean }) 
     <Link to={`/drive/${id}`} className="drive-crumb" data-over={drop.over || undefined} {...drop.props}>
       {isolate(name)}
     </Link>
-  );
-}
-
-/** Placeholders for a list on its way. */
-function ListSkeleton() {
-  return (
-    <div className="drive-skeleton" role="status" aria-label={tr("Loading files")}>
-      {Array.from({ length: 7 }, (_, i) => (
-        <div key={i} className="drive-skeleton-row">
-          <Skeleton className="size-5 rounded motion-reduce:animate-none" />
-          <Skeleton className="h-4 flex-1 motion-reduce:animate-none" style={{ maxWidth: `${55 - i * 4}%` }} />
-        </div>
-      ))}
-    </div>
   );
 }
 
@@ -490,17 +475,19 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const waiting = list.loading || (space.isPending && !src);
 
   const body = problem ? (
-    <ErrorState error={problem} title={tr("Drive could not show this")} onRetry={() => void qc.invalidateQueries({ queryKey: ["drive"] })} />
+    // Denied is not empty and offline is not broken: each says what it is, and none says what exists.
+    <StatePanel kind={problemKind(problem)} title={tr("Drive could not show this")} error={problem} onRetry={() => void qc.invalidateQueries({ queryKey: ["drive"] })} />
   ) : waiting ? (
-    <ListSkeleton />
+    <ListSkeleton rows={7} />
   ) : !items.length ? (
-    <EmptyState title={empty.title} icon={view === "trash" && !query ? "trash" : "file"}>
-      <p className="muted">{isolate(empty.hint)}</p>
-      {query && (
-        <Button onClick={() => navigate(kind ? location.pathname : "/drive")}>{tr("Clear the search")}</Button>
-      )}
-      {!query && filtered && <Button onClick={() => setQuery({ type: null, since: null, owner: null })}>{tr("Clear filters")}</Button>}
-    </EmptyState>
+    <StatePanel
+      kind={query || filtered ? "no-matches" : "empty"}
+      title={empty.title}
+      action={query ? <Button onClick={() => navigate(kind ? location.pathname : "/drive")}>{tr("Clear the search")}</Button> : undefined}
+      onClear={!query && filtered ? () => setQuery({ type: null, since: null, owner: null }) : undefined}
+    >
+      {isolate(empty.hint)}
+    </StatePanel>
   ) : (
     <>
       <FileList

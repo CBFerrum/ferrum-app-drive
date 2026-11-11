@@ -8,8 +8,9 @@ import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, Link, Outlet, RouterProvider, useRouteError } from "react-router";
 import { addCatalogs, bootstrap, isPublicPage, routeBase, setTimeZone, shell, t, wordsReady } from "@ferrum/client";
-import { ConfirmHost, EmptyState, ErrorState, Toaster } from "@ferrum/kit";
+import { ConfirmHost, ListSkeleton, StatePanel, Toaster } from "@ferrum/kit";
 import { DrivePage } from "./Drive";
+import { problemKind } from "./files";
 import "./styles.css";
 
 // Its own words in the page's language (src/locales), fetched as the page starts; it is drawn once they are in.
@@ -39,14 +40,13 @@ function Frame() {
 }
 
 function RouteError() {
-  return <ErrorState error={useRouteError()} onRetry={() => window.location.reload()} />;
+  const error = useRouteError();
+  return <StatePanel kind={problemKind(error)} error={error} onRetry={() => window.location.reload()} />;
 }
 
 function NotFound() {
   return (
-    <EmptyState title={t("Page not found")}>
-      <Link to="/drive">{t("Go to Drive")}</Link>
-    </EmptyState>
+    <StatePanel kind="empty" title={t("Page not found")} action={<Link to="/drive">{t("Go to Drive")}</Link>} />
   );
 }
 
@@ -60,7 +60,7 @@ const router = createBrowserRouter([
     element: <Frame />,
     errorElement: <RouteError />,
     // A first page that loads its code later shows nothing meanwhile (the bar is there already).
-    hydrateFallbackElement: <span />,
+    hydrateFallbackElement: <ListSkeleton rows={7} />,
     children: [
       {
         path: at("drive"),
