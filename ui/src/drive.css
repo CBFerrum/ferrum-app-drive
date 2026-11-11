@@ -781,6 +781,8 @@ a.drive-name:focus-visible > span {
 
 /* Who else is in the online editor (Edit.tsx, C2), and its panel beside the editor. */
 .editor-bar-end {
+  display: flex;
+  gap: 8px;
   margin-inline-start: auto;
 }
 .editor-people {

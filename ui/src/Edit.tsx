@@ -5,10 +5,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { api, errorMessage, initials, t, isolate } from "@ferrum/client";
-import { Badge, Button, EmptyState, ReaderSkeleton } from "@ferrum/kit";
+import { api, bootstrap, download, errorMessage, initials, t, isolate } from "@ferrum/client";
+import { Badge, Button, ReaderSkeleton, StatePanel, toast } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
-import type { Shareable } from "./files";
+import { type Shareable, allows } from "./files";
+import { contentUrl } from "./files";
+import { useQuery } from "@tanstack/react-query";
 import { presenceLabel, usePresence } from "./presence";
 import { ShareDialog } from "./Share";
 import { useSpace } from "./useDrive";
@@ -35,19 +37,50 @@ export function EditPage() {
   const [modified, setModified] = useState<boolean | null>(null);
   const [panel, setPanel] = useState<"comments" | "versions" | null>(null);
   const [sharing, setSharing] = useState<Shareable | null>(null);
+  // Silent for too long (the editor is down): said, with a way to try again.
+  const [silent, setSilent] = useState(false);
+  const [again, setAgain] = useState(0);
   const space = useSpace();
+  const info = useQuery({ queryKey: ["drive", "item", file], queryFn: ({ signal }) => api.get<{ permission: string }>("/api/app/drive/item_info", { item: file }, signal), enabled: !!file });
+  // Ferrum's look goes to the editor, and follows when it changes while the file is open.
+  const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+  useEffect(() => {
+    const watch = new MutationObserver(() => setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light"));
+    watch.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => watch.disconnect();
+  }, []);
   const leave = () => ((window.history.state as { idx?: number } | null)?.idx ? navigate(-1) : navigate("/drive"));
 
   useEffect(() => {
     let live = true;
-    api.post<Launch>(`/api/app/drive/editor/${file}`).then(
+    setLaunch(null);
+    setError(null);
+    setSilent(false);
+    api.post<Launch>(`/api/app/drive/editor/${file}`, undefined, { query: { theme, lang: bootstrap()?.locale.language } }).then(
       (l) => live && setLaunch(l),
-      (e: unknown) => live && setError(errorMessage(e)),
+      // Never an address of the editor server: only the words.
+      (e: unknown) => live && setError(errorMessage(e).replace(/https?:\/\/\S+/g, "").trim()),
     );
     return () => {
       live = false;
     };
-  }, [file]);
+  }, [file, theme, again]);
+  // An editor that says nothing for 30 seconds is not there (a frame that cannot connect shows nothing).
+  useEffect(() => {
+    if (!launch) return;
+    const timer = setTimeout(() => setSilent(true), 30_000);
+    const heard = (e: MessageEvent) => {
+      if (e.source === frame.current?.contentWindow) {
+        clearTimeout(timer);
+        setSilent(false);
+      }
+    };
+    addEventListener("message", heard);
+    return () => {
+      clearTimeout(timer);
+      removeEventListener("message", heard);
+    };
+  }, [launch]);
   useEffect(() => {
     if (launch) form.current?.submit();
   }, [launch]);
@@ -98,12 +131,22 @@ export function EditPage() {
   // Whoever edits it in a browser editor holds it, and the editor here only shows it meanwhile.
   const elsewhere = present.filter((p) => p.editor === "browser");
 
+  const saveCopy = () => void download(contentUrl(file!), launch?.name ?? t("File")).catch((e: unknown) => toast(errorMessage(e), "error"));
   if (error) {
     return (
-      <EmptyState title={t("This file cannot be opened online")} icon="file">
-        <p className="muted">{isolate(error)}</p>
-        <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
-      </EmptyState>
+      <StatePanel
+        kind="failed"
+        title={t("This file cannot be opened online")}
+        action={
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button onClick={() => setAgain((n) => n + 1)}>{t("Try again")}</Button>
+            <Button onClick={saveCopy}>{t("Download")}</Button>
+            <Button onClick={() => navigate(-1)}>{t("Back")}</Button>
+          </div>
+        }
+      >
+        {isolate(error)}
+      </StatePanel>
     );
   }
   if (!launch || !file) return <ReaderSkeleton />;
@@ -140,6 +183,11 @@ export function EditPage() {
           </span>
         )}
         <span className="editor-bar-end">
+          {info.data && allows(info.data.permission, "Manage") && (
+            <Button size="sm" icon="share" onClick={() => setSharing({ id: file, name: launch.name, kind: "file" })}>
+              {t("Share")}
+            </Button>
+          )}
           <Button size="sm" aria-pressed={!!panel} onClick={() => setPanel(panel ? null : "comments")}>
             {t("Comments and history")}
           </Button>
@@ -150,7 +198,23 @@ export function EditPage() {
         <input type="hidden" name="access_token_ttl" value={String(launch.access_token_ttl)} />
       </form>
       <div className={panel ? "editor-main editor-main-details" : "editor-main"}>
-        <iframe ref={frame} name="office-editor" title={t("{name} in the editor", { name: launch.name })} className="editor-frame" allow="clipboard-read; clipboard-write; fullscreen" />
+        {silent && (
+          <StatePanel
+            kind="offline"
+            title={t("The office editor is not answering")}
+            action={
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button variant="primary" onClick={() => setAgain((n) => n + 1)}>
+                  {t("Retry")}
+                </Button>
+                <Button onClick={saveCopy}>{t("Download")}</Button>
+              </div>
+            }
+          >
+            {t("Your file is safe in Drive.")}
+          </StatePanel>
+        )}
+        <iframe ref={frame} name="office-editor" title={t("{name} in the editor", { name: launch.name })} className="editor-frame" hidden={silent} allow="clipboard-read; clipboard-write; fullscreen" />
         {panel && space.data && <DetailsPanel id={file} space={space.data.id} tab={panel} inEditor onClose={() => setPanel(null)} onShare={setSharing} />}
       </div>
       {sharing && space.data && <ShareDialog item={sharing} space={space.data.id} onClose={() => setSharing(null)} />}
