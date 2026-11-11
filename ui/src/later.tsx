@@ -2,7 +2,7 @@
 // sooner, and a person who never shares anything never downloads the sharing screens.
 
 import { lazy, type ReactNode, Suspense } from "react";
-import { Spinner } from "@ferrum/kit";
+import { FormSkeleton, ReaderSkeleton } from "@ferrum/kit";
 import { t } from "@ferrum/client";
 
 export const ShareDialog = lazy(() => import("./Share").then((m) => ({ default: m.ShareDialog })));
@@ -15,15 +15,27 @@ export const TemplateDialog = lazy(() => import("./TemplateDialogs").then((m) =>
 export const SaveTemplateDialog = lazy(() => import("./TemplateDialogs").then((m) => ({ default: m.SaveTemplateDialog })));
 export const DetailsPanel = lazy(() => import("./Details").then((m) => ({ default: m.DetailsPanel })));
 
-/** Waits for a dialog's code; nothing shows meanwhile (a dialog opens as soon as it has arrived). */
-export const Later = ({ children }: { children: ReactNode }) => <Suspense fallback={null}>{children}</Suspense>;
+/** Waits for a dialog's code; a dialog-shaped placeholder shows meanwhile (the dialog replaces it as soon as it has arrived). */
+export const Later = ({ children }: { children: ReactNode }) => (
+  <Suspense
+    fallback={
+      <div className="fixed inset-0 z-50 grid place-items-center bg-background/60 p-4">
+        <div className="w-full max-w-md rounded-xl border bg-card p-4 shadow-lg">
+          <FormSkeleton fields={2} />
+        </div>
+      </div>
+    }
+  >
+    {children}
+  </Suspense>
+);
 
 /** Waits for the details panel's code. */
 export const LaterPanel = ({ children }: { children: ReactNode }) => (
   <Suspense
     fallback={
       <aside className="drive-details" aria-label={t("Details")}>
-        <Spinner label={t("Loading details")} />
+        <ReaderSkeleton paragraphs={1} />
       </aside>
     }
   >

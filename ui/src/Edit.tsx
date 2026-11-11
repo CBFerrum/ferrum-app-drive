@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { api, errorMessage, initials, t, isolate } from "@ferrum/client";
-import { Badge, Button, EmptyState, Spinner } from "@ferrum/kit";
+import { Badge, Button, EmptyState, ReaderSkeleton } from "@ferrum/kit";
 import { DetailsPanel } from "./Details";
 import type { Shareable } from "./files";
 import { presenceLabel, usePresence } from "./presence";
@@ -106,7 +106,7 @@ export function EditPage() {
       </EmptyState>
     );
   }
-  if (!launch || !file) return <Spinner label={t("Opening the editor")} />;
+  if (!launch || !file) return <ReaderSkeleton />;
   return (
     <div className="editor-page">
       <div className="editor-bar">
