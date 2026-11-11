@@ -1,20 +1,20 @@
-// What a person does with Drive's items, one or many: move, copy, trash, restore, star, download,
-// upload. Each acts on a list one item after another, shows the result at once and takes it back,
-// with the server's reason, for an item the server refused; then the lists are fetched again.
+// What a person does with Drive's items, one or many: move, copy, trash, restore, star, rename,
+// download (a folder or several things as one zip file), upload, upload a new version. Each acts on a
+// list one item after another, shows the result at once and takes it back, with the server's reason,
+// for an item the server refused; then the lists are fetched again. What can be taken back says so
+// (the page offers Undo).
 
-import { api, download, errorMessage, shell, uploadInParts, t } from "@ferrum/client";
+import { api, errorMessage, t } from "@ferrum/client";
 import { confirmDialog, toast } from "@ferrum/kit";
 import { type Outcome, each, items as count, told } from "./bulk";
-import { type Tree, describe } from "./dropped";
+import type { Choice } from "./clash";
+import type { Tree } from "./dropped";
 import { type Item, isLiveDoc, shownName } from "./files";
-import { uploadTree } from "./upload";
 
 export interface Where {
   id: string;
   name: string;
 }
-
-const files = (n: number) => (n === 1 ? "1 file" : t("{n} files", { n }));
 
 /** What a confirmation calls the items: their name, or how many. */
 const called = (list: Item[]) => (list.length === 1 ? `“${shownName(list[0].name)}”` : count(list.length));
@@ -32,30 +32,44 @@ export function useActions(o: {
   most: number | null;
   /** The most one upload request carries, if known: past it a file goes in parts and is adopted. */
   carries?: number | null;
+  /** A toast that can be taken back. `undo` answers what to say when it is done. */
+  offer?: (message: string, undo: () => Promise<string>) => void;
 }) {
   const act = (action: string, body: Record<string, unknown>) => api.post(`/api/v1/DriveSpace/${o.space}/actions/${action}`, body);
   const ids = (list: Item[]) => list.map((i) => i.id);
   const failedIds = (out: Outcome<Item>) => out.failed.map((f) => f.item.id);
 
-  /** Runs `action` on each item, the items gone from the lists meanwhile, and says how it went. */
-  async function run(list: Item[], action: (i: Item) => Promise<unknown>, verb: { done: string; doing: string }, where?: string, leave = true) {
+  /** Runs `action` on each item, the items gone from the lists meanwhile, and says how it went. With `undo`, what went right can be taken back. */
+  async function run(list: Item[], action: (i: Item) => Promise<unknown>, verb: { done: string; doing: string }, where?: string, leave = true, undo?: (done: Item[]) => Promise<string>) {
     if (leave) o.hide(ids(list));
     const out = await each(list, action, errorMessage);
     o.show(failedIds(out));
-    say(told(verb, out, where));
+    const said = told(verb, out, where);
+    if (undo && !out.failed.length && o.offer) o.offer(said.message, () => undo(out.done));
+    else say(said);
     await o.after();
     o.show(ids(out.done));
     return out;
   }
 
+  /** Puts items back where they were (their `parent` when they were picked up), one by one. */
+  const putBack = async (list: Item[]) => {
+    const out = await each(list.filter((i) => i.parent), (i) => act("move", { item: i.id, to: i.parent }), errorMessage);
+    await o.after();
+    return out.failed.length ? told({ done: t("Moved back"), doing: t("move back") }, out).message : t("Moved back {value}", { value: count(out.done.length) });
+  };
+
   return {
     act,
 
-    /** Asks first (a keyboard can do this by accident), then moves the items to the trash. */
+    /** Moves the items to the trash; the toast says so and offers Undo (a key can do this by accident, so nothing is lost by it). */
     async trash(list: Item[]) {
       if (!list.length) return;
-      const ok = await confirmDialog({ title: t("Move {list} to the trash?", { list: called(list) }), message: t("You can restore them from Trash."), confirmLabel: t("Move to trash"), danger: true });
-      if (ok) await run(list, (i) => act("trash", { item: i.id }), { done: t("Moved"), doing: t("trash") }, t("to the trash"));
+      await run(list, (i) => act("trash", { item: i.id }), { done: t("Moved"), doing: t("trash") }, t("to the trash"), true, async (done) => {
+        const out = await each(done, (i) => act("restore", { item: i.id }), errorMessage);
+        await o.after();
+        return out.failed.length ? told({ done: t("Restored"), doing: t("restore") }, out).message : t("Restored {value}", { value: count(out.done.length) });
+      });
     },
 
     async restore(list: Item[]) {
@@ -67,8 +81,14 @@ export function useActions(o: {
       if (ok) await run(list, (i) => act("delete_forever", { item: i.id }), { done: t("Deleted"), doing: t("delete") });
     },
 
-    async emptyTrash() {
-      const ok = await confirmDialog({ title: t("Empty the trash?"), message: t("Everything in it is deleted for good. This cannot be undone."), confirmLabel: t("Empty the trash"), danger: true });
+    /** Empties the trash after saying how many things go (`n` when it is known). */
+    async emptyTrash(n?: number | null) {
+      const ok = await confirmDialog({
+        title: n ? t("Delete {list} in the trash for good?", { list: count(n) }) : t("Empty the trash?"),
+        message: t("Everything in it is deleted for good. This cannot be undone."),
+        confirmLabel: t("Empty the trash"),
+        danger: true,
+      });
       if (!ok) return;
       try {
         let gone = 0;
@@ -85,9 +105,43 @@ export function useActions(o: {
       await o.after();
     },
 
-    /** Moves the items into a folder, or copies them. */
+    /** Moves the items into a folder, or copies them. A move is taken back by moving them back; a copy by trashing the copies. */
     async move(list: Item[], to: Where, copy: boolean) {
-      return run(list, (i) => act(copy ? "copy" : "move", { item: i.id, to: to.id }), copy ? { done: t("Copied"), doing: t("copy") } : { done: t("Moved"), doing: t("move") }, t("to “{name}”", { name: to.name }), !copy);
+      const made: string[] = [];
+      return run(
+        list,
+        async (i) => {
+          const r = (await act(copy ? "copy" : "move", { item: i.id, to: to.id })) as { id?: string } | undefined;
+          if (copy && r?.id) made.push(r.id);
+        },
+        copy ? { done: t("Copied"), doing: t("copy") } : { done: t("Moved"), doing: t("move") },
+        t("to “{name}”", { name: to.name }),
+        !copy,
+        copy
+          ? async () => {
+              const out = await each(made, (id) => act("trash", { item: id }), errorMessage);
+              await o.after();
+              return out.failed.length ? out.failed[0].reason : t("The copies are in the trash");
+            }
+          : putBack,
+      );
+    },
+
+    /** Gives an item a new name once the server has it; answers why not, or null. */
+    async rename(it: Item, name: string): Promise<string | null> {
+      try {
+        const before = it.name;
+        await act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name });
+        o.offer?.(t("Renamed to “{name}”", { name }), async () => {
+          await act("rename", { item: it.id, name: before });
+          await o.after();
+          return t("Named “{name}” again", { name: shownName(before) });
+        });
+        await o.after();
+        return null;
+      } catch (e) {
+        return errorMessage(e);
+      }
     },
 
     /** Stars them all, or, when every one is starred already, takes the stars off. */
@@ -98,47 +152,19 @@ export function useActions(o: {
       await o.after();
     },
 
-    /** Downloads the files one after another; folders cannot be downloaded. */
+    /** Downloads: a file as it is; a folder, or several things, as one zip file. */
     async download(list: Item[]) {
-      const only = list.filter((i) => i.kind === "file");
-      if (!only.length) return toast(t("Only files can be downloaded"), "error");
-      const out = await each(
-        only,
-        (i) => (isLiveDoc(i.name) ? download(`/api/app/drive/files/${i.id}/content`, i.name.replace(/\.fdoc$/i, ".html"), { format: "html" }) : download(`/api/app/drive/files/${i.id}/content`, i.name)),
-        errorMessage,
-      );
-      if (out.failed.length) say(told({ done: t("Downloaded"), doing: t("download") }, out));
-      else if (only.length < list.length) toast(t("Downloaded {value}. Folders cannot be downloaded.", { value: files(only.length) }));
+      if (list.length) await (await import("./transfers")).download(list);
+    },
+
+    /** The names in a folder (lower-cased), for the uploads that would meet one; `complete` is false for a folder too big to read through. */
+    async names(folder: string) {
+      return (await import("./transfers")).names(folder);
     },
 
     /** Uploads what was dropped or chosen into a folder; the shell carries on with the files. */
-    async upload(tree: Tree, to: Where) {
-      if (!tree.files.length && !tree.dirs.length) return;
-      toast(t("Uploading {tree} to “{name}”", { tree: describe(tree), name: to.name }));
-      try {
-        const made = await uploadTree(tree, to.id, o.most, {
-          makeFolder: (parent, name) => act("create_folder", { parent, name }) as Promise<{ id: string }>,
-          send: (file, folder, label) => shell().uploads.start({ file, url: `/api/app/drive/upload?${new URLSearchParams({ folder, name: file.name })}`, label }),
-          // Past the most a request carries: in parts that survive a dropped connection (and, chosen
-          // again after a reload, go on from where they stood), then adopted into the folder.
-          carries: o.carries ?? null,
-          sendLarge: (file, folder) => ({
-            done: uploadInParts(file).then((stored) => api.post(`/api/app/drive/adopt?${new URLSearchParams({ folder, name: file.name, file: stored.id })}`)),
-          }),
-          reason: errorMessage,
-        });
-        if (made.left.length) {
-          const [first] = made.left;
-          toast((made.left.length > 1 ? t("“{name}” was left out: {reason} (and {value1} more)", { name: first.name, reason: first.reason, value1: made.left.length - 1 }) : t("“{name}” was left out: {reason}", { name: first.name, reason: first.reason })), "error");
-        }
-        // One word on the whole upload when the last file is stored (the tray tells each one).
-        const results = await Promise.allSettled(made.sent.map((s) => s.done));
-        const failed = results.flatMap((r, i) => (r.status === "rejected" ? [{ item: made.sent[i], reason: errorMessage(r.reason) }] : []));
-        if (made.sent.length) say(told({ done: t("Uploaded"), doing: t("upload") }, { done: made.sent.filter((_, i) => results[i].status === "fulfilled"), failed }, t("to “{name}”", { name: to.name }), files));
-        await o.after();
-      } catch (e) {
-        toast(errorMessage(e), "error");
-      }
+    async upload(tree: Tree, to: Where, choices?: Map<string, Choice>, skipped = 0) {
+      await (await import("./transfers")).upload({ act, after: o.after, most: o.most, carries: o.carries ?? null }, tree, to, choices, skipped);
     },
   };
 }

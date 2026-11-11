@@ -140,7 +140,8 @@ describe("what opens over the list", () => {
   it("lists the chosen items' actions, only those the person may do to all of them", () => {
     const actions = { move: () => {}, share: () => {}, download: () => {}, trash: () => {}, restore: () => {}, destroy: () => {}, clear: () => {} };
     const all = draw(<BulkBar chosen={[item("a", "a.txt"), item("b", "b.txt", { permission: "Manage" })]} trash={false} actions={actions} />, "/", () => {});
-    expect(all).toContain("2 items chosen");
+    expect(all).toContain("2 selected");
+    expect(all).toContain("Clear selection");
     for (const word of ["Move to…", "Copy to…", "Download", "Move to trash"]) expect(all, word).toContain(word);
     expect(all).not.toContain("Share");
     const view = draw(<BulkBar chosen={[item("a", "a.txt", { permission: "View" })]} trash={false} actions={actions} />, "/", () => {});

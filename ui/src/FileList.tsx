@@ -2,53 +2,21 @@
 // in it, when it changed and how big it is, and one menu of everything that can be done with it.
 // Rows are dragged to move or copy them, and folders take what is dropped on them.
 
-import {
-  ArchiveRestore,
-  ArrowDown,
-  ArrowUp,
-  Copy,
-  Download,
-  ExternalLink,
-  FolderInput,
-  Info,
-  LayoutTemplate,
-  MoreHorizontal,
-  Pencil,
-  Share2,
-  Star,
-  StarOff,
-  Trash2,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Star } from "lucide-react";
 import { type DragEvent, Fragment, useEffect, useRef } from "react";
 import { Link } from "react-router";
 import { formatDateTime, t as tr, isolate } from "@ferrum/client";
-import { Badge, toast } from "@ferrum/kit";
-import {
-  Button as UiButton,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  buttonVariants,
-} from "@ferrum/kit/primitives";
-import { type Carried, CARRIES, carry } from "./drag";
+import { Badge } from "@ferrum/kit";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, buttonVariants } from "@ferrum/kit/primitives";
+import { CARRIES, carry } from "./drag";
 import { useDropTarget } from "./dropping";
-import { EditorLink, openChoice } from "./editors";
+import { EditorLink } from "./editors";
 import { FileGlyph } from "./FileGlyph";
 import { type BrowserEditor, type Item, allows, defaultEditor, editorsFor, shared, shownName, sizeLabel } from "./files";
+import { ItemMenu, type RowActions } from "./ItemMenu";
+import { RenameField } from "./Rename";
 import { type Order, type SortKey, type View, whereLine } from "./listing";
 import { joinable, presenceLabel, type Present } from "./presence";
-import { templatable } from "./templateList";
 
 export interface Editors {
   online: boolean;
@@ -56,27 +24,7 @@ export interface Editors {
   docs: boolean;
 }
 
-/** What a row can ask the page to do. They are the same functions for every row. */
-export interface RowActions {
-  open: (it: Item) => void;
-  details: (it: Item) => void;
-  share: (it: Item) => void;
-  star: (it: Item) => void;
-  rename: (it: Item) => void;
-  move: (it: Item, copy: boolean) => void;
-  download: (it: Item) => void;
-  trash: (it: Item) => void;
-  restore: (it: Item) => void;
-  destroy: (it: Item) => void;
-  saveTemplate: (it: Item) => void;
-  navigate: (to: string) => void;
-  /** Chooses or unchooses a row (with Shift: the stretch from the last chosen). */
-  choose: (id: string, shift: boolean) => void;
-  chooseAll: (on: boolean) => void;
-  /** A row is picked up: the items the drag carries. */
-  dragStart: (row: Item) => Carried[];
-  dragEnd: () => void;
-}
+export type { RowActions };
 
 /** Marks the words a search found, which the server puts between « and ». */
 function Marked({ text }: { text: string }) {
@@ -87,8 +35,24 @@ function Marked({ text }: { text: string }) {
   );
 }
 
+/** A row or card is picked up: the items it carries go with the drag; several are shown as a count, not as one row. */
+export function beginDrag(e: DragEvent, it: Item, actions: RowActions) {
+  const carrying = actions.dragStart(it);
+  e.dataTransfer.setData(CARRIES, carry(carrying));
+  e.dataTransfer.setData("text/plain", carrying.map((c) => c.name).join("\n"));
+  e.dataTransfer.effectAllowed = "copyMove";
+  if (carrying.length > 1) {
+    const ghost = document.createElement("div");
+    ghost.className = "drive-ghost";
+    ghost.textContent = tr("{length} items", { length: carrying.length });
+    document.body.append(ghost);
+    e.dataTransfer.setDragImage(ghost, 12, 12);
+    setTimeout(() => ghost.remove(), 0);
+  }
+}
+
 /** Whether a click landed on something with a use of its own (a link, a button, a box). */
-const interactive = (t: EventTarget) => !!(t as Element).closest?.("a, button, input, [role='menuitem']");
+export const interactive = (t: EventTarget) => !!(t as Element).closest?.("a, button, input, [role='menuitem']");
 
 function Row({
   it,
@@ -100,6 +64,7 @@ function Row({
   editors,
   narrow,
   templates,
+  renaming,
   actions,
 }: {
   it: Item;
@@ -111,6 +76,7 @@ function Row({
   editors: Editors;
   narrow: boolean;
   templates: boolean;
+  renaming: boolean;
   actions: RowActions;
 }) {
   const trash = view === "trash";
@@ -127,22 +93,6 @@ function Row({
   const line = whereLine(it, view, inFolder);
   const when = trash && it.trashed_at ? tr("Deleted {value}", { value: formatDateTime(it.trashed_at) }) : formatDateTime(it.modified_at);
 
-  const dragStart = (e: DragEvent) => {
-    const carrying = actions.dragStart(it);
-    e.dataTransfer.setData(CARRIES, carry(carrying));
-    e.dataTransfer.setData("text/plain", carrying.map((c) => c.name).join("\n"));
-    e.dataTransfer.effectAllowed = "copyMove";
-    // Several items are dragged as a count, not as one row.
-    if (carrying.length > 1) {
-      const ghost = document.createElement("div");
-      ghost.className = "drive-ghost";
-      ghost.textContent = tr("{length} items", { length: carrying.length });
-      document.body.append(ghost);
-      e.dataTransfer.setDragImage(ghost, 12, 12);
-      setTimeout(() => ghost.remove(), 0);
-    }
-  };
-
   return (
     <TableRow
       className="drive-row"
@@ -152,7 +102,7 @@ function Row({
       data-over={drop.over || undefined}
       tabIndex={-1}
       draggable={draggable}
-      onDragStart={draggable ? dragStart : undefined}
+      onDragStart={draggable ? (e) => beginDrag(e, it, actions) : undefined}
       onDragEnd={draggable ? actions.dragEnd : undefined}
       // Shift-clicking a row's empty space chooses a stretch; it should not also select its text.
       onMouseDown={(e) => e.shiftKey && !interactive(e.target) && e.preventDefault()}
@@ -175,16 +125,21 @@ function Row({
       </TableCell>
       <TableCell className="w-full max-w-0 py-2">
         <div className="flex min-w-0 items-center gap-3">
-          {it.kind === "folder" && !trash ? (
+          {renaming ? (
+            <span className="drive-name">
+              {glyph}
+              <RenameField initial={name} folder={it.kind === "folder"} onDone={(next) => actions.renameTo(it, next)} onCancel={actions.stopRenaming} />
+            </span>
+          ) : it.kind === "folder" && !trash ? (
             <Link to={`/drive/${it.id}`} className="drive-name" draggable={false}>
               {glyph}
               <span className="truncate" title={name}>{isolate(name)}</span>
             </Link>
-          ) : open ? (
-            <EditorLink choice={open} className="drive-name">
+          ) : !trash ? (
+            <Link to={actions.previewTo(it)} className="drive-name" draggable={false}>
               {glyph}
               <span className="truncate" title={name}>{isolate(name)}</span>
-            </EditorLink>
+            </Link>
           ) : (
             <span className="drive-name">
               {glyph}
@@ -219,98 +174,7 @@ function Row({
             {tr("Join")}
           </EditorLink>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <UiButton variant="ghost" size="icon-sm" aria-label={tr("More for {name}", { name })} className="text-muted-foreground">
-              <MoreHorizontal />
-            </UiButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-52">
-            {trash ? (
-              <>
-                <DropdownMenuItem onSelect={() => actions.restore(it)}>
-                  <ArchiveRestore /> {tr("Restore")}
-                </DropdownMenuItem>
-                {allows(it.permission, "Manage") && (
-                  <DropdownMenuItem variant="destructive" onSelect={() => actions.destroy(it)}>
-                    <Trash2 /> {tr("Delete forever")}
-                  </DropdownMenuItem>
-                )}
-              </>
-            ) : (
-              <>
-                {open && (
-                  <DropdownMenuItem onSelect={() => openChoice(open, actions.navigate)}>
-                    <ExternalLink /> {open.key === "live" || open.key === "view" || !allows(it.permission, "Edit") || editing.length > 0 ? tr("Open") : tr("Edit online")}
-                  </DropdownMenuItem>
-                )}
-                {others.length > 0 && (
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <ExternalLink /> {tr("Open with")}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="min-w-52">
-                      {others.map((c) => (
-                        <DropdownMenuItem key={c.key} onSelect={() => (c.unavailable ? toast(tr("{label} cannot open {name}: {unavailable}", { label: c.label, name, unavailable: c.unavailable }), "error") : openChoice(c, actions.navigate))}>
-                          <span className="grid">
-                            {isolate(c.label)}
-                            {c.unavailable && <span className="text-xs text-muted-foreground">{isolate(c.unavailable)}</span>}
-                            {!c.unavailable && editing.length > 0 && (
-                              <span className="text-xs text-muted-foreground">{shared(c.key) && joinable(here) ? tr("Join {value}", { value: editing.map((p) => p.name).join(", ") }) : tr("Read only while others edit")}</span>
-                            )}
-                          </span>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-                )}
-                {(open || others.length > 0) && <DropdownMenuSeparator />}
-                <DropdownMenuItem onSelect={() => actions.details(it)}>
-                  <Info /> {tr("Details")}
-                </DropdownMenuItem>
-                {allows(it.permission, "Manage") && (
-                  <DropdownMenuItem onSelect={() => actions.share(it)}>
-                    <Share2 /> {tr("Share")}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={() => actions.star(it)}>
-                  {it.starred ? <StarOff /> : <Star />} {it.starred ? tr("Remove star") : tr("Star")}
-                </DropdownMenuItem>
-                {allows(it.permission, "Edit") && (
-                  <DropdownMenuItem onSelect={() => actions.rename(it)}>
-                    <Pencil /> {tr("Rename")}
-                  </DropdownMenuItem>
-                )}
-                {allows(it.permission, "Edit") && (
-                  <DropdownMenuItem onSelect={() => actions.move(it, false)}>
-                    <FolderInput /> {tr("Move to…")}
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onSelect={() => actions.move(it, true)}>
-                  <Copy /> {tr("Copy to…")}
-                </DropdownMenuItem>
-                {it.kind === "file" && (
-                  <DropdownMenuItem onSelect={() => actions.download(it)}>
-                    <Download /> {tr("Download")}
-                  </DropdownMenuItem>
-                )}
-                {it.kind === "file" && templates && templatable(it.name) && (
-                  <DropdownMenuItem onSelect={() => actions.saveTemplate(it)}>
-                    <LayoutTemplate /> {tr("Save as a template")}
-                  </DropdownMenuItem>
-                )}
-                {allows(it.permission, "Edit") && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem variant="destructive" onSelect={() => actions.trash(it)}>
-                      <Trash2 /> {tr("Move to trash")}
-                    </DropdownMenuItem>
-                  </>
-                )}
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ItemMenu it={it} trash={trash} open={open} others={others} here={here} templates={templates} actions={actions} />
       </TableCell>
     </TableRow>
   );
@@ -339,6 +203,7 @@ export function FileList({
   editors,
   narrow,
   templates,
+  renaming,
   sort,
   order,
   sortable,
@@ -355,6 +220,8 @@ export function FileList({
   editors: Editors;
   narrow: boolean;
   templates: boolean;
+  /** The item being renamed in place. */
+  renaming: string | null;
   sort: SortKey | null;
   order: Order;
   /** Columns sort only where the server or the page can. */
@@ -402,6 +269,7 @@ export function FileList({
             editors={editors}
             narrow={narrow}
             templates={templates}
+            renaming={renaming === it.id}
             actions={actions}
           />
         ))}

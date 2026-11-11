@@ -1,24 +1,23 @@
 // The sort and the filters above a list, as chips: each shows what it is set to, and the page keeps
 // them in its address. Where the server cannot sort or filter a list, its chips are not offered.
 
-import { ArrowDownUp, Calendar, ChevronDown, Shapes, User, X } from "lucide-react";
-import { type FormEvent, useId, useState } from "react";
-import { usePeople } from "@ferrum/records";
-import { Button } from "@ferrum/kit";
+import { ArrowDownUp, Calendar, FolderSearch, Shapes, User, X } from "lucide-react";
+import { Suspense, lazy } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
 } from "@ferrum/kit/primitives";
+import { Chip } from "./Chip";
 import { type Order, type Query, SINCE, SORTS, type Source, TYPES, abilities, defaultSort, filtersOn, naturalOrder } from "./listing";
 import { t as tr, isolate } from "@ferrum/client";
+
+const OwnerChip = lazy(() => import("./OwnerChip"));
 
 /** How each sort's two directions read. */
 const WAYS: Record<string, [string, string]> = {
@@ -29,34 +28,21 @@ const WAYS: Record<string, [string, string]> = {
 };
 
 /** The chip changes the address: a value of null takes its key out. */
-export type SetQuery = (next: Partial<Record<keyof Query, string | null>>) => void;
+export type SetQuery = (next: Partial<Record<keyof Query | "in", string | null>>) => void;
 
-function Chip({ icon: Icon, label, on, ...rest }: { icon: typeof Shapes; label: string; on?: boolean } & React.ComponentProps<"button">) {
-  return (
-    <button type="button" className="drive-chip" data-on={on || undefined} {...rest}>
-      <Icon aria-hidden size={14} />
-      <span>{isolate(label)}</span>
-      <ChevronDown aria-hidden size={13} />
-    </button>
-  );
+/** Where a search looks: everywhere, or inside one folder (`name` is its name once known). Only a search offers it. */
+export interface Location {
+  name: string | null;
+  choose: () => void;
 }
 
-export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?: string; q: Query; set: SetQuery }) {
+export function Chips({ src, fileType, q, set, location }: { src: Source | null; fileType?: string; q: Query; set: SetQuery; location?: Location | null }) {
   const can = abilities(src, fileType);
-  const people = usePeople().data?.users ?? [];
-  const field = useId();
-  const [owner, setOwner] = useState(q.owner ?? "");
   const sort = q.sort ?? defaultSort(src);
   const order: Order = q.order ?? (sort ? naturalOrder(sort) : "asc");
   const type = TYPES.find((t) => t.id === q.type);
   const since = SINCE.find((s) => s.days === q.since);
-  const named = people.find((p) => p.email.toLowerCase() === q.owner);
   if (!can.sorts.length && !can.filter) return null;
-
-  const ask = (e: FormEvent) => {
-    e.preventDefault();
-    set({ owner: owner.trim().toLowerCase() || null });
-  };
 
   return (
     <div className="drive-chips" role="group" aria-label={tr("Sort and filter")}>
@@ -120,40 +106,28 @@ export function Chips({ src, fileType, q, set }: { src: Source | null; fileType?
           </DropdownMenuContent>
         </DropdownMenu>
       )}
+      {can.filter && location && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Chip icon={FolderSearch} label={q.within ? tr("In: {value}", { value: location.name ?? tr("a folder") }) : tr("Location")} on={!!q.within} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="min-w-44">
+            <DropdownMenuRadioGroup value={q.within ? "in" : ""} onValueChange={(v) => !v && set({ in: null })}>
+              <DropdownMenuRadioItem value="">{tr("Anywhere in Drive")}</DropdownMenuRadioItem>
+              {q.within && <DropdownMenuRadioItem value="in">{isolate(tr("In {value}", { value: location.name ?? tr("a folder") }))}</DropdownMenuRadioItem>}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={location.choose}>{tr("Choose a folder…")}</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       {can.filter && (
-        <Popover onOpenChange={(open) => open && setOwner(q.owner ?? "")}>
-          <PopoverTrigger asChild>
-            <Chip icon={User} label={q.owner ? tr("Owner: {value}", { value: named?.full_name || q.owner }) : tr("Owner")} on={!!q.owner} />
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72">
-            <form onSubmit={ask} className="grid gap-2">
-              <label htmlFor={field} className="text-sm font-medium">
-                {tr("Files owned by")}
-              </label>
-              <input id={field} className="input" type="email" list={`${field}-people`} placeholder={tr("name@company.com")} value={owner} onChange={(e) => setOwner(e.target.value)} autoComplete="off" />
-              <datalist id={`${field}-people`}>
-                {people.map((p) => (
-                  <option key={p.id} value={p.email}>
-                    {isolate(p.full_name)}
-                  </option>
-                ))}
-              </datalist>
-              <div className="flex justify-end gap-2">
-                {q.owner && (
-                  <Button size="sm" onClick={() => (setOwner(""), set({ owner: null }))}>
-                    {tr("Clear")}
-                  </Button>
-                )}
-                <Button size="sm" variant="primary" type="submit" disabled={!owner.trim()}>
-                  {tr("Apply")}
-                </Button>
-              </div>
-            </form>
-          </PopoverContent>
-        </Popover>
+        <Suspense fallback={<Chip icon={User} label={q.owner ? tr("Owner: {value}", { value: q.owner }) : tr("Owner")} on={!!q.owner} disabled />}>
+          <OwnerChip owner={q.owner} set={set} />
+        </Suspense>
       )}
       {filtersOn(q) > 0 && (
-        <button type="button" className="drive-chip-clear" onClick={() => set({ type: null, since: null, owner: null })}>
+        <button type="button" className="drive-chip-clear" onClick={() => set({ type: null, since: null, owner: null, in: null })}>
           <X aria-hidden size={13} /> {tr("Clear filters")}
         </button>
       )}

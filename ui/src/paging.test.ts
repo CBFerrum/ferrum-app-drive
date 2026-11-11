@@ -26,7 +26,7 @@ describe("what a page of a list asks the server for", () => {
   it("asks the trash a page at a time, and the other views for everything", () => {
     expect(request({ kind: "trash" }, q(), "2026-11-10")).toEqual(["list_trash", { limit: PAGE }]);
     expect(request({ kind: "view", view: "shared" }, q(), "2026-11-10")).toEqual(["shared_with_me", {}]);
-    expect(request({ kind: "view", view: "recent" }, q(), "2026-11-10")).toEqual(["recent", {}]);
+    expect(request({ kind: "view", view: "recent" }, q(), "2026-11-10")).toEqual(["recent", { limit: 100 }]);
     expect(request({ kind: "view", view: "starred" }, q(), "2026-11-10")).toEqual(["starred", {}]);
   });
 });
