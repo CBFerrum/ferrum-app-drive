@@ -1299,9 +1299,10 @@ a.drive-name:focus-visible > span {
 .drive-pdf-text ::selection {
   background: color-mix(in srgb, var(--primary) 30%, transparent);
 }
-.drive-pdf-text [data-hit] {
+.drive-pdf-text mark {
   border-radius: 2px;
-  background: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 55%, transparent);
+  color: transparent;
 }
 
 /* text, code, Markdown, tables */
@@ -1606,57 +1607,6 @@ a.drive-name:focus-visible > span {
   flex-basis: 100%;
   color: var(--danger);
   font-size: var(--text-xs);
-}
-.drive-undo {
-  position: fixed;
-  z-index: 200;
-  inset-inline-start: max(16px, env(safe-area-inset-left));
-  inset-block-end: max(16px, env(safe-area-inset-bottom));
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-inline-size: min(30rem, calc(100vw - 32px));
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  animation: drive-pulse-in var(--duration-overlay) ease-out;
-}
-@keyframes drive-pulse-in {
-  from {
-    transform: translateY(4px);
-    opacity: 0;
-  }
-}
-.drive-undo-message {
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-}
-.drive-undo-button {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  min-block-size: 28px;
-  padding-inline: 8px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: none;
-  color: var(--primary);
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-.drive-undo-button:hover {
-  background: var(--primary-soft);
-}
-@media (max-width: 600px) {
-  .drive-undo {
-    inset-block: calc(var(--ferrum-bar-height, 48px) + max(8px, env(safe-area-inset-top))) auto;
-    inset-inline: 16px;
-    max-inline-size: none;
-  }
 }
 .drive-clash {
   display: grid;

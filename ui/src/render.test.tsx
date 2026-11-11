@@ -74,7 +74,8 @@ describe("Drive's home", () => {
     });
     expect(html).toContain("My files");
     for (const word of ["Shared with me", "Recent", "Starred", "Trash", "Team folders", "Engineering", "Your storage", "4.4 GB of 5.0 GB"]) expect(html, word).toContain(word);
-    for (const word of ["Reports", "plan.docx", "Launch notes", "Sort: Name", "Type", "Modified", "Owner", "New", "Upload"]) expect(html, word).toContain(word);
+    for (const word of ["Reports", "plan.docx", "Launch notes", "New", "Upload"]) expect(html, word).toContain(word);
+    // The chips and menus load just after the page (their own test draws them); their places are held meanwhile.
     expect(html).not.toContain("Launch notes.fdoc");
     expect(html).toContain("Choose Reports");
     expect(html).toContain("Choose every item shown");

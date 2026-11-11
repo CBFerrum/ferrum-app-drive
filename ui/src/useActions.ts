@@ -5,7 +5,7 @@
 // (the page offers Undo).
 
 import { api, errorMessage, t } from "@ferrum/client";
-import { confirmDialog, toast } from "@ferrum/kit";
+import { announce, confirmDialog, toast } from "@ferrum/kit";
 import { type Outcome, each, items as count, told } from "./bulk";
 import type { Choice } from "./clash";
 import type { Tree } from "./dropped";
@@ -32,9 +32,10 @@ export function useActions(o: {
   most: number | null;
   /** The most one upload request carries, if known: past it a file goes in parts and is adopted. */
   carries?: number | null;
-  /** A toast that can be taken back. `undo` answers what to say when it is done. */
-  offer?: (message: string, undo: () => Promise<string>) => void;
 }) {
+  /** A toast that can be taken back (the kit's toast action); `undo` answers what to say when it is done. */
+  const offer = (message: string, undo: () => Promise<string>) =>
+    toast(message, "success", { action: { label: t("Undo"), onSelect: () => void undo().then((said) => toast(said), (e: unknown) => toast(errorMessage(e), "error")) } });
   const act = (action: string, body: Record<string, unknown>) => api.post(`/api/v1/DriveSpace/${o.space}/actions/${action}`, body);
   const ids = (list: Item[]) => list.map((i) => i.id);
   const failedIds = (out: Outcome<Item>) => out.failed.map((f) => f.item.id);
@@ -45,7 +46,7 @@ export function useActions(o: {
     const out = await each(list, action, errorMessage);
     o.show(failedIds(out));
     const said = told(verb, out, where);
-    if (undo && !out.failed.length && o.offer) o.offer(said.message, () => undo(out.done));
+    if (undo && !out.failed.length) offer(said.message, () => undo(out.done));
     else say(said);
     await o.after();
     o.show(ids(out.done));
@@ -132,7 +133,7 @@ export function useActions(o: {
       try {
         const before = it.name;
         await act("rename", { item: it.id, name: isLiveDoc(it.name) ? `${shownName(name)}.fdoc` : name });
-        o.offer?.(t("Renamed to “{name}”", { name }), async () => {
+        offer(t("Renamed to “{name}”", { name }), async () => {
           await act("rename", { item: it.id, name: before });
           await o.after();
           return t("Named “{name}” again", { name: shownName(before) });
@@ -149,6 +150,7 @@ export function useActions(o: {
       const off = list.every((i) => i.starred);
       const out = await each(list.filter((i) => off || !i.starred), (i) => act(off ? "unstar" : "star", { item: i.id }), errorMessage);
       if (out.failed.length) say(told({ done: off ? "Unstarred" : "Starred", doing: off ? "unstar" : "star" }, out));
+      else if (out.done.length > 1) announce(told({ done: off ? t("Unstarred") : t("Starred"), doing: "" }, out).message);
       await o.after();
     },
 

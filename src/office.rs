@@ -169,27 +169,37 @@ pub fn proof_valid(d: &Discovery, token: &str, url: &str, ticks: Option<&str>, p
         || proof_old.is_some_and(|p| signed_by(key, &m, p))
 }
 
-fn token_mac(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64) -> Result<Hmac<Sha256>> {
+fn token_mac(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> Result<Hmac<Sha256>> {
     let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(Error::internal)?;
     mac.update(b"ferrum-drive-wopi:");
     for id in [tenant, file, user] {
         mac.update(id.as_bytes());
     }
     mac.update(&exp.to_be_bytes());
+    mac.update(&[u8::from(read_only)]);
     Ok(mac)
 }
 
-/// `<user>.<expiry>.<mac>`: the workspace and the file are in the URL the token is used with.
-fn sign(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64) -> Result<String> {
-    Ok(format!("{user}.{exp}.{}", URL_SAFE_NO_PAD.encode(token_mac(key, tenant, file, user, exp)?.finalize().into_bytes())))
+/// `<user>.<expiry>.<mac>`, or `<user>.<expiry>.r.<mac>` for a session that may only read (a
+/// preview): the workspace and the file are in the URL the token is used with. Whether a session
+/// may write is the token's to say, not the person's rights alone: a preview never writes, even
+/// for someone who may edit the file.
+fn sign(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> Result<String> {
+    let mac = URL_SAFE_NO_PAD.encode(token_mac(key, tenant, file, user, exp, read_only)?.finalize().into_bytes());
+    Ok(if read_only { format!("{user}.{exp}.r.{mac}") } else { format!("{user}.{exp}.{mac}") })
 }
 
-/// The user a token was made for, if it is genuine, for this file and not expired (constant time).
-fn verify(key: &[u8], tenant: Uuid, file: Uuid, token: &str, now: i64) -> Option<Uuid> {
-    let mut parts = token.split('.');
-    let (Some(user), Some(exp), Some(sig), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else { return None };
+/// The user a token was made for and whether it only reads, if it is genuine, for this file and
+/// not expired (constant time).
+fn verify(key: &[u8], tenant: Uuid, file: Uuid, token: &str, now: i64) -> Option<(Uuid, bool)> {
+    let parts: Vec<&str> = token.split('.').collect();
+    let (user, exp, read_only, sig) = match parts.as_slice() {
+        [user, exp, sig] => (user, exp, false, sig),
+        [user, exp, "r", sig] => (user, exp, true, sig),
+        _ => return None,
+    };
     let (Ok(user), Ok(exp), Ok(sig)) = (user.parse::<Uuid>(), exp.parse::<i64>(), URL_SAFE_NO_PAD.decode(sig)) else { return None };
-    (exp > now && token_mac(key, tenant, file, user, exp).ok()?.verify_slice(&sig).is_ok()).then_some(user)
+    (exp > now && token_mac(key, tenant, file, user, exp, read_only).ok()?.verify_slice(&sig).is_ok()).then_some((user, read_only))
 }
 
 fn encode(s: &str) -> String {
@@ -395,7 +405,8 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, theme: O
         .page(&ext, want_edit && writable(ctx, &g, &item, h.as_ref()))
         .ok_or_else(|| Error::invalid(format!("{} cannot be opened in the editor", item.name)))?;
     let exp = chrono::Utc::now().timestamp() + TOKEN_SECONDS;
-    let token = sign(&crate::sharing::tenant_key(&mut tx, ctx.tenant).await?, ctx.tenant, file, ctx.user, exp)?;
+    // A session opened to look (the view action) is bound to look: its token cannot write.
+    let token = sign(&crate::sharing::tenant_key(&mut tx, ctx.tenant).await?, ctx.tenant, file, ctx.user, exp, action == "view")?;
     tree::log(&mut tx, ctx, &item, "Open online", json!({"action": action})).await?;
     tx.commit().await?;
     let mut sys = k.db.system_tx().await?;
@@ -463,7 +474,7 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     let key = crate::sharing::tenant_key(&mut tx, req.tenant).await?;
     tx.commit().await?;
     let now = chrono::Utc::now().timestamp();
-    let Some(user) = verify(&key, req.tenant, file, token, now) else { return Ok(status(401)) };
+    let Some((user, read_only)) = verify(&key, req.tenant, file, token, now) else { return Ok(status(401)) };
     let header = |name: &str| req.headers.get(name).and_then(Value::as_str);
     // The URL as the editor called it: this server's address for it, then the path and query
     // exactly as received (the server passes them as x-ferrum-uri).
@@ -478,8 +489,10 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let g = Grants::load(&mut tx, &ctx).await?;
     let out = match (req.method.as_str(), contents, header("x-wopi-override").unwrap_or_default()) {
-        ("GET", false, _) => check_file_info(k, &mut tx, &ctx, &g, file).await,
+        ("GET", false, _) => check_file_info(k, &mut tx, &ctx, &g, file, read_only).await,
         ("GET", true, _) => get_file(k, &mut tx, &ctx, &g, file).await,
+        // A session that only reads writes nothing and takes no lock.
+        ("POST", _, "PUT" | "LOCK" | "UNLOCK" | "REFRESH_LOCK" | "UNLOCK_AND_RELOCK") if read_only => Ok(status(401)),
         ("POST", true, "PUT") => put_file(k, &mut tx, &ctx, &g, file, req).await,
         ("POST", false, op) => lock(&mut tx, &ctx, &g, file, op, header("x-wopi-lock"), header("x-wopi-oldlock")).await,
         _ => Ok(status(501)),
@@ -499,16 +512,16 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
 
 /// The web app's origin (the scheme, host and port of `PUBLIC_URL`): the page the editor runs in,
 /// which it may send messages to.
-fn web_origin(public_url: Option<&str>) -> Option<String> {
+pub(crate) fn web_origin(public_url: Option<&str>) -> Option<String> {
     let (scheme, rest) = public_url?.trim().split_once("://")?;
     let host = rest.split(['/', '?', '#']).next().filter(|h| !h.is_empty())?;
     matches!(scheme, "http" | "https").then(|| format!("{scheme}://{host}"))
 }
 
-async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid) -> Result<SiteResponse> {
+async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, read_only: bool) -> Result<SiteResponse> {
     let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, false).await?;
     let h = held(tx, ctx.tenant, file).await?;
-    let can_write = writable(ctx, g, &item, h.as_ref());
+    let can_write = !read_only && writable(ctx, g, &item, h.as_ref());
     let mut info = json!({
             "BaseFileName": item.name,
             "Size": item.size,
@@ -723,8 +736,8 @@ mod tests {
     fn tokens_are_bound_to_workspace_file_user_and_time() {
         let key = [7u8; 32];
         let (t, f, u) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
-        let token = sign(&key, t, f, u, 1_000).unwrap();
-        assert_eq!(verify(&key, t, f, &token, 999), Some(u));
+        let token = sign(&key, t, f, u, 1_000, false).unwrap();
+        assert_eq!(verify(&key, t, f, &token, 999), Some((u, false)));
         assert_eq!(verify(&key, t, f, &token, 1_000), None, "expired");
         assert_eq!(verify(&key, t, Uuid::now_v7(), &token, 999), None, "another file");
         assert_eq!(verify(&key, Uuid::now_v7(), f, &token, 999), None, "another workspace");
@@ -732,6 +745,11 @@ mod tests {
         let forged = token.replacen(&u.to_string(), &Uuid::now_v7().to_string(), 1);
         assert_eq!(verify(&key, t, f, &forged, 999), None, "another user");
         assert_eq!(verify(&key, t, f, "nonsense", 999), None);
+        // A session made to look cannot be turned into one that writes by dropping its mark, nor the other way round.
+        let looking = sign(&key, t, f, u, 1_000, true).unwrap();
+        assert_eq!(verify(&key, t, f, &looking, 999), Some((u, true)));
+        assert_eq!(verify(&key, t, f, &looking.replacen(".r.", ".", 1), 999), None);
+        assert_eq!(verify(&key, t, f, &token.replacen(&format!("{u}.1000."), &format!("{u}.1000.r."), 1), 999), None);
         assert_eq!(encode("http://h:1/a b?c=d"), "http%3A%2F%2Fh%3A1%2Fa%20b%3Fc%3Dd");
     }
 }

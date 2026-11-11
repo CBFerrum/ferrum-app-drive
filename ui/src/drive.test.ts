@@ -10,6 +10,17 @@ describe("drive", () => {
     for (const n of ["photo.png", "report.pdf", "docx", "archive.zip"]) expect(editable(n), n).toBe(false);
   });
 
+  it("keeps a size as one left-to-right run in a right-to-left page", () => {
+    const was = (globalThis as { document?: unknown }).document;
+    (globalThis as { document?: unknown }).document = { documentElement: { dir: "rtl" }, dir: "rtl" };
+    try {
+      expect(sizeLabel(11 * 1024)).toBe("\u206611 KB\u2069");
+    } finally {
+      (globalThis as { document?: unknown }).document = was;
+    }
+    expect(sizeLabel(11 * 1024)).toBe("11 KB");
+  });
+
   it("shows sizes the way people read them", () => {
     expect([null, 0, 1023, 1024, 15_360, 5_242_880, 3 * 1024 ** 3].map(sizeLabel)).toEqual(["", "0 B", "1023 B", "1.0 KB", "15 KB", "5.0 MB", "3.0 GB"]);
   });
