@@ -131,7 +131,7 @@ describe("Drive's home", () => {
 
   it("starts as a list on its way, not an empty folder", () => {
     const html = draw(<DrivePage />, "/drive", common);
-    expect(html).toContain("Loading files");
+    expect(html).toContain('aria-label="Loading…"');
     expect(html).not.toContain("This folder is empty");
   });
 });

@@ -4,7 +4,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { api, download, errorMessage, formatDateTime, relativeTime, t as tr, isolate } from "@ferrum/client";
-import { Badge, Button, Spinner, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
+import { Badge, Button, ListSkeleton, ReaderSkeleton, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
 import { EditorLink, useEditors } from "./editors";
 import { type ItemInfo, type Shareable, allows, defaultEditor, editorsFor, isLiveDoc, shared, shownName, sizeLabel } from "./files";
@@ -83,7 +83,7 @@ export function DetailsPanel({
   if (!item) {
     return (
       <aside className="drive-details" aria-label={tr("Details")}>
-        <Spinner label={tr("Loading details")} />
+        <ReaderSkeleton paragraphs={1} />
       </aside>
     );
   }
@@ -184,7 +184,7 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
       toast(errorMessage(e), "error");
     }
   };
-  if (q.isLoading) return <Spinner label={tr("Loading comments")} />;
+  if (q.isLoading) return <ListSkeleton rows={3} />;
   if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   return (
     <div className="drive-comments">
@@ -249,7 +249,7 @@ function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onResto
       toast(errorMessage(e), "error");
     }
   };
-  if (q.isLoading) return <Spinner label={tr("Loading versions")} />;
+  if (q.isLoading) return <ListSkeleton rows={3} />;
   if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   return (
     <ul className="drive-versions">
@@ -295,7 +295,7 @@ function ActivityList({ id }: { id: string }) {
     queryKey: ["drive", "activity", id],
     queryFn: ({ signal }) => api.get<{ activity: Activity[] }>("/api/app/drive/activity", { item: id, limit: 50 }, signal).then((r) => r.activity),
   });
-  if (q.isLoading) return <Spinner label={tr("Loading activity")} />;
+  if (q.isLoading) return <ListSkeleton rows={3} />;
   if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
   if (!q.data?.length) return <p className="faint">{tr("Nothing yet.")}</p>;
   return (
