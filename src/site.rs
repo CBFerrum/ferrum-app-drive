@@ -497,7 +497,8 @@ pub fn visible_threads(may_read: bool, rows: &[CommentRow]) -> Vec<coedit::Comme
 
 /// The current file's threads (the caller has checked the reader may open it).
 pub async fn threads_of(k: &Kernel, ctx: &Ctx, file: Uuid) -> Result<Vec<coedit::CommentThread>> {
-    type Row = (Uuid, Option<String>, String, chrono::DateTime<chrono::Utc>, Option<Uuid>, Option<Value>, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
+    type Row =
+        (Uuid, Option<String>, String, chrono::DateTime<chrono::Utc>, Option<Uuid>, Option<Value>, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let rows: Vec<Row> = sqlx::query_as(
         "select id, author, body, created_at, reply_to, anchor, quote, resolved_at from e_drive_comment where tenant_id = $1 and file = $2 order by created_at, id limit 1000",
@@ -507,8 +508,19 @@ pub async fn threads_of(k: &Kernel, ctx: &Ctx, file: Uuid) -> Result<Vec<coedit:
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
-    let rows: Vec<CommentRow> =
-        rows.into_iter().map(|(id, author, body, at, reply_to, anchor, quote, resolved_at)| CommentRow { id, author, body, at, reply_to, anchor, quote, resolved: resolved_at.is_some() }).collect();
+    let rows: Vec<CommentRow> = rows
+        .into_iter()
+        .map(|(id, author, body, at, reply_to, anchor, quote, resolved_at)| CommentRow {
+            id,
+            author,
+            body,
+            at,
+            reply_to,
+            anchor,
+            quote,
+            resolved: resolved_at.is_some(),
+        })
+        .collect();
     Ok(visible_threads(true, &rows))
 }
 
@@ -531,7 +543,13 @@ mod tests {
 
     #[test]
     fn threads_keep_their_order_replies_and_resolved_mark() {
-        let rows = vec![row(1, None, true, "first", true), row(2, None, true, "second", false), row(3, Some(1), false, "reply to first", false), row(4, None, false, "whole file", false), row(5, Some(1), false, "another", false)];
+        let rows = vec![
+            row(1, None, true, "first", true),
+            row(2, None, true, "second", false),
+            row(3, Some(1), false, "reply to first", false),
+            row(4, None, false, "whole file", false),
+            row(5, Some(1), false, "another", false),
+        ];
         let t = build_threads(&rows);
         assert_eq!(t.len(), 2, "the file-level comment is not a thread on the text");
         assert!(t[0].resolved && !t[1].resolved);
