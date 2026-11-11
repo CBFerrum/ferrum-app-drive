@@ -361,6 +361,7 @@
   "Stop": "रोकें",
   "Stop uploading {name}": "{name} का अपलोड रोकें",
   "Stopped when {who} left: nobody took over": "{who} के जाने पर बंद हुआ: किसी ने ज़िम्मेदारी नहीं ली",
+  "Stopped. What was sent has been discarded.": "रोका गया। जो भेजा जा चुका था उसे हटा दिया गया है।",
   "Stopped. What was sent is kept for a day, so sending it again goes on from there.": "रोका गया। जो भेजा जा चुका है वह एक दिन रखा जाता है, इसलिए दोबारा भेजने पर वहीं से आगे बढ़ेगा।",
   "Table": "तालिका",
   "Take a filter off to see more.": "और देखने के लिए कोई फ़िल्टर हटाएँ।",
