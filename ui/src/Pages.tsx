@@ -236,6 +236,11 @@ export function PreviewPage() {
  *  page (Docs' editor); the result says whether anything changed. */
 export function ShareIntentPage() {
   const { req, error } = useIntent();
+  // The shell's own dialog already frames this page: the share dialog fills it instead of drawing a second frame.
+  useEffect(() => {
+    document.documentElement.dataset.embedded = "";
+    return () => void delete document.documentElement.dataset.embedded;
+  }, []);
   const id = (req?.data as { id?: string } | null)?.id;
   const item = useItem(id);
   const space = useSpace();
