@@ -86,4 +86,16 @@ describe("uploading what was dropped", () => {
     const none = await uploadTree({ dirs: [], files: [{ path: [], file: file("video.mp4", 5 * 1024 * 1024) }] }, "root", 10 * 1024 * 1024, { ...deps, carries: 2 * 1024 * 1024 });
     expect(none.left).toEqual([{ name: "video.mp4", reason: "it is 5.0 MB and one upload carries at most 2.0 MB" }]);
   });
+
+  it("says for each file what to do when its name is taken", async () => {
+    const asked: string[] = [];
+    const deps: UploadDeps = {
+      makeFolder: async (parent, name) => ({ id: `${parent}/${name}` }),
+      send: async (f, folder, _label, on) => (asked.push(`${folder}:${f.name}:${on}`), { done: Promise.resolve() }),
+      clash: ({ file: f }) => (f.name === "loose.txt" ? "replace" : "keep_both"),
+      reason: (e) => (e as Error).message,
+    };
+    await uploadTree(tree, "root", null, deps);
+    expect(asked).toEqual(["root:loose.txt:replace", "root/Photos:a.jpg:keep_both", "root/Photos/2024:b.jpg:keep_both"]);
+  });
 });

@@ -75,6 +75,7 @@
     - {name: check_out, label: Check Out, permission: read}
     - {name: check_in, label: Check In, permission: read}
     - {name: restore_version, label: Restore Version, permission: read}
+    - {name: keep_version, label: Name or Keep Version, permission: read}
     - {name: share, label: Share, permission: read}
     - {name: unshare, label: Stop Sharing, permission: read}
     - {name: create_link, label: Create Public Link, permission: read}
@@ -225,6 +226,8 @@
     - {name: content_type, type: data, read_only: true}
     - {name: author, type: email, read_only: true, in_list: true}
     - {name: comment, type: data, max_length: 500}
+    - {name: kept, type: check, label: Kept Forever, default: false, in_filter: true, description: "A version kept for good is never removed to make room for newer ones"}
+    - {name: label, type: data, label: Name, max_length: 80, description: "A name to find the version by"}
   unique: [[file, version_no]]
   list: {columns: [file, version_no, size, author, created_at], sort: created_at desc}
 

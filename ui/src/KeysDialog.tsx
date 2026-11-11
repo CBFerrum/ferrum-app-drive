@@ -3,7 +3,7 @@
 import { Fragment } from "react";
 import { Button, Dialog } from "@ferrum/kit";
 import { Kbd } from "@ferrum/kit/primitives";
-import { SHORTCUTS, keyName } from "./shortcuts";
+import { SHORTCUTS, keyName } from "./shortcutHelp";
 import { t, isolate } from "@ferrum/client";
 
 const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
