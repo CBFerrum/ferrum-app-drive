@@ -75,10 +75,35 @@ function Page({ doc, no, scale, size, hits, onSize }: { doc: Doc; no: number; sc
   );
 }
 
-/** Marks the words of a page's text that hold the search words. */
+/** Marks the matched words (not the whole line they are in) in a page's text. */
 function mark(layer: HTMLElement, words: string) {
-  const w = words.toLowerCase();
-  for (const span of layer.querySelectorAll<HTMLElement>("span")) span.toggleAttribute("data-hit", !!w && (span.textContent ?? "").toLowerCase().includes(w));
+  const re = words ? new RegExp(words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi") : null;
+  for (const span of layer.querySelectorAll<HTMLElement>("span")) {
+    // A line of the page is one span; what it said before any marking is kept to mark it again.
+    const text = (span.dataset.said ??= span.textContent ?? "");
+    if (!re) {
+      if (span.querySelector("mark")) span.textContent = text;
+      continue;
+    }
+    re.lastIndex = 0;
+    if (!re.test(text)) {
+      if (span.querySelector("mark")) span.textContent = text;
+      continue;
+    }
+    re.lastIndex = 0;
+    const pieces: (string | HTMLElement)[] = [];
+    let at = 0;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+      if (m.index > at) pieces.push(text.slice(at, m.index));
+      const hit = document.createElement("mark");
+      hit.textContent = m[0];
+      pieces.push(hit);
+      at = m.index + m[0].length;
+      if (!m[0]) re.lastIndex++;
+    }
+    if (at < text.length) pieces.push(text.slice(at));
+    span.replaceChildren(...pieces);
+  }
 }
 
 export default function PdfView({ url, onFail }: { url: string; onFail: (why: "password" | "broken") => void }) {

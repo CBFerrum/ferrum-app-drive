@@ -74,8 +74,16 @@ export const extension = (name: string) => (name.includes(".") ? name.slice(name
 const LEVELS = ["View", "Comment", "Edit", "Manage"];
 export const allows = (permission: string, needed: string) => LEVELS.indexOf(permission) >= LEVELS.indexOf(needed);
 
+/** A size as people read it ("11 KB"), as one run of left-to-right text: in a right-to-left page a number and
+ *  its unit would otherwise swap places ("KB 11"). Every size in Drive is made here. */
 export function sizeLabel(bytes: number | null): string {
   if (bytes === null) return "";
+  const text = plainSize(bytes);
+  const rtl = typeof document !== "undefined" && (document.documentElement.dir === "rtl" || document.dir === "rtl");
+  return rtl ? `\u2066${text}\u2069` : text;
+}
+
+function plainSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
   let n = bytes / 1024;

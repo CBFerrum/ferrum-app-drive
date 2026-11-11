@@ -13,26 +13,18 @@
 // (BrowserEdit.tsx), or, for documents edited live, in Docs' editor (another app's page).
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, FileUp, FolderPlus, FolderUp, HardDrive, LayoutGrid, LayoutTemplate, List, Plus, Trash2, Upload } from "lucide-react";
-import { type DragEvent, type FormEvent, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { ChevronDown, HardDrive, LayoutGrid, List, Plus, Trash2, Upload } from "lucide-react";
+import { type DragEvent, type FormEvent, Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api, errorMessage, shell, t as tr, isolate } from "@ferrum/client";
-import { Button, FamilyNav, ListSkeleton, Spinner, StatePanel, toast, useShellTitle } from "@ferrum/kit";
-import {
-  Button as UiButton,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@ferrum/kit/primitives";
-import { Chips, type SetQuery } from "./Chips";
+import { Button, FamilyNav, ListSkeleton, StatePanel, toast, useShellTitle } from "@ferrum/kit";
+import { Button as UiButton, Skeleton } from "@ferrum/kit/primitives";
+import type { SetQuery } from "./Chips";
 import { type Choice, clashes } from "./clash";
 import { type Carried, bringsFiles, dragged } from "./drag";
 import { type DropApi, DropContext, type DropTarget, useDropTarget } from "./dropping";
 import { type Entry, type Tree, entriesOf, fromPicker, walk } from "./dropped";
 import { openChoice, useDocs, useEditors } from "./editors";
-import { FileGlyph } from "./FileGlyph";
 import { FileList } from "./FileList";
 import type { RowActions } from "./ItemMenu";
 import { type Item, type Shareable, allows, problemKind, defaultEditor, editorsFor, sizeLabel } from "./files";
@@ -43,7 +35,6 @@ import { Rail, type Place } from "./Rail";
 import { NOTHING, type Chosen, all as chooseEvery, click, keep } from "./selection";
 import { commandFor, typing } from "./shortcuts";
 import { useTemplates } from "./templateList";
-import { useUndo } from "./Undo";
 import { useActions } from "./useActions";
 import { useFolder, useFresh, useListing, useSpace, useUsage } from "./useDrive";
 
@@ -58,6 +49,9 @@ const savedLayout = (): "list" | "grid" => {
 };
 
 /** New files: a live document always; office files open in the online or a browser editor. */
+const AddMenus = lazy(() => import("./AddMenus"));
+const Chips = lazy(() => import("./Chips").then((m) => ({ default: m.Chips })));
+
 const NEW = [
   { kind: "fdoc", get label() { return tr("Document"); } },
   { kind: "docx", get label() { return tr("Word document"); } },
@@ -136,7 +130,6 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
   const [versionFor, setVersionFor] = useState<Item | null>(null);
   const versionPicker = useRef<HTMLInputElement>(null);
   const clipboard = useRef<{ items: Item[]; cut: boolean } | null>(null);
-  const undo = useUndo();
   const [gallery, setGallery] = useState(false);
   const [saving, setSaving] = useState<Item | null>(null);
   const [helping, setHelping] = useState(false);
@@ -224,7 +217,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
       these.forEach((i) => left.delete(i));
       return left;
     });
-  const actions = useActions({ space: space.data?.id, hide, show, after: refresh, most: usage.data?.limits.max_upload_bytes ?? null, carries: usage.data?.limits.request_bytes ?? null, offer: undo.give });
+  const actions = useActions({ space: space.data?.id, hide, show, after: refresh, most: usage.data?.limits.max_upload_bytes ?? null, carries: usage.data?.limits.request_bytes ?? null });
 
   // Finished anywhere (this page, another tab, an earlier page): the lists show it.
   useEffect(() => shell().uploads.on("done", (u) => void (u.app === "drive" && qc.invalidateQueries({ queryKey: ["drive"] }))), [qc]);
@@ -588,61 +581,20 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
               </button>
               {canAdd && (
                 <>
-                  {kind ? (
-                    fresh.map((n) => (
-                      <span key={n.kind} className="contents">
-                        <UiButton size="sm" variant="outline" onClick={() => void create(n.kind)}>
-                          <Plus /> {isolate(n.label)}
+                  <Suspense
+                    fallback={
+                      <>
+                        <UiButton size="sm" variant="outline" disabled>
+                          <Plus /> {kind ? isolate(fresh[0]?.label ?? tr("New")) : tr("New")}
                         </UiButton>
-                        <UiButton size="sm" variant="outline" onClick={() => setGallery(true)}>
-                          <LayoutTemplate /> {tr("From a template")}
+                        <UiButton size="sm" disabled>
+                          <Upload /> {tr("Upload")} <ChevronDown />
                         </UiButton>
-                      </span>
-                    ))
-                  ) : (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <UiButton size="sm" variant="outline" aria-label={tr("New document or folder")}>
-                          <Plus /> {tr("New")}
-                        </UiButton>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="min-w-52">
-                        {fresh.map((n) => (
-                          <DropdownMenuItem key={n.kind} onSelect={() => void create(n.kind)}>
-                            <FileGlyph kind="file" name={`new.${n.kind}`} size={16} /> {isolate(n.label)}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuItem onSelect={() => setGallery(true)}>
-                          <LayoutTemplate /> {tr("From a template…")}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onSelect={newFolder}>
-                          <FolderPlus /> {tr("Folder")}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <UiButton size="sm" disabled={busy}>
-                        {busy ? <Spinner small /> : <Upload />} {tr("Upload")} <ChevronDown />
-                      </UiButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="min-w-44">
-                      <DropdownMenuItem onSelect={() => picker.current?.click()}>
-                        <FileUp /> {tr("Files…")}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => folderPicker.current?.click()}>
-                        <FolderUp /> {tr("Folder…")}
-                      </DropdownMenuItem>
-                      {usage.data && (
-                        <>
-                          <DropdownMenuSeparator />
-                          <p className="drive-menu-note">{tr("Up to {size} for each file", { size: sizeLabel(usage.data.limits.max_upload_bytes) })}</p>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                      </>
+                    }
+                  >
+                    <AddMenus kind={!!kind} fresh={fresh} busy={busy} limit={usage.data?.limits.max_upload_bytes ?? null} create={(k) => void create(k)} gallery={() => setGallery(true)} newFolder={newFolder} files={() => picker.current?.click()} folder={() => folderPicker.current?.click()} />
+                  </Suspense>
                   <input ref={picker} type="file" multiple hidden aria-hidden tabIndex={-1} onChange={(e) => (chosenFiles(e.target.files, false), (e.target.value = ""))} />
                   <input
                     ref={folderPicker}
@@ -687,7 +639,7 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
               </label>
               <input ref={searchBox} id={`${railId}-q`} className="input" type="search" placeholder={tr("Search Drive")} value={typed} onChange={(e) => setTyped(e.target.value)} />
             </form>
-            <Chips src={src} fileType={kind} q={q} set={setQuery} location={query || kind ? { name: within.data?.name ?? null, choose: () => setChoosingPlace(true) } : null} />
+            <Suspense fallback={<div className="drive-chips" role="status" aria-label={tr("Loading…")}><Skeleton className="h-(--control-h) w-28 rounded-full motion-reduce:animate-none" /><Skeleton className="h-(--control-h) w-24 rounded-full motion-reduce:animate-none" /></div>}><Chips src={src} fileType={kind} q={q} set={setQuery} location={query || kind ? { name: within.data?.name ?? null, choose: () => setChoosingPlace(true) } : null} /></Suspense>
           </div>
           {query && (
             <p className="faint drive-note" role="note">
@@ -813,7 +765,6 @@ export function DrivePage({ kind }: { kind?: FileKind }) {
           />
         </Later>
       )}
-      {undo.host}
       {naming && (
         <Later>
           <NameDialog {...naming} onClose={() => setNaming(null)} />
