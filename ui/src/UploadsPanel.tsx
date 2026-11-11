@@ -12,7 +12,9 @@ const state = (r: Row) =>
   r.state === "done"
     ? tr("Done")
     : r.state === "stopped"
-      ? tr("Stopped. What was sent is kept for a day, so sending it again goes on from there.")
+      ? r.discarded
+        ? tr("Stopped. What was sent has been discarded.")
+        : tr("Stopped. What was sent is kept for a day, so sending it again goes on from there.")
       : r.state === "failed"
         ? (r.error ?? tr("Failed"))
         : (r.note ?? tr("{sent} of {size}", { sent: sizeLabel(r.sent), size: sizeLabel(r.size) }));

@@ -11,6 +11,7 @@ use crate::tree;
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use ferrum_kernel::coedit;
 use ferrum_kernel::{Ctx, Error, Kernel, Result, Site, SiteRequest, SiteResponse, with_retry};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -335,7 +336,10 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>, log: Option
         let g = Grants::load(&mut tx, ctx).await?;
         tx.commit().await?;
         let images = if format == "txt" { HashMap::new() } else { crate::images::for_export(k, ctx, Some(&g), d.file.id, &data).await? };
-        return export(k, &d.file.name, &data, format, p.flag("inline"), &images).await;
+        // Whoever may open the file may read its comments (as `list_comments` decides); a past version's
+        // anchors belong to the text of its day, so those exports carry none.
+        let threads = if p.int("version")?.is_none() { threads_of(k, ctx, d.file.id).await? } else { Vec::new() };
+        return export(k, &d.file.name, &data, format, p.flag("inline"), &images, &threads).await;
     }
     if let Some(action) = log {
         let mut tx = k.db.tenant_tx(ctx.tenant).await?;
@@ -393,7 +397,6 @@ pub fn not_carried_header(lost: &[String]) -> Option<(String, String)> {
 /// A live document as a web page and what that page could not carry: its pictures inside it as
 /// data, so nothing is fetched to show them, and its links to other documents as links.
 pub fn live_page(k: &Kernel, name: &str, state: &[u8], images: &HashMap<String, crate::images::Image>) -> (Vec<u8>, Vec<String>) {
-    use ferrum_kernel::coedit;
     let doc = coedit::decode(state);
     let inline_src = |id: &str| images.get(id).map(|i| format!("data:{};base64,{}", i.content_type, STANDARD.encode(&i.bytes)));
     let origin = crate::office::web_origin(k.settings.public_url.as_deref());
@@ -403,8 +406,17 @@ pub fn live_page(k: &Kernel, name: &str, state: &[u8], images: &HashMap<String, 
 
 /// A live document as a page (`html`), a PDF (`pdf`), a Word file (`docx`) or its words
 /// (`txt`), carrying the `images` it shows. Pages run nothing.
-pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: bool, images: &HashMap<String, crate::images::Image>) -> Result<SiteResponse> {
-    use ferrum_kernel::coedit;
+/// `threads` are the comment threads the reader may see: Word carries them, the other formats say
+/// they could not.
+pub async fn export(
+    k: &Kernel,
+    name: &str,
+    state: &[u8],
+    format: &str,
+    inline: bool,
+    images: &HashMap<String, crate::images::Image>,
+    threads: &[coedit::CommentThread],
+) -> Result<SiteResponse> {
     let doc = coedit::decode(state);
     let stem = crate::content::stem(name, false);
     // Pages and PDFs carry images as data: addresses, so nothing is fetched to show them.
@@ -425,7 +437,7 @@ pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: 
             let picture = |id: &str| {
                 images.get(id).map(|i| coedit::ImageData { bytes: i.bytes.clone(), content_type: i.content_type.clone(), width: i.width, height: i.height })
             };
-            let (file, lost) = coedit::docx_export(&doc, stem, origin, &picture)?;
+            let (file, lost) = coedit::docx_export_with_comments(&doc, stem, origin, &picture, threads)?;
             (file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "docx", lost)
         }
         "md" => {
@@ -435,6 +447,10 @@ pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: 
         "txt" => (coedit::plain_text(&doc).into_bytes(), "text/plain; charset=utf-8", "txt", Vec::new()),
         other => return Err(Error::field("format", format!("must be html, pdf, docx, md or txt, not {other}"))),
     };
+    let mut lost = lost;
+    if format != "docx" && !threads.is_empty() {
+        lost.push(coedit::NOT_CARRIED_COMMENTS.to_string());
+    }
     let mut headers = vec![
         ("content-disposition".to_string(), crate::content::disposition(inline, &format!("{stem}.{ext}"))),
         ("x-content-type-options".into(), "nosniff".into()),
@@ -445,9 +461,97 @@ pub async fn export(k: &Kernel, name: &str, state: &[u8], format: &str, inline: 
     Ok(SiteResponse { status: 200, content_type: ctype.into(), headers, body })
 }
 
+/// One `DriveComment` row, as far as an export needs it.
+pub struct CommentRow {
+    pub id: Uuid,
+    pub author: Option<String>,
+    pub body: String,
+    pub at: chrono::DateTime<chrono::Utc>,
+    pub reply_to: Option<Uuid>,
+    pub anchor: Option<Value>,
+    pub quote: Option<String>,
+    pub resolved: bool,
+}
+
+/// The threads on a document's text, in the order they were started, each with its replies in
+/// order. Comments on the file as a whole (no anchor) are not part of the text and stay out. An
+/// author is shown by the part of the email before `@` (the kernel's rule): Drive holds no names.
+/// Rows come oldest first.
+pub fn build_threads(rows: &[CommentRow]) -> Vec<coedit::CommentThread> {
+    let one = |r: &CommentRow| coedit::Comment { author_email: r.author.clone().unwrap_or_default(), author_name: None, at: Some(r.at), body: r.body.clone() };
+    rows.iter()
+        .filter(|r| r.reply_to.is_none() && r.anchor.is_some())
+        .map(|root| coedit::CommentThread {
+            anchor: root.anchor.clone(),
+            quote: root.quote.clone(),
+            resolved: root.resolved,
+            comments: std::iter::once(one(root)).chain(rows.iter().filter(|r| r.reply_to == Some(root.id)).map(one)).collect(),
+        })
+        .collect()
+}
+
+/// What the reader may see: all of them when they may read comments, else none.
+pub fn visible_threads(may_read: bool, rows: &[CommentRow]) -> Vec<coedit::CommentThread> {
+    if may_read { build_threads(rows) } else { Vec::new() }
+}
+
+/// The current file's threads (the caller has checked the reader may open it).
+pub async fn threads_of(k: &Kernel, ctx: &Ctx, file: Uuid) -> Result<Vec<coedit::CommentThread>> {
+    type Row = (Uuid, Option<String>, String, chrono::DateTime<chrono::Utc>, Option<Uuid>, Option<Value>, Option<String>, Option<chrono::DateTime<chrono::Utc>>);
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let rows: Vec<Row> = sqlx::query_as(
+        "select id, author, body, created_at, reply_to, anchor, quote, resolved_at from e_drive_comment where tenant_id = $1 and file = $2 order by created_at, id limit 1000",
+    )
+    .bind(ctx.tenant)
+    .bind(file)
+    .fetch_all(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    let rows: Vec<CommentRow> =
+        rows.into_iter().map(|(id, author, body, at, reply_to, anchor, quote, resolved_at)| CommentRow { id, author, body, at, reply_to, anchor, quote, resolved: resolved_at.is_some() }).collect();
+    Ok(visible_threads(true, &rows))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(n: u128, reply_to: Option<u128>, anchor: bool, body: &str, resolved: bool) -> CommentRow {
+        CommentRow {
+            id: Uuid::from_u128(n),
+            author: Some(format!("p{n}@x.test")),
+            body: body.into(),
+            at: chrono::DateTime::from_timestamp(1_700_000_000 + n as i64, 0).unwrap(),
+            reply_to: reply_to.map(Uuid::from_u128),
+            anchor: anchor.then(|| json!({"from": 1, "to": 2})),
+            quote: anchor.then(|| "q".to_string()),
+            resolved,
+        }
+    }
+
+    #[test]
+    fn threads_keep_their_order_replies_and_resolved_mark() {
+        let rows = vec![row(1, None, true, "first", true), row(2, None, true, "second", false), row(3, Some(1), false, "reply to first", false), row(4, None, false, "whole file", false), row(5, Some(1), false, "another", false)];
+        let t = build_threads(&rows);
+        assert_eq!(t.len(), 2, "the file-level comment is not a thread on the text");
+        assert!(t[0].resolved && !t[1].resolved);
+        assert_eq!(t[0].comments.iter().map(|c| c.body.as_str()).collect::<Vec<_>>(), ["first", "reply to first", "another"]);
+        assert_eq!(t[1].comments.len(), 1);
+        assert_eq!(t[0].comments[0].author_email, "p1@x.test");
+        assert!(t[0].comments[0].author_name.is_none() && t[0].comments[0].at.is_some());
+        assert_eq!(t[0].quote.as_deref(), Some("q"));
+    }
+
+    #[test]
+    fn only_readers_of_comments_get_threads_and_the_header_says_so() {
+        let rows = vec![row(1, None, true, "a", false)];
+        assert!(visible_threads(false, &rows).is_empty());
+        let threads = visible_threads(true, &rows);
+        assert_eq!(threads.len(), 1);
+        // Formats that carry none list "comments"; the header is that list.
+        let lost = vec![ferrum_kernel::coedit::NOT_CARRIED_COMMENTS.to_string()];
+        assert_eq!(not_carried_header(&lost), Some(("x-ferrum-not-carried".into(), "comments".into())));
+    }
 
     #[test]
     fn what_an_export_could_not_carry_travels_as_one_header() {
