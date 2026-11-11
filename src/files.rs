@@ -15,6 +15,7 @@ use ferrum_domain::util::{elevated, sys};
 use ferrum_kernel::{Ctx, Doc, Error, Kernel, Result, Tx};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use uuid::Uuid;
 
 /// Largest content handed back inline by the `download` action (agents and the generic API).
@@ -342,29 +343,95 @@ pub(crate) async fn add_version(
     Ok(item)
 }
 
-/// Removes the oldest versions beyond the workspace's limit (never the current one) and refunds them.
+/// The most versions of one file that may be kept for good.
+pub const MAX_KEPT: usize = 25;
+
+/// Which versions go when a file holds more than `keep` of them: `versions` is `(version_no, kept)`,
+/// any order. The newest `keep` versions that are not kept stay (so does every kept version, which
+/// does not count towards `keep`); the older ones go. `keep` of 0 keeps everything. The newest
+/// version always stays.
+pub fn prunable(versions: &[(i64, bool)], keep: i64) -> Vec<i64> {
+    if keep <= 0 {
+        return Vec::new();
+    }
+    let mut loose: Vec<i64> = versions.iter().filter(|v| !v.1).map(|v| v.0).collect();
+    loose.sort_unstable_by(|a, b| b.cmp(a));
+    let newest = versions.iter().map(|v| v.0).max();
+    loose.into_iter().skip(keep as usize).filter(|n| Some(*n) != newest).collect()
+}
+
+/// Removes the oldest versions beyond the workspace's limit (never the current one, never one kept for good) and refunds them.
 async fn prune(tx: &mut Tx, ctx: &Ctx, file: &Item) -> Result<()> {
     let keep = tree::settings(tx, ctx.tenant).await?.max_versions;
     if keep == 0 {
         return Ok(());
     }
-    let old: Vec<(Uuid, Option<String>, Option<i64>)> =
-        sqlx::query_as("select id, stored_file, size from e_drive_file_version where tenant_id = $1 and file = $2 order by version_no desc offset $3")
+    let all: Vec<(Uuid, i64, Option<String>, Option<i64>, bool)> =
+        sqlx::query_as("select id, version_no, stored_file, size, coalesce(kept, false) from e_drive_file_version where tenant_id = $1 and file = $2")
             .bind(ctx.tenant)
             .bind(file.id)
-            .bind(keep)
             .fetch_all(&mut **tx)
             .await?;
+    let gone: HashSet<i64> = prunable(&all.iter().map(|v| (v.1, v.4)).collect::<Vec<_>>(), keep).into_iter().collect();
+    let old: Vec<_> = all.into_iter().filter(|v| gone.contains(&v.1)).collect();
     if old.is_empty() {
         return Ok(());
     }
     let ids: Vec<Uuid> = old.iter().map(|o| o.0).collect();
-    let objects: Vec<Uuid> = old.iter().filter_map(|o| o.1.as_deref().and_then(|s| s.parse().ok())).collect();
-    let bytes: i64 = old.iter().map(|o| o.2.unwrap_or(0)).sum();
+    let objects: Vec<Uuid> = old.iter().filter_map(|o| o.2.as_deref().and_then(|s| s.parse().ok())).collect();
+    let bytes: i64 = old.iter().map(|o| o.3.unwrap_or(0)).sum();
     sqlx::query("delete from e_drive_file_version where tenant_id = $1 and id = any($2)").bind(ctx.tenant).bind(&ids).execute(&mut **tx).await?;
     drop_objects(tx, ctx.tenant, &[], &objects).await?;
     let payer = tree::payer(tx, ctx.tenant, file.top()).await?;
     tree::charge(tx, ctx.tenant, payer, -bytes).await
+}
+
+/// `keep_version`: names a version (`label`, at most 80 characters; empty clears it) and/or keeps it
+/// for good (`kept`), so that making room for newer versions never removes it. Edit access; a
+/// file may have at most [`MAX_KEPT`] versions kept.
+pub async fn keep_version(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params<'_>) -> Out {
+    let file = p.req_uuid("file")?;
+    let no = p.int("version")?.ok_or_else(|| Error::field("version", "is required"))?;
+    let f = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, true).await?;
+    if crate::docs::is_live(&f) {
+        return Err(Error::invalid(format!("'{}' is edited live: its versions are kept by the editor, not by Drive's limit", f.name)));
+    }
+    let row: Option<(Uuid, bool)> =
+        sqlx::query_as("select id, coalesce(kept, false) from e_drive_file_version where tenant_id = $1 and file = $2 and version_no = $3")
+            .bind(ctx.tenant)
+            .bind(f.id)
+            .bind(no)
+            .fetch_optional(&mut **tx)
+            .await?;
+    let (id, was) = row.ok_or_else(|| Error::NotFound(format!("version {no}")))?;
+    let mut doc = Doc::new();
+    if p.0.get("kept").is_some() {
+        let kept = p.flag("kept");
+        if kept && !was {
+            let n: i64 = sqlx::query_scalar("select count(*) from e_drive_file_version where tenant_id = $1 and file = $2 and coalesce(kept, false)")
+                .bind(ctx.tenant)
+                .bind(f.id)
+                .fetch_one(&mut **tx)
+                .await?;
+            if n as usize >= MAX_KEPT {
+                return Err(Error::invalid(format!("a file can have at most {MAX_KEPT} versions kept for good: let one go first")));
+            }
+        }
+        doc.insert("kept".into(), json!(kept));
+    }
+    if let Some(label) = p.0.get("label").and_then(Value::as_str) {
+        let label = label.trim();
+        if label.chars().count() > 80 {
+            return Err(Error::field("label", "can be at most 80 characters"));
+        }
+        doc.insert("label".into(), if label.is_empty() { Value::Null } else { json!(label) });
+    }
+    if doc.is_empty() {
+        return Err(Error::invalid("say what to change: kept and/or label"));
+    }
+    k.update_tx(&elevated(ctx), tx, "DriveFileVersion", id, doc, None).await?;
+    tree::log(tx, ctx, &f, "Keep Version", json!({"version": no, "kept": p.0.get("kept").map(|_| p.flag("kept")), "label": p.str("label")})).await?;
+    Ok(json!({"file": f.id, "version": no, "kept": p.0.get("kept").map(|_| p.flag("kept")).unwrap_or(was), "label": p.str("label")}))
 }
 
 /// Checks a new version of `file` before any bytes are stored (for check-in: the file must be
@@ -461,6 +528,21 @@ pub async fn logged(tx: &mut Tx, ctx: &Ctx, d: &Download) -> Result<()> {
     tree::log(tx, ctx, &d.file, "Download", json!({"version": d.version})).await
 }
 
+/// What a request for a file's bytes puts in the activity log: nothing for a card's thumbnail
+/// (`thumb=1`) or for the later parts of a file a player or viewer asks for one range at a time,
+/// a view for a file shown in place (`inline=1`), a download otherwise. (A page of thumbnails
+/// must not write a line for each picture.)
+pub fn access_log(thumb: bool, inline: bool, range: Option<&str>) -> Option<&'static str> {
+    let later_part = range.is_some_and(|r| !r.trim().starts_with("bytes=0-"));
+    if thumb || later_part {
+        None
+    } else if inline {
+        Some("View")
+    } else {
+        Some("Download")
+    }
+}
+
 /// The bytes of a stored object.
 pub async fn read(k: &Kernel, ctx: &Ctx, object: Uuid) -> Result<Vec<u8>> {
     Ok(k.read_file(&sys(ctx), object).await?.2)
@@ -500,8 +582,19 @@ pub async fn download(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params
 /// `list_versions`: newest first.
 pub async fn list_versions(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -> Out {
     let f = tree::open_kind(tx, ctx, g, Kind::File, p.req_uuid("file")?, Level::View, false).await?;
-    let rows: Vec<(Uuid, i64, Option<i64>, Option<String>, Option<String>, Option<String>, Option<String>, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
-        "select id, version_no, size, sha256, content_type, author, comment, created_at from e_drive_file_version \
+    let rows: Vec<(
+        Uuid,
+        i64,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        chrono::DateTime<chrono::Utc>,
+        bool,
+        Option<String>,
+    )> = sqlx::query_as(
+        "select id, version_no, size, sha256, content_type, author, comment, created_at, coalesce(kept, false), label from e_drive_file_version \
          where tenant_id = $1 and file = $2 order by version_no desc",
     )
     .bind(ctx.tenant)
@@ -510,9 +603,9 @@ pub async fn list_versions(tx: &mut Tx, ctx: &Ctx, g: &Grants, p: &Params<'_>) -
     .await?;
     let versions: Vec<Value> = rows
         .into_iter()
-        .map(|(id, no, size, sha, ctype, author, comment, at)| {
+        .map(|(id, no, size, sha, ctype, author, comment, at, kept, label)| {
             json!({"id": id, "version": no, "size": size.unwrap_or(0), "sha256": sha, "content_type": ctype, "author": author, "comment": comment,
-                   "created_at": at, "current": no == f.version_no})
+                   "created_at": at, "current": no == f.version_no, "kept": kept, "label": label})
         })
         .collect();
     Ok(json!({"file": f.id, "name": f.name, "versions": versions}))
@@ -622,4 +715,54 @@ pub async fn copy_file(k: &Kernel, ctx: &Ctx, tx: &mut Tx, src: &Item, dest: &It
         crate::images::copy(k, ctx, tx, src.id, &item, objects).await?;
     }
     Ok(item)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn v(list: &[(i64, bool)]) -> Vec<(i64, bool)> {
+        list.to_vec()
+    }
+
+    #[test]
+    fn the_oldest_versions_go_beyond_the_limit() {
+        let all: Vec<(i64, bool)> = (1..=5).map(|n| (n, false)).collect();
+        let mut gone = prunable(&all, 3);
+        gone.sort();
+        assert_eq!(gone, [1, 2]);
+        assert!(prunable(&all, 5).is_empty() && prunable(&all, 9).is_empty());
+        assert!(prunable(&all, 0).is_empty(), "0 keeps everything");
+    }
+
+    #[test]
+    fn a_version_kept_for_good_never_goes_and_does_not_count_against_the_limit() {
+        // 1 and 2 are kept; of the others only the newest 2 stay.
+        let all = v(&[(1, true), (2, true), (3, false), (4, false), (5, false), (6, false)]);
+        let mut gone = prunable(&all, 2);
+        gone.sort();
+        assert_eq!(gone, [3, 4]);
+        assert!(prunable(&v(&[(1, true), (2, true), (3, true)]), 1).is_empty());
+    }
+
+    #[test]
+    fn showing_a_file_is_logged_as_a_view_and_a_thumbnail_not_at_all() {
+        assert_eq!(access_log(false, false, None), Some("Download"));
+        assert_eq!(access_log(false, true, None), Some("View"));
+        assert_eq!(access_log(true, true, None), None);
+        // A player asking for parts: the first is the view, the rest are not lines of their own.
+        assert_eq!(access_log(false, true, Some("bytes=0-1023")), Some("View"));
+        assert_eq!(access_log(false, true, Some("bytes=4096-")), None);
+        assert_eq!(access_log(false, false, Some(" bytes=100-200")), None);
+    }
+
+    #[test]
+    fn the_newest_version_always_stays() {
+        // Whatever the order they come in, and when it is the only one not kept.
+        assert_eq!(prunable(&v(&[(4, false), (3, true), (2, true), (1, true)]), 1), Vec::<i64>::new());
+        let shuffled = v(&[(2, false), (5, false), (1, false), (4, false), (3, false)]);
+        let mut gone = prunable(&shuffled, 1);
+        gone.sort();
+        assert_eq!(gone, [1, 2, 3, 4]);
+    }
 }

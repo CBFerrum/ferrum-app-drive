@@ -298,7 +298,12 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             }
             return Ok(SiteResponse::json(201, &res?));
         }
-        ("GET", ["files", file, "content"]) => return download(k, ctx, id(file)?, &p).await,
+        ("GET", ["files", file, "content"]) => {
+            let how = files::access_log(p.flag("thumb"), p.flag("inline"), req.headers.get("range").and_then(Value::as_str));
+            return download(k, ctx, id(file)?, &p, how).await;
+        }
+        // A folder, or several items, as one zip file ([`crate::archive`]).
+        ("GET", ["archive"]) => return crate::archive::build(k, ctx, &p).await,
         // Images in a live document: the bytes go up as the body; they come back by their id.
         ("POST", ["files", file, "images"]) => return Ok(SiteResponse::json(201, &crate::images::upload(k, ctx, id(file)?, &req.body).await?)),
         ("GET", ["files", file, "images", image]) => return crate::images::serve(k, ctx, id(file)?, id(image)?).await,
@@ -311,7 +316,7 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
 /// else downloads, and types a browser could run arrive as opaque bytes. A live document serves
 /// its current content (or a version's) as `format=html`, `pdf`, `docx` or `txt`, its images
 /// inside; without a format, its state for Ferrum.
-async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<SiteResponse> {
+async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>, log: Option<&str>) -> Result<SiteResponse> {
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
     let d = files::prepare_download(&mut tx, ctx, &g, file, p.int("version")?).await?;
@@ -324,15 +329,19 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
             None => files::read(k, ctx, d.object).await?,
         };
         let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-        files::logged(&mut tx, ctx, &d).await?;
+        if let Some(action) = log {
+            tree::log(&mut tx, ctx, &d.file, action, json!({"version": d.version})).await?;
+        }
         let g = Grants::load(&mut tx, ctx).await?;
         tx.commit().await?;
         let images = if format == "txt" { HashMap::new() } else { crate::images::for_export(k, ctx, Some(&g), d.file.id, &data).await? };
         return export(k, &d.file.name, &data, format, p.flag("inline"), &images).await;
     }
-    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-    files::logged(&mut tx, ctx, &d).await?;
-    tx.commit().await?;
+    if let Some(action) = log {
+        let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+        tree::log(&mut tx, ctx, &d.file, action, json!({"version": d.version})).await?;
+        tx.commit().await?;
+    }
     let preview = p.flag("inline") && crate::content::inline_ok(&d.content_type);
     let ctype = if preview { d.content_type.clone() } else { crate::content::served_type(&d.content_type).to_string() };
     let mut headers = vec![
@@ -351,6 +360,14 @@ async fn download(k: &Kernel, ctx: &Ctx, file: Uuid, p: &Params<'_>) -> Result<S
         // A stored version: the server streams it from storage, whatever its size.
         None => SiteResponse::file(200, &ctype, headers, d.object),
     })
+}
+
+/// A live document as a web page: its pictures inside it as data, so nothing is fetched to show them.
+pub fn live_page(name: &str, state: &[u8], images: &HashMap<String, crate::images::Image>) -> Vec<u8> {
+    use ferrum_kernel::coedit;
+    let doc = coedit::decode(state);
+    let inline_src = |id: &str| images.get(id).map(|i| format!("data:{};base64,{}", i.content_type, STANDARD.encode(&i.bytes)));
+    coedit::html_page_with(crate::content::stem(name, false), &doc, &inline_src).into_bytes()
 }
 
 /// A live document as a page (`html`), a PDF (`pdf`), a Word file (`docx`) or its words
