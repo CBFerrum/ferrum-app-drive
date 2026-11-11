@@ -312,6 +312,15 @@
   color: var(--muted-foreground);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
+  /* Table cells do not wrap; a line under a name wraps inside the name column. */
+  white-space: normal;
+}
+/* A search snippet stops at two lines. */
+.drive-line-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
 .drive-line mark {
   border-radius: 2px;
@@ -643,6 +652,33 @@ a.drive-name:focus-visible > span {
 }
 
 /* ── sharing ── */
+/* The share dialog's body scrolls under its title and actions: a soft edge shows there is more beyond it. */
+.dialog-body:has(.share-grid) {
+  background:
+    linear-gradient(var(--surface) 30%, transparent) top / 100% 24px local no-repeat,
+    linear-gradient(transparent, var(--surface) 70%) bottom / 100% 24px local no-repeat,
+    radial-gradient(farthest-side at 50% 0, color-mix(in srgb, var(--foreground) 18%, transparent), transparent) top / 100% 8px scroll no-repeat,
+    radial-gradient(farthest-side at 50% 100%, color-mix(in srgb, var(--foreground) 18%, transparent), transparent) bottom / 100% 8px scroll no-repeat;
+}
+/* Inside the shell's dialog frame (an intent's page): the dialog is the whole page, not a box on it. */
+:root[data-embedded] .dialog {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+:root[data-embedded] .dialog::backdrop {
+  background: transparent;
+}
+:root[data-embedded] .dialog-inner {
+  height: 100%;
+  max-height: none;
+}
 .share-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
