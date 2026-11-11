@@ -39,6 +39,18 @@ describe("drive", () => {
     expect(editorsFor(file("README"), both)).toEqual([]);
   });
 
+  it("offers a Word file as a Ferrum document when Docs is there: last, and never as the default", () => {
+    const some = { online: false, browser: [] as BrowserEditor[] };
+    expect(editorsFor(file("Policy.docx"), { ...some, docs: true }).map((c) => [c.key, c.to])).toEqual([["to-ferrum-doc", "/docs/open/f1"]]);
+    expect(defaultEditor(editorsFor(file("Policy.docx"), { ...some, docs: true }), false)).toBeUndefined();
+    const withEditor = editorsFor(file("Policy.docx"), { online: true, browser: [], docs: true });
+    expect(withEditor.map((c) => c.key)).toEqual(["online", "to-ferrum-doc"]);
+    expect(defaultEditor(withEditor, false)?.key).toBe("online");
+    expect(editorsFor(file("Policy.docx"), { ...some, docs: false })).toEqual([]);
+    expect(editorsFor(file("Budget.xlsx"), { ...some, docs: true })).toEqual([]);
+    expect(editorsFor(file("notes.doc"), { ...some, docs: true })).toEqual([]);
+  });
+
   it("puts editors that cannot take a file last, saying why", () => {
     const big = editorsFor(file("budget.xlsx", 60 * 1024 * 1024), { online: false, browser: [sheets] });
     expect(big).toEqual([{ key: "sheets", label: "Spreadsheet (GridCraft)", to: "/drive/edit/f1/sheets", unavailable: "larger than 50 MB" }]);

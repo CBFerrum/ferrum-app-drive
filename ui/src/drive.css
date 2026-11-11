@@ -1032,6 +1032,14 @@ a.drive-name:focus-visible > span {
   flex: none;
   font-variant-numeric: tabular-nums;
 }
+.drive-preview-icon {
+  display: none;
+}
+@media (max-width: 640px) {
+  .drive-preview-icon {
+    display: inline;
+  }
+}
 .drive-preview-actions {
   display: flex;
   flex: none;
