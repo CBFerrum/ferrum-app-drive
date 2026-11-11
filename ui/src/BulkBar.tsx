@@ -1,7 +1,8 @@
 // What can be done with the items that are chosen, all at once: the bar appears above the list
 // while any are chosen. An action the person may not do to every one of them is not offered.
 
-import { ArchiveRestore, Copy, Download, FolderInput, Share2, Trash2, X } from "lucide-react";
+import { ArchiveRestore, Copy, Download, FolderInput, Share2, Trash2 } from "lucide-react";
+import { SelectionToolbar } from "@ferrum/kit";
 import { Button } from "@ferrum/kit/primitives";
 import { type Item, allows } from "./files";
 import { items as count } from "./bulk";
@@ -19,51 +20,45 @@ export interface BulkActions {
 
 export function BulkBar({ chosen, trash, actions }: { chosen: Item[]; trash: boolean; actions: BulkActions }) {
   const every = (needed: string) => chosen.every((i) => allows(i.permission, needed));
-  const files = chosen.filter((i) => i.kind === "file").length;
+  const folders = chosen.some((i) => i.kind === "folder");
   return (
-    <div className="drive-bulk" role="toolbar" aria-label={t("Chosen items")}>
-      <strong aria-live="polite">{t("{value} chosen", { value: count(chosen.length) })}</strong>
-      <div className="drive-bulk-actions">
-        {trash ? (
-          <>
-            <Button size="sm" variant="outline" onClick={actions.restore}>
-              <ArchiveRestore /> {t("Restore")}
+    <SelectionToolbar label={t("Actions for {value}", { value: count(chosen.length) })} count={chosen.length} onClear={actions.clear}>
+      {trash ? (
+        <>
+          <Button size="sm" variant="outline" onClick={actions.restore}>
+            <ArchiveRestore /> {t("Restore")}
+          </Button>
+          {every("Manage") && (
+            <Button size="sm" variant="outline" className="text-destructive" onClick={actions.destroy}>
+              <Trash2 /> {t("Delete forever")}
             </Button>
-            {every("Manage") && (
-              <Button size="sm" variant="outline" className="text-destructive" onClick={actions.destroy}>
-                <Trash2 /> {t("Delete forever")}
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            {every("Edit") && (
-              <Button size="sm" variant="outline" onClick={() => actions.move(false)}>
-                <FolderInput /> {t("Move to…")}
-              </Button>
-            )}
-            <Button size="sm" variant="outline" onClick={() => actions.move(true)}>
-              <Copy /> {t("Copy to…")}
+          )}
+        </>
+      ) : (
+        <>
+          {every("Edit") && (
+            <Button size="sm" variant="outline" onClick={() => actions.move(false)}>
+              <FolderInput /> {t("Move to…")}
             </Button>
-            {every("Manage") && (
-              <Button size="sm" variant="outline" onClick={actions.share}>
-                <Share2 /> {t("Share")}
-              </Button>
-            )}
-            <Button size="sm" variant="outline" disabled={!files} title={files ? (files < chosen.length ? t("Folders cannot be downloaded; the files are") : undefined) : t("Only files can be downloaded")} onClick={actions.download}>
-              <Download /> {t("Download")}
+          )}
+          <Button size="sm" variant="outline" onClick={() => actions.move(true)}>
+            <Copy /> {t("Copy to…")}
+          </Button>
+          {every("Manage") && (
+            <Button size="sm" variant="outline" onClick={actions.share}>
+              <Share2 /> {t("Share")}
             </Button>
-            {every("Edit") && (
-              <Button size="sm" variant="outline" className="text-destructive" onClick={actions.trash}>
-                <Trash2 /> {t("Move to trash")}
-              </Button>
-            )}
-          </>
-        )}
-      </div>
-      <Button size="icon-sm" variant="ghost" className="ms-auto" aria-label={t("Choose nothing")} title={t("Choose nothing (Esc)")} onClick={actions.clear}>
-        <X />
-      </Button>
-    </div>
+          )}
+          <Button size="sm" variant="outline" title={folders || chosen.length > 1 ? t("Downloads as one zip file") : undefined} onClick={actions.download}>
+            <Download /> {t("Download")}
+          </Button>
+          {every("Edit") && (
+            <Button size="sm" variant="outline" className="text-destructive" onClick={actions.trash}>
+              <Trash2 /> {t("Move to trash")}
+            </Button>
+          )}
+        </>
+      )}
+    </SelectionToolbar>
   );
 }

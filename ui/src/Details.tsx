@@ -3,23 +3,16 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
-import { api, download, errorMessage, formatDateTime, relativeTime, t as tr, isolate } from "@ferrum/client";
+import { api, errorMessage, formatDateTime, relativeTime, t as tr, isolate } from "@ferrum/client";
 import { Badge, Button, ListSkeleton, ReaderSkeleton, TabPanel, Tabs, confirmDialog, toast } from "@ferrum/kit";
 import { Composer, usePeople } from "@ferrum/records";
 import { EditorLink, useEditors } from "./editors";
-import { type ItemInfo, type Shareable, allows, defaultEditor, editorsFor, isLiveDoc, shared, shownName, sizeLabel } from "./files";
+import { type ItemInfo, type Shareable, allows, defaultEditor, editorsFor, shared, shownName, sizeLabel } from "./files";
 import { joinable, presenceLabel, useFilesPresence } from "./presence";
 import { roleLabel } from "./roles";
+import { Versions } from "./Versions";
 
 export type { ItemInfo };
-interface Version {
-  id: string;
-  version: number;
-  size: number;
-  author?: string | null;
-  comment?: string | null;
-  created_at?: string;
-}
 interface DriveComment {
   id: string;
   author?: string | null;
@@ -226,67 +219,6 @@ function Comments({ item, act }: { item: ItemInfo; act: Act }) {
       </ul>
       {allows(item.permission, "Comment") ? <Composer people={people} onPost={post} /> : <p className="faint">{tr("You can view this file but not comment on it.")}</p>}
     </div>
-  );
-}
-
-function Versions({ item, act, onRestored }: { item: ItemInfo; act: Act; onRestored: () => unknown }) {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["drive", "versions", item.id],
-    queryFn: ({ signal }) => api.get<{ versions: Version[] }>("/api/app/drive/list_versions", { file: item.id }, signal).then((r) => r.versions),
-  });
-  // A live document's editors hold its content: an old version comes back as a document of its own.
-  const live = isLiveDoc(item.name);
-  const restore = async (v: Version) => {
-    const message = live ? tr("A copy of it is made beside this document, which stays as it is.") : tr("It becomes the newest version; the others stay in the history.");
-    if (!(await confirmDialog({ title: tr("Restore version {version}?", { version: v.version }), message, confirmLabel: tr("Restore") }))) return;
-    try {
-      const made = await act("restore_version", { file: item.id, version: v.version });
-      toast(live ? tr("Version {version} is now “{value}”", { version: v.version, value: (made as { name?: string }).name ?? tr("a copy") }) : tr("Version {version} restored", { version: v.version }));
-      await qc.invalidateQueries({ queryKey: ["drive"] });
-      await onRestored();
-    } catch (e) {
-      toast(errorMessage(e), "error");
-    }
-  };
-  if (q.isLoading) return <ListSkeleton rows={3} />;
-  if (q.error) return <p className="muted">{isolate(errorMessage(q.error))}</p>;
-  return (
-    <ul className="drive-versions">
-      {q.data?.map((v) => (
-        <li key={v.id}>
-          <div>
-            <strong>{tr("Version {version}", { version: v.version })}</strong>
-            {v.version === item.version && <Badge tone="green">{tr("Current")}</Badge>}
-            <div className="faint">
-              {v.created_at ? formatDateTime(v.created_at) : ""}
-              {v.author ? ` · ${v.author}` : ""} · {isolate(sizeLabel(v.size))}
-            </div>
-            {v.comment && <div className="muted">{isolate(v.comment)}</div>}
-          </div>
-          <div className="row" style={{ gap: 4 }}>
-            <Button
-              size="sm"
-              variant="ghost"
-              icon="download"
-              aria-label={live ? tr("Download version {version} as a web page", { version: v.version }) : tr("Download version {version}", { version: v.version })}
-              onClick={() =>
-                void (
-                  live
-                    ? download(`/api/app/drive/files/${item.id}/content`, item.name.replace(/\.fdoc$/i, ".html"), { version: v.version, format: "html" })
-                    : download(`/api/app/drive/files/${item.id}/content`, item.name, { version: v.version })
-                ).catch((e) => toast(errorMessage(e), "error"))
-              }
-            />
-            {v.version !== item.version && allows(item.permission, "Edit") && (
-              <Button size="sm" onClick={() => void restore(v)}>
-                {tr("Restore")}
-              </Button>
-            )}
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }
 

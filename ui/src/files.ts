@@ -59,6 +59,9 @@ export interface Listing {
   offset: number;
 }
 
+/** Where a file's bytes are (add `?inline=1` to show it in place, `?version=` for an older one). */
+export const contentUrl = (id: string) => `/api/app/drive/files/${encodeURIComponent(id)}/content`;
+
 /** Documents edited live (`.fdoc`): Docs' editor opens them. */
 export const isLiveDoc = (name: string) => /\.fdoc$/i.test(name);
 
@@ -85,7 +88,7 @@ export function sizeLabel(bytes: number | null): string {
 }
 
 /** What a glyph shows: a folder, or the kind of file its name says. */
-export type Look = "folder" | "text" | "sheet" | "slides" | "pdf" | "image" | "video" | "audio" | "archive" | "file";
+export type Look = "folder" | "text" | "sheet" | "slides" | "pdf" | "image" | "video" | "audio" | "archive" | "code" | "file";
 
 const LOOKS: [RegExp, Look][] = [
   [/\.(fdoc|docx?|odt|rtf|txt|md)$/i, "text"],
@@ -96,6 +99,7 @@ const LOOKS: [RegExp, Look][] = [
   [/\.(mp4|mov|webm|mkv|avi)$/i, "video"],
   [/\.(mp3|wav|ogg|m4a|flac|aac)$/i, "audio"],
   [/\.(zip|tar|gz|tgz|7z|rar|bz2|xz)$/i, "archive"],
+  [/\.(json|jsonl|geojson|m?[jt]sx?|cjs|py|rb|go|rs|java|kt|c|h|cc|cpp|hpp|cs|php|sh|bash|zsh|sql|css|scss|less|html?|xml|ya?ml|toml|ini|conf|env|lua|swift|r|pl|vue|svelte|diff|patch|gradle|tf|proto)$/i, "code"],
 ];
 
 export const lookOf = (kind: "file" | "folder", name: string): Look => (kind === "folder" ? "folder" : (LOOKS.find(([re]) => re.test(name))?.[1] ?? "file"));
