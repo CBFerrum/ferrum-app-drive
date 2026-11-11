@@ -1656,3 +1656,65 @@ a.drive-name:focus-visible > span {
 .drive-retention {
   margin: 0;
 }
+
+/* ── what Drive sends by itself (UploadsPanel.tsx) ── */
+.drive-uploads {
+  position: fixed;
+  z-index: 150;
+  /* The side the toasts are not on (they come up at the end). */
+  inset-inline-start: max(16px, env(safe-area-inset-left));
+  inset-block-end: max(16px, env(safe-area-inset-bottom));
+  display: grid;
+  gap: 8px;
+  inline-size: min(24rem, calc(100vw - 32px));
+  max-block-size: 60dvh;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.drive-uploads h2 {
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+.drive-uploads ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.drive-uploads li {
+  display: grid;
+  gap: 4px;
+}
+.drive-uploads-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.drive-uploads-name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drive-uploads small {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+.drive-uploads small.drive-uploads-err {
+  color: var(--danger);
+}
+@media (max-width: 600px) {
+  .drive-uploads {
+    inset-block-end: max(8px, env(safe-area-inset-bottom));
+    inset-inline: 8px;
+    inline-size: auto;
+  }
+}
