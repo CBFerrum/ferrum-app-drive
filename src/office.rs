@@ -434,12 +434,15 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, theme: O
     }))
 }
 
-/// The editor's look, as Collabora takes it on its address: `ui_theme=dark|light` and `lang=<tag>`,
-/// each only when it is a value the editor understands (a made-up one is left out, not passed on).
+/// The editor's look, as Collabora takes it on its address: `ui_defaults=UITheme=dark|light` (the editor's own
+/// chrome and its grid: without it Collabora follows the browser's colour scheme, not Ferrum's), `ui_theme` (the
+/// dialogs it opens in frames) and `lang=<tag>`, each only when it is a value the editor understands (a made-up
+/// one is left out, not passed on). Collabora 26.04 has no message to change the theme of an open editor: a
+/// change of theme opens the session again with the new address.
 pub fn ui_params(theme: Option<&str>, lang: Option<&str>) -> String {
     let mut out = String::new();
     if let Some(t) = theme.filter(|t| matches!(*t, "dark" | "light")) {
-        out.push_str(&format!("ui_theme={t}&"));
+        out.push_str(&format!("ui_defaults=UITheme%3D{t}&ui_theme={t}&"));
     }
     if let Some(l) = lang.filter(|l| (2..=12).contains(&l.len()) && l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
         out.push_str(&format!("lang={}&", l.replace('_', "-")));
@@ -665,8 +668,8 @@ mod tests {
 
     #[test]
     fn the_editor_is_given_the_look_it_understands_and_nothing_else() {
-        assert_eq!(ui_params(Some("dark"), Some("ar")), "ui_theme=dark&lang=ar&");
-        assert_eq!(ui_params(Some("light"), Some("pt_BR")), "ui_theme=light&lang=pt-BR&");
+        assert_eq!(ui_params(Some("dark"), Some("ar")), "ui_defaults=UITheme%3Ddark&ui_theme=dark&lang=ar&");
+        assert_eq!(ui_params(Some("light"), Some("pt_BR")), "ui_defaults=UITheme%3Dlight&ui_theme=light&lang=pt-BR&");
         // Anything else is left out, so nothing a page makes up reaches the editor's address.
         assert_eq!(ui_params(Some("blue&x=1"), Some("en&evil=1")), "");
         assert_eq!(ui_params(None, Some("x")), "");
