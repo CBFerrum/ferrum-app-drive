@@ -101,6 +101,8 @@ export interface Report {
   step: (sent: number) => void;
   /** What is happening when it is not simply sending. */
   note: (words: string | null) => void;
+  /** Stop made the server discard what was sent (the parts are gone, not kept for a day). */
+  discarded?: () => void;
 }
 
 /** Sends `file`; resolves with the stored file. Rejects with a `Refused` once the tries are spent (what was sent stays), or with `aborted` when stopped. */
@@ -121,6 +123,28 @@ export async function uploadResumable(file: File, report: Report, signal: AbortS
   }
   up ??= await api.post<PartsState>("/api/files/uploads", { file_name: file.name, content_type: file.type, size: file.size, parts: true });
   keep({ ...kept(), [key]: up.upload_id });
+  try {
+    return await sendParts(file, key, up, report, signal, send, wait, stands);
+  } catch (e) {
+    // Stopped: what was sent is of no use to anyone, so the server is asked to drop it (the part in flight has been aborted).
+    if ((e as { aborted?: boolean }).aborted) await discard(up.upload_id, key, report);
+    throw e;
+  }
+}
+
+/** Asks the server to forget an upload and its parts. Only a server that has the route is believed: a 404 or 405 (an older one) or no answer leaves the parts kept, to expire on their own. */
+export async function discard(id: string, key: string, report?: Pick<Report, "discarded">) {
+  try {
+    await api.del(path(id));
+    forget(key);
+    report?.discarded?.();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sendParts(file: File, key: string, up: PartsState, report: Report, signal: AbortSignal, send: Send, wait: (ms: number) => Promise<void>, stands: (id: string) => Promise<PartsState>) {
   let offset = up.offset;
   report.step(offset);
   for (let tries = 0; offset < file.size; ) {

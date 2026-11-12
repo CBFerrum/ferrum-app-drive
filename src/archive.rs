@@ -207,6 +207,9 @@ pub async fn build(k: &Kernel, ctx: &Ctx, p: &Params<'_>) -> Result<SiteResponse
             let images = crate::images::for_export(k, ctx, Some(&g), item.id, state).await?;
             let (page, lost) = crate::site::live_page(k, &item.name, state, &images);
             not_carried.extend(lost);
+            if !crate::site::threads_of(k, ctx, item.id).await?.is_empty() {
+                not_carried.push(ferrum_kernel::coedit::NOT_CARRIED_COMMENTS.to_string());
+            }
             // A live document goes in as a page: its name says so.
             let path = match entry.path.strip_suffix(".fdoc") {
                 Some(stem) => format!("{stem}.html"),

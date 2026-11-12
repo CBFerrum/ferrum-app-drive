@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const calls: string[] = [];
 let standing = 0;
+let deleteWith = 0;
 vi.mock("@ferrum/client", () => ({
   ApiError: class extends Error {
     constructor(readonly status: number) {
@@ -10,6 +11,12 @@ vi.mock("@ferrum/client", () => ({
   },
   t: (s: string, v?: Record<string, unknown>) => s.replace(/\{(\w+)\}/g, (_, k) => String(v?.[k] ?? "")),
   api: {
+    del: async (url: string) => {
+      calls.push(`DELETE ${url}`);
+      if (deleteWith) throw new (class extends Error {
+        status = deleteWith;
+      })();
+    },
     get: async () => ({ upload_id: "u1", size: 20, offset: standing, part_bytes: 8, expires_at: new Date(Date.now() + 1e7).toISOString(), parts: true }),
     post: async (url: string) => (calls.push(`POST ${url}`), url.endsWith("/complete") ? { id: "file" } : { upload_id: "u1", size: 20, offset: 0, part_bytes: 8, expires_at: new Date(Date.now() + 1e7).toISOString(), parts: true }),
   },
@@ -23,6 +30,7 @@ const noWait = () => Promise.resolve();
 beforeEach(() => {
   calls.length = 0;
   standing = 0;
+  deleteWith = 0;
   const store = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
 });
@@ -84,5 +92,32 @@ describe("a large upload in parts", () => {
       throw new Refused("too big", 422);
     };
     await expect(uploadResumable(file, report, new AbortController().signal, send as never, noWait)).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe("Stop on a large upload", () => {
+  const stopAfterFirstPart = async (reportOver = report) => {
+    const stop = new AbortController();
+    const send = async (_m: string, url: string) => {
+      stop.abort();
+      throw Object.assign(new Error("Stopped."), { aborted: true, url });
+    };
+    await expect(uploadResumable(file, reportOver, stop.signal, send as never, noWait)).rejects.toMatchObject({ aborted: true });
+  };
+
+  it("asks the server to discard the parts and forgets the upload", async () => {
+    const discarded = vi.fn();
+    await stopAfterFirstPart({ ...report, discarded } as never);
+    expect(calls).toContain("DELETE /api/files/uploads/u1");
+    expect(discarded).toHaveBeenCalledOnce();
+    expect(localStorage.getItem("drive.parts")).toBeNull();
+  });
+
+  it("keeps the upload id, and does not say discarded, when the server has no such route", async () => {
+    deleteWith = 404;
+    const discarded = vi.fn();
+    await stopAfterFirstPart({ ...report, discarded } as never);
+    expect(discarded).not.toHaveBeenCalled();
+    expect(localStorage.getItem("drive.parts")).toContain("u1");
   });
 });

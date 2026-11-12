@@ -4,6 +4,7 @@
 
 import { useSyncExternalStore } from "react";
 import { errorMessage } from "@ferrum/client";
+import { trackInBar, trayOf } from "./barTray";
 import type { Report } from "./partsUpload";
 
 export interface Row {
@@ -15,6 +16,8 @@ export interface Row {
   /** What is happening when it is not simply sending (retrying, waiting for the connection). */
   note: string | null;
   error: string | null;
+  /** Stopped, and the server discarded what was sent (otherwise it is kept for a day). */
+  discarded?: boolean;
 }
 
 type Run = (report: Report, signal: AbortSignal) => Promise<unknown>;
@@ -40,14 +43,19 @@ async function go(id: number) {
   const entry = runs.get(id);
   if (!entry) return;
   entry.stop = new AbortController();
-  patch(id, { state: "going", error: null, note: null });
-  await entry.run({ step: (sent) => patch(id, { sent }), note: (note) => patch(id, { note }) }, entry.stop.signal);
+  patch(id, { state: "going", error: null, note: null, discarded: false });
+  await entry.run({ step: (sent) => patch(id, { sent }), note: (note) => patch(id, { note }), discarded: () => patch(id, { discarded: true }) }, entry.stop.signal);
   patch(id, { state: "done", sent: rows.find((r) => r.id === id)?.size ?? 0, note: null });
   setTimeout(() => dismiss(id), 6000);
 }
 
-/** Starts a tracked upload. The promise settles with the first try: stopped or failed rejects (a Retry from the panel goes on by itself, then calls `after`). */
-export function track(file: { name: string; size: number }, run: Run, after?: () => void): Promise<unknown> {
+/** Starts a tracked upload: in the bar's tray when the bar can track it, else in Drive's panel. The promise settles with the first try: stopped or failed rejects (a Retry goes on by itself, then calls `after`). */
+export async function track(file: { name: string; size: number }, run: Run, after?: () => void): Promise<unknown> {
+  const bar = await trackInBar(trayOf(), file, run, after);
+  return bar ? bar.ran : trackInPanel(file, run, after);
+}
+
+function trackInPanel(file: { name: string; size: number }, run: Run, after?: () => void): Promise<unknown> {
   const id = ++seq;
   runs.set(id, { run, stop: new AbortController(), after });
   set([...rows, { id, name: file.name, size: file.size, sent: 0, state: "going", note: null, error: null }]);
