@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.16.1
+
+Needs a platform at 28a3e56 or later (comments in Word exports, the cancel route, the bar's upload tray). Built with the Ferrum-Frontend commit named in `ui/dist/.source`.
+
+A Word export of a live document carries its comments: each thread with its author, its replies in order and whether it is resolved, anchored to the words it was made on. A comment whose words were since deleted keeps them as a quote, and the download says how many there were. Only a reader who may see comments gets them; a public link's export carries none and says nothing about them. HTML, PDF, Markdown and text exports, and a zip holding live documents, list comments among what they could not carry. An export of an older version carries no comments (their anchors belong to the text of its day).
+
+Stop on a large upload removes what was sent, at once; stopping again does nothing. On a server without that route the parts are kept for a day as before and the panel says so.
+
+Large uploads and new versions show in the bar's upload tray, with progress in bytes, the retry note, Stop and Retry. Drive's own panel appears only on a server whose bar cannot track them.
+
+Seen on a running server: a document with a resolved thread, a reply and a comment on deleted text exported to Word and read in LibreOffice with notes in the margin; a public link's Word file with no comments part; a 60 MB upload and a version upload in the bar's tray through a stalled part, the tries spent, Retry and Stop (the server answers 404 for the upload afterwards). 135 interface tests and 35 Rust tests.
+
+Not in this release: comment authors by display name (Drive holds none: they show as the address before the @); the bar's tray says "Stopped", not that the parts were discarded; closing the page does not cancel a large upload (its parts stay for a day and the tray says the upload stopped); desktop sync, WebDAV and offline use; search inside office and PDF files; thumbnails made by the server; transfer of ownership; downloading an office file as PDF.
+
 ## 0.16.0
 
 Drive works the way people expect a drive to. Built with Ferrum-Frontend 60402fa; needs a platform at 7ccc85c or later (the exporters) and, for office files, the online editor the platform now ships on by default.
