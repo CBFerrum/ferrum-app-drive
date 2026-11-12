@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.2
+
+Built with the Ferrum-Frontend commit named in `ui/dist/.source`. Needs no newer platform than 0.16.1; the editor service is the one the platform ships (Collabora Online 26.04), no change to its configuration.
+
+The online editor for spreadsheets, presentations and Word files now opens in Ferrum's theme. Until now it followed the browser's own colour scheme: a person using Ferrum dark on a browser set to light got a light editor inside a dark page (and the other way round). Drive now sends the editor's own setting for it, `ui_defaults=UITheme=dark|light`, which Collabora honours on the address it is opened with (it also keeps `ui_theme` for the dialogs the editor opens in frames). Collabora has no message to change the theme of an editor that is already open, so when Ferrum's theme changes with a file open Drive opens the session again in the new theme, as it did before. In dark, Collabora darkens the document canvas as well (its own default; View has the switch for a white page).
+
+Seen on a running server: a spreadsheet and a presentation, Ferrum light on a browser set to dark and Ferrum dark on a browser set to light, before and after (the editor's `data-theme` and body colour read from its frame), and the editor reopening dark when Ferrum goes dark with the file open; the versions list of a file with eleven versions in both themes. The address was rewritten in the browser to what this build sends: the server on 5240 runs 0.16.1 until it is rebuilt. 135 interface tests and 35 Rust tests.
+
+Not in this release: switching an open editor's theme without reopening it (Collabora 26.04 has no message for it); a white document canvas in dark; comment authors by display name (Drive holds none: they show as the address before the @); the bar's tray says "Stopped", not that the parts were discarded; closing the page does not cancel a large upload; desktop sync, WebDAV and offline use; search inside office and PDF files; thumbnails made by the server; transfer of ownership; downloading an office file as PDF.
+
 ## 0.16.1
 
 Needs a platform at 28a3e56 or later (comments in Word exports, the cancel route, the bar's upload tray). Built with the Ferrum-Frontend commit named in `ui/dist/.source`.
