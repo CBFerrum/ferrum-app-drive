@@ -12,7 +12,7 @@ Not in this release: switching an open editor's theme without reopening it (Coll
 
 ## 0.16.1
 
-Needs a platform at 28a3e56 or later (comments in Word exports, the cancel route, the bar's upload tray). Built with the Ferrum-Frontend commit named in `ui/dist/.source`.
+Needs a platform at 5203c98 or later (comments in Word exports, the cancel route, the bar's upload tray). Built with the Ferrum-Frontend commit named in `ui/dist/.source`.
 
 A Word export of a live document carries its comments: each thread with its author, its replies in order and whether it is resolved, anchored to the words it was made on. A comment whose words were since deleted keeps them as a quote, and the download says how many there were. Only a reader who may see comments gets them; a public link's export carries none and says nothing about them. HTML, PDF, Markdown and text exports, and a zip holding live documents, list comments among what they could not carry. An export of an older version carries no comments (their anchors belong to the text of its day).
 
@@ -26,7 +26,7 @@ Not in this release: comment authors by display name (Drive holds none: they sho
 
 ## 0.16.0
 
-Drive works the way people expect a drive to. Built with Ferrum-Frontend 60402fa; needs a platform at 7ccc85c or later (the exporters) and, for office files, the online editor the platform now ships on by default.
+Drive works the way people expect a drive to. Built with Ferrum-Frontend 99d45a0; needs a platform at 6f94c5a or later (the exporters) and, for office files, the online editor the platform now ships on by default.
 
 **Previews in place.** Opening a file shows it inside Drive, with the arrow keys moving through the folder and Escape closing: pictures (fit, zoom, rotate), video and audio (ranged requests, so they seek), PDF drawn in the page with page numbers, zoom, selectable text and a search that marks the matched word, text, Markdown, CSV as a table, JSON and code. Office files open read-only in the online editor; without one, the page says what the administrator has to turn on, with Download. Pictures up to 1 MB show themselves in the grid.
 
@@ -48,7 +48,7 @@ Not in this release: desktop sync, WebDAV and offline use; search inside office 
 
 ## 0.15.1
 
-The interface follows the upgraded design system, rebuilt with Ferrum-Frontend 0a47157. Text uses the kit's type roles (nothing under 12px) and controls its height tokens; loading shows skeletons shaped like what is coming; empty, no matches, denied, offline and failed are told apart; status colours come from stored state ids. The interface check now runs the UI lint against an empty baseline. A search or filter that hides every file offers to clear it; a refused folder is shown as refused, not as empty. A search result's snippet stays inside the name column, clamped to two lines. The share dialog fills the platform's frame instead of drawing a second one inside it.
+The interface follows the upgraded design system, rebuilt with Ferrum-Frontend 76c4fad. Text uses the kit's type roles (nothing under 12px) and controls its height tokens; loading shows skeletons shaped like what is coming; empty, no matches, denied, offline and failed are told apart; status colours come from stored state ids. The interface check now runs the UI lint against an empty baseline. A search or filter that hides every file offers to clear it; a refused folder is shown as refused, not as empty. A search result's snippet stays inside the name column, clamped to two lines. The share dialog fills the platform's frame instead of drawing a second one inside it.
 
 ## 0.15.0
 
@@ -56,11 +56,11 @@ Links that belong to the workspace (FEO-036). A public link names someone of the
 
 ## 0.14.12
 
-Rebuilt with Ferrum-Frontend c59c9a2: the names of its models, fields and manifest in Arabic and Hindi (266 each in ui/src/locales/names, which the platform serves to every page of the workspace, so a record's labels, the launcher and the bar read in the person's language), and the sentences its pages still showed in English (split around a link or a figure, built in code from a template or word by word) whole and translated (430 words each in ui/src/locales). Translated by the model, to be reviewed by native speakers.
+Rebuilt with Ferrum-Frontend 43d7779: the names of its models, fields and manifest in Arabic and Hindi (266 each in ui/src/locales/names, which the platform serves to every page of the workspace, so a record's labels, the launcher and the bar read in the person's language), and the sentences its pages still showed in English (split around a link or a figure, built in code from a template or word by word) whole and translated (430 words each in ui/src/locales). Translated by the model, to be reviewed by native speakers.
 
 ## 0.14.11
 
-Rebuilt with Ferrum-Frontend 155518c: the sentences its pages built in code (counts, dates, what a toast or a screen reader says) go through t() too, as whole sentences where code chose a word, and carry built-in Arabic and Hindi (382 words each in ui/src/locales, translated by the model and to be reviewed by native speakers).
+Rebuilt with Ferrum-Frontend 046a3a2: the sentences its pages built in code (counts, dates, what a toast or a screen reader says) go through t() too, as whole sentences where code chose a word, and carry built-in Arabic and Hindi (382 words each in ui/src/locales, translated by the model and to be reviewed by native speakers).
 
 ## 0.14.10
 
@@ -68,39 +68,39 @@ The assistant knows what its records mean in its pages (contributes.shell.assist
 
 ## 0.14.9
 
-Rebuilt with Ferrum-Frontend 5b22e7b: its own words carry built-in Arabic and Hindi (323 words each, ui/src/locales, translated by the model and to be reviewed by native speakers), fetched for the page's language only. The labels it keeps in objects, its dialogs, its page titles and the words it keeps in variables go through t() as well, and the names and sizes it shows as they are keep their order right to left. Its pages are drawn once their words are in, and its entry carries only the parts of the kit it uses.
+Rebuilt with Ferrum-Frontend 389b2af: its own words carry built-in Arabic and Hindi (323 words each, ui/src/locales, translated by the model and to be reviewed by native speakers), fetched for the page's language only. The labels it keeps in objects, its dialogs, its page titles and the words it keeps in variables go through t() as well, and the names and sizes it shows as they are keep their order right to left. Its pages are drawn once their words are in, and its entry carries only the parts of the kit it uses.
 
 ## 0.14.8
 
-Rebuilt with Ferrum-Frontend 6537d65: an action's link, code or token shown once is kept in a dialog to copy, and on a page that reads right to left, English left untranslated keeps its own order. Its own words go through the kit's t() (270 places), so a workspace's own words for its language reach them, and Admin, Interface words lists them under it (dist/words.json).
+Rebuilt with Ferrum-Frontend 1f5981d: an action's link, code or token shown once is kept in a dialog to copy, and on a page that reads right to left, English left untranslated keeps its own order. Its own words go through the kit's t() (270 places), so a workspace's own words for its language reach them, and Admin, Interface words lists them under it (dist/words.json).
 
 ## 0.14.7
 
-Rebuilt with Ferrum-Frontend d5d98f2: a workspace's own words for its interface (Admin, Interface words) reach its pages as they load; an attachment field that holds a picture shows it; and a value another record already has is said so, where the form said the record had been changed by someone else. Its own screens' margins, paddings, borders, alignment and insets go by the line's start and end, so they mirror right to left as the kit's do; what it places by coordinates (boards, timelines, charts, handles) stays as it was.
+Rebuilt with Ferrum-Frontend 8a1c2e7: a workspace's own words for its interface (Admin, Interface words) reach its pages as they load; an attachment field that holds a picture shows it; and a value another record already has is said so, where the form said the record had been changed by someone else. Its own screens' margins, paddings, borders, alignment and insets go by the line's start and end, so they mirror right to left as the kit's do; what it places by coordinates (boards, timelines, charts, handles) stays as it was.
 
 ## 0.14.6
 
-Rebuilt with Ferrum-Frontend 63280d3: right to left, its pages mirror as they read (icons that point along the line, margins and alignment by the line's start and end, arrow keys along it), and the records pages' words are in Arabic and Hindi.
+Rebuilt with Ferrum-Frontend 9d80f4f: right to left, its pages mirror as they read (icons that point along the line, margins and alignment by the line's start and end, arrow keys along it), and the records pages' words are in Arabic and Hindi.
 
 ## 0.14.5
 
-Rebuilt with Ferrum-Frontend a64416a: a new record's box whose default is 1 shows ticked, as it is saved.
+Rebuilt with Ferrum-Frontend 204b713: a new record's box whose default is 1 shows ticked, as it is saved.
 
 ## 0.14.4
 
-Rebuilt with Ferrum-Frontend 922fcfb: an action's dialog says every refusal, the errors on what the action made (another record's rows) among them, and an action with parameters and a confirmation asks once.
+Rebuilt with Ferrum-Frontend 6cfda39: an action's dialog says every refusal, the errors on what the action made (another record's rows) among them, and an action with parameters and a confirmation asks once.
 
 ## 0.14.3
 
-Rebuilt with Ferrum-Frontend a76295e: its pages show times on a person's own clock when they chose one on their Account page, while today and due dates stay on the workspace's day.
+Rebuilt with Ferrum-Frontend b39fffb: its pages show times on a person's own clock when they chose one on their Account page, while today and due dates stay on the workspace's day.
 
 ## 0.14.2
 
-A share's end dates are the workspace's days. Rebuilt with Ferrum-Frontend 24c3951, so its records' pages show times on the workspace's clock too, a draft numbered on submit is headed as a draft, and a record of an app that is not installed says so.
+A share's end dates are the workspace's days. Rebuilt with Ferrum-Frontend d350579, so its records' pages show times on the workspace's clock too, a draft numbered on submit is headed as a draft, and a record of an app that is not installed says so.
 
 ## 0.14.1
 
-Rebuilt with Ferrum-Frontend bb60115: a record page reads an empty number or check as the server does, so an action whose condition needs one shows, and a workspace's settings open as their one record.
+Rebuilt with Ferrum-Frontend 20d08e5: a record page reads an empty number or check as the server does, so an action whose condition needs one shows, and a workspace's settings open as their one record.
 
 ## 0.14.0
 
@@ -110,7 +110,7 @@ Uploads past the most a request carries (FERRUM_DRIVE_MAX_FILE_MB, 32 MB unless 
 - A live document is uploaded whole.
 - Chosen again after a reload, the same file goes on from where its upload stood.
 - The workspace's own limit on a file (`max_upload_mb`, up to 1024) now holds by itself. It is no longer capped by what one request carries, which `limits.request_bytes` now reports.
-- Files up to the request limit still go through the shell, which carries on with them across pages. Built with Ferrum-Frontend 4a3681c.
+- Files up to the request limit still go through the shell, which carries on with them across pages. Built with Ferrum-Frontend 7cebd29.
 
 ## 0.13.0
 
@@ -118,7 +118,7 @@ Downloads stream: a file's content, or a version's, and a guest's download throu
 
 ## 0.12.3
 
-Rebuilt with Ferrum-Frontend 00dea07: in a workflow state that names what may change, the other fields show read-only, and the fields the state needs show required.
+Rebuilt with Ferrum-Frontend ae13c69: in a workflow state that names what may change, the other fields show read-only, and the fields the state needs show required.
 
 ## 0.12.2
 
@@ -126,7 +126,7 @@ Rebuilt with Ferrum-Frontend daeadda: after an action runs, a record page shows 
 
 ## 0.12.1
 
-Rebuilt with Ferrum-Frontend 80ff179: a field's label names its control for assistive technology, and a record whose title is a link shows that record's title, not its id.
+Rebuilt with Ferrum-Frontend 89b7cc7: a field's label names its control for assistive technology, and a record whose title is a link shows that record's title, not its id.
 
 ## 0.12.0
 
