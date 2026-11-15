@@ -8,8 +8,8 @@
 //! file or browse a folder: View links list and preview images and PDFs, Download links also
 //! download. Links stop working when revoked, expired, out of downloads (counted atomically) or
 //! when the item is trashed or deleted, and every such case answers exactly like an unknown
-//! token. A password (Argon2id) is exchanged once for a one-hour grant signed with a per-tenant
-//! key kept outside every entity; ten wrong passwords lock the link for 15 minutes.
+//! token. A password (Argon2id) is exchanged once for a one-hour grant, signed with a key derived
+//! from Drive's own key in the vault (`keys.rs`); ten wrong passwords lock the link for 15 minutes.
 //!
 //! Sharing with someone outside the workspace (a guest) makes a Download link for them alone,
 //! under the same rules, and mails it to them. Sharing with them again replaces it.
@@ -18,14 +18,15 @@ use crate::acl::{Grants, Level};
 use crate::content;
 use crate::day_start;
 use crate::files::actor;
+use crate::keys;
 use crate::ops::{Out, Params};
 use crate::tree::{self, FILE_COLS, FOLDER_COLS, Item, Kind};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use ferrum_domain::util::elevated;
+use ferrum_kernel::vault::Derived;
 use ferrum_kernel::{Ctx, Doc, Error, Kernel, Result, SiteRequest, SiteResponse, Tx, notify};
-use hmac::{Hmac, Mac};
 use rand::Rng;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -587,52 +588,62 @@ async fn active_link(tx: &mut Tx, tenant: Uuid, token: &str) -> Result<(Link, It
     Ok((link, item))
 }
 
-/// The per-tenant key signing unlock grants (created on first use; never in any entity).
-pub(crate) async fn tenant_key(tx: &mut Tx, tenant: Uuid) -> Result<Vec<u8>> {
-    let existing: Option<Vec<u8>> = sqlx::query_scalar("select secret from drive_secret where tenant_id = $1").bind(tenant).fetch_optional(&mut **tx).await?;
-    if let Some(k) = existing {
-        return Ok(k);
-    }
-    let mut fresh = [0u8; 32];
-    rand::rng().fill(&mut fresh);
-    sqlx::query("insert into drive_secret (tenant_id, secret) values ($1, $2) on conflict do nothing").bind(tenant).bind(&fresh[..]).execute(&mut **tx).await?;
-    Ok(sqlx::query_scalar("select secret from drive_secret where tenant_id = $1").bind(tenant).fetch_one(&mut **tx).await?)
+/// What a grant signs: the link, its expiry and its current password (a new password voids old grants).
+fn grant_message(link: Uuid, password_hash: &str, exp: i64) -> Vec<u8> {
+    let mut m = b"ferrum-drive-link-grant:".to_vec();
+    m.extend_from_slice(link.as_bytes());
+    m.extend_from_slice(&exp.to_be_bytes());
+    m.extend_from_slice(&Sha256::digest(password_hash.as_bytes()));
+    m
 }
 
-/// The grant MAC binds the link, its current password (a new password voids old grants) and the expiry.
-fn grant_mac(key: &[u8], link: Uuid, password_hash: &str, exp: i64) -> Result<Hmac<Sha256>> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(Error::internal)?;
-    mac.update(b"ferrum-drive-link-grant:");
-    mac.update(link.as_bytes());
-    mac.update(&exp.to_be_bytes());
-    mac.update(&Sha256::digest(password_hash.as_bytes()));
-    Ok(mac)
+/// `<expiry>.v<n>.<mac>`, signed with the key for grants from version n of Drive's key (`keys.rs`). Before 0.17 a
+/// grant was `<expiry>.<mac>`, signed with the old key.
+fn sign_grant(key: &[u8], version: i32, link: Uuid, password_hash: &str, exp: i64) -> String {
+    format!("{exp}.{}", keys::signed(key, version, &grant_message(link, password_hash, exp)))
 }
 
-fn sign_grant(key: &[u8], link: Uuid, password_hash: &str, exp: i64) -> Result<String> {
-    Ok(format!("{exp}.{}", URL_SAFE_NO_PAD.encode(grant_mac(key, link, password_hash, exp)?.finalize().into_bytes())))
-}
-
-/// Checks a grant in constant time.
-fn grant_valid(key: &[u8], link: Uuid, password_hash: &str, grant: &str, now: i64) -> bool {
-    let Some((exp, sig)) = grant.trim().split_once('.') else { return false };
-    let (Ok(exp), Ok(sig)) = (exp.parse::<i64>(), URL_SAFE_NO_PAD.decode(sig)) else { return false };
-    exp > now && grant_mac(key, link, password_hash, exp).is_ok_and(|m| m.verify_slice(&sig).is_ok())
+/// A grant as it reads: its expiry, the version of Drive's key that signed it (none: the old key) and its MAC.
+fn read_grant(grant: &str) -> Option<(i64, Option<i32>, Vec<u8>)> {
+    let parts: Vec<&str> = grant.trim().split('.').collect();
+    let (exp, version, mac) = match parts.as_slice() {
+        [exp, mac] => (exp, None, mac),
+        [exp, v, mac] => (exp, Some(keys::version(v)?), mac),
+        _ => return None,
+    };
+    Some((exp.parse().ok()?, version, URL_SAFE_NO_PAD.decode(mac).ok()?))
 }
 
 fn header<'a>(req: &'a SiteRequest, name: &str) -> Option<&'a str> {
     req.headers.get(name).and_then(Value::as_str)
 }
 
-/// Password-protected links need a valid grant (`x-drive-grant` header or `grant` parameter).
-async fn gate(tx: &mut Tx, req: &SiteRequest, link: &Link) -> Result<()> {
-    let Some(hash) = &link.password_hash else { return Ok(()) };
-    let grant = header(req, "x-drive-grant").or_else(|| req.query.get("grant").and_then(Value::as_str));
-    let key = tenant_key(tx, req.tenant).await?;
-    if grant.is_some_and(|gr| grant_valid(&key, link.id, hash, gr, Utc::now().timestamp())) {
-        return Ok(());
+/// The grant a request carries (`x-drive-grant` header or `grant` parameter).
+fn grant_of(req: &SiteRequest) -> Option<&str> {
+    header(req, "x-drive-grant").or_else(|| req.query.get("grant").and_then(Value::as_str))
+}
+
+/// The key a request's grant was signed with, taken before any transaction (the vault answers on a connection of its
+/// own); none for a grant from before 0.17, or none at all.
+async fn grant_key(k: &Kernel, req: &SiteRequest) -> Result<Option<Derived>> {
+    match grant_of(req).and_then(read_grant) {
+        Some((_, Some(version), _)) => keys::at(k, req.tenant, keys::GRANTS, version).await,
+        _ => Ok(None),
     }
-    Err(Error::Unauthorized("this link needs its password: send it to the link's /unlock address".into()))
+}
+
+/// Password-protected links need a valid grant: unexpired, for this link and its current password (in constant time).
+async fn gate(k: &Kernel, req: &SiteRequest, link: &Link, key: Option<&Derived>) -> Result<()> {
+    let Some(hash) = &link.password_hash else { return Ok(()) };
+    let refused = || Error::Unauthorized("this link needs its password: send it to the link's /unlock address".into());
+    let Some((exp, version, mac)) = grant_of(req).and_then(read_grant).filter(|g| g.0 > Utc::now().timestamp()) else { return Err(refused()) };
+    let message = grant_message(link.id, hash, exp);
+    let good = match version {
+        Some(_) => key.is_some_and(|key| keys::mac_ok(key.bytes(), &message, &mac)),
+        // One from before 0.17: the old key checks it, for a day and an hour after it stopped signing at most.
+        None => keys::old_ok(k, req.tenant, &message, &mac).await?,
+    };
+    if good { Ok(()) } else { Err(refused()) }
 }
 
 /// An item inside the link's item (or the item itself), out of the trash.
@@ -676,9 +687,10 @@ fn query(req: &SiteRequest) -> Value {
 async fn view(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteResponse> {
     let q = query(req);
     let q = Params(&q);
+    let key = grant_key(k, req).await?;
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let (link, item) = active_link(&mut tx, req.tenant, token).await?;
-    gate(&mut tx, req, &link).await?;
+    gate(k, req, &link, key.as_ref()).await?;
     let left = link.max_downloads.filter(|m| *m > 0).map(|m| m - link.download_count.unwrap_or(0));
     let mut out = json!({
         "link": {"access": link.access, "expires_at": link.expires_at, "downloads_left": left, "has_password": link.password_hash.is_some(), "note": link.note},
@@ -733,8 +745,10 @@ async fn unlock(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespon
     let Some(password) = password else { return Err(Error::field("password", "is required")) };
     // Argon2 runs outside any transaction.
     let ok = ferrum_kernel::auth::verify_password(password, hash.clone()).await;
+    // The grant's key, taken before the transaction: the vault answers on a connection of its own.
+    let key = if ok { Some(keys::current(k, req.tenant, keys::GRANTS).await?) } else { None };
     let mut tx = k.db.tenant_tx(req.tenant).await?;
-    if !ok {
+    let Some(key) = key else {
         sqlx::query(
             "update e_drive_link set failed_attempts = coalesce(failed_attempts, 0) + 1, \
              locked_until = case when coalesce(failed_attempts, 0) + 1 >= 10 then now() + interval '15 minutes' else locked_until end \
@@ -746,15 +760,14 @@ async fn unlock(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespon
         .await?;
         tx.commit().await?;
         return Err(Error::Unauthorized("wrong password".into()));
-    }
+    };
     sqlx::query("update e_drive_link set failed_attempts = 0, locked_until = null where tenant_id = $1 and id = $2 and coalesce(failed_attempts, 0) > 0")
         .bind(req.tenant)
         .bind(link.id)
         .execute(&mut *tx)
         .await?;
-    let key = tenant_key(&mut tx, req.tenant).await?;
     let exp = (Utc::now() + Duration::hours(1)).timestamp();
-    let grant = sign_grant(&key, link.id, &hash, exp)?;
+    let grant = sign_grant(key.bytes(), key.version(), link.id, &hash, exp);
     tx.commit().await?;
     let mut resp = SiteResponse::json(200, &json!({"grant": grant, "expires_at": DateTime::<Utc>::from_timestamp(exp, 0)}));
     resp.headers = guest_headers();
@@ -767,9 +780,10 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
     let q = query(req);
     let q = Params(&q);
     let inline = q.flag("inline");
+    let key = grant_key(k, req).await?;
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let (link, item) = active_link(&mut tx, req.tenant, token).await?;
-    gate(&mut tx, req, &link).await?;
+    gate(k, req, &link, key.as_ref()).await?;
     let file = within(&mut tx, req.tenant, &item, q.uuid("file").map_err(|_| gone())?, Kind::File).await?;
     let row: Option<(Option<String>, Option<String>)> =
         sqlx::query_as("select stored_file, content_type from e_drive_file_version where tenant_id = $1 and file = $2 and version_no = $3")
@@ -838,20 +852,31 @@ mod tests {
         assert!(!well_formed("short") && !well_formed(&format!("{}!", &a[..42])) && !well_formed(&format!("{a}x")));
     }
 
+    /// What `gate` says of a grant signed with version 1 of `key`'s source.
+    fn valid(key: &[u8], link: Uuid, password_hash: &str, grant: &str, now: i64) -> bool {
+        read_grant(grant).is_some_and(|(exp, v, mac)| exp > now && v == Some(1) && keys::mac_ok(key, &grant_message(link, password_hash, exp), &mac))
+    }
+
     #[test]
     fn grants_bind_key_link_password_and_time() {
         let (key, other_key) = ([7u8; 32], [8u8; 32]);
         let (link, other_link) = (Uuid::now_v7(), Uuid::now_v7());
         let now = 1_800_000_000;
-        let g = sign_grant(&key, link, "$argon2id$hash-1", now + 3600).unwrap();
-        assert!(grant_valid(&key, link, "$argon2id$hash-1", &g, now));
-        assert!(!grant_valid(&key, link, "$argon2id$hash-1", &g, now + 3600), "expired");
-        assert!(!grant_valid(&other_key, link, "$argon2id$hash-1", &g, now), "another tenant's key");
-        assert!(!grant_valid(&key, other_link, "$argon2id$hash-1", &g, now), "another link");
-        assert!(!grant_valid(&key, link, "$argon2id$hash-2", &g, now), "the password changed");
-        let (exp, sig) = g.split_once('.').unwrap();
-        let stretched = format!("{}.{sig}", exp.parse::<i64>().unwrap() + 86_400);
-        assert!(!grant_valid(&key, link, "$argon2id$hash-1", &stretched, now), "the expiry is signed");
-        assert!(!grant_valid(&key, link, "$argon2id$hash-1", "garbage", now));
+        let g = sign_grant(&key, 1, link, "$argon2id$hash-1", now + 3600);
+        assert!(g.starts_with(&format!("{}.v1.", now + 3600)), "{g}");
+        assert!(valid(&key, link, "$argon2id$hash-1", &g, now));
+        assert!(!valid(&key, link, "$argon2id$hash-1", &g, now + 3600), "expired");
+        assert!(!valid(&other_key, link, "$argon2id$hash-1", &g, now), "another tenant's key");
+        assert!(!valid(&key, other_link, "$argon2id$hash-1", &g, now), "another link");
+        assert!(!valid(&key, link, "$argon2id$hash-2", &g, now), "the password changed");
+        let (exp, rest) = g.split_once('.').unwrap();
+        let stretched = format!("{}.{rest}", exp.parse::<i64>().unwrap() + 86_400);
+        assert!(!valid(&key, link, "$argon2id$hash-1", &stretched, now), "the expiry is signed");
+        assert!(!valid(&key, link, "$argon2id$hash-1", "garbage", now));
+        // One from before 0.17 names no version: the old key checks it.
+        let old = format!("{}.{}", now + 3600, URL_SAFE_NO_PAD.encode(keys::mac(&key, &grant_message(link, "$argon2id$hash-1", now + 3600))));
+        let (exp, version, mac) = read_grant(&old).unwrap();
+        assert_eq!((exp, version), (now + 3600, None));
+        assert!(keys::mac_ok(&key, &grant_message(link, "$argon2id$hash-1", exp), &mac));
     }
 }

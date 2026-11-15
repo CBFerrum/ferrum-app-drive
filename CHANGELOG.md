@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.17.0
+
+Needs a platform with the vault (Ferrum `8e6b1f0` or later). A database change (`drive/007_old_key.sql`: the column
+`drive_secret.retired_at`) is applied at startup; nothing existing moves. No interface change.
+
+**Grants and editor tokens are signed with keys from the vault.** One key per workspace signed both, kept unsealed in
+`drive_secret`: whoever could read the database, or a dump of it, could forge the grant that opens a password-protected
+link and an editor token for any file and person. Each is now signed with a key derived from Drive's own key in the
+vault for its purpose (`link-grants`, `wopi-tokens`), made when needed and kept nowhere. What is signed names the version
+of Drive's key it came from (`v1`), so a new version of that key (`ferrum task vault_rotate level:owner … owner:drive`)
+leaves what was signed before working until it expires.
+
+**What was signed before keeps working.** A grant lives an hour, an editor token ten hours. The old key moves into the
+vault, sealed, as Drive's secret `old-signing-key`, and checks what it signed until ten hours and a day after it stopped
+signing (`drive_secret.retired_at`; the day covers replicas of the previous build still signing with it while an upgrade
+rolls out, or after a rollback), and nothing after. It moves the first time something it signed is checked, or at
+Drive's next upkeep, a minute after the first start at most: once, even with replicas starting together (its row is
+locked without waiting; a replica that finds it locked waits without holding a connection). From then on this build
+never reads `drive_secret`. The build before still does, so its rows stay until the release after this one deletes them.
+
+**When the vault is closed** (an installation with nothing to open its root with): opening the online editor, every WOPI
+call, unlocking a link with its password and opening a password-protected link are refused with "Drive cannot sign or
+check links and editor sessions right now: its keys are unavailable". Nothing is signed another way. Links without a
+password and everything else work as before.
+
+**A sandbox** never takes the old key, and its own keys are not the live workspace's: neither a link's grant nor an editor
+token of the live workspace opens the copy.
+
+**A workspace moved to another installation**: the platform's move copies the workspace's tables, not its keys in the
+vault, so grants and editor tokens made before the move do not work after it (people unlock the link or open the editor
+again). The old key travels in `drive_secret`, keeps its moment, and moves into the new installation's vault.
+
+**Settings.** `FERRUM_OFFICE_URL`, `FERRUM_OFFICE_WOPI_URL`, `FERRUM_OFFICE_IPS`, `FERRUM_EDITORS_URL`,
+`FERRUM_DRIVE_MAX_FILE_MB` and `FERRUM_DRIVE_MAX_ZIP_MB` are read through the platform's settings: the environment wins as
+before, and the settings table's value applies once the platform's registry no longer marks them as read by Drive from
+the environment.
+
+**For other apps' tests**: Drive takes its vault handle as it registers, so register it as the server does,
+`hooks.app("drive", &[], ferrum_app_drive::register)`; called outside that, the kernel refuses to boot.
+
+Tests: the end-to-end suite opens the vault as a server does and registers Drive as the server does. It checks a token
+and a grant the previous build made with its key in `drive_secret` (eight checks at once move the key once), signs and
+checks with that table out of reach (nothing new matches the old key), refuses the old key's tokens and grants past its
+time, never moves the old key in a sandbox (its tokens and the live workspace's new ones are refused there), lets upkeep
+move what is left, and refuses plainly on a replica whose vault is closed. Two of its assertions were behind the code
+before this release and are brought up to it: the editor's Share button is hidden (0.16.0), and the platform's
+exporter gives headings an id.
+
+Not in this release: the rows of `drive_secret` (the release after this one); grants and editor tokens that survive a
+move to another installation (the platform's move would have to carry the workspace's keys in the vault).
+
 ## 0.16.2
 
 Built with the Ferrum-Frontend commit named in `ui/dist/.source`. Needs no newer platform than 0.16.1; the editor service is the one the platform ships (Collabora Online 26.04), no change to its configuration.

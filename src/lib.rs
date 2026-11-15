@@ -22,6 +22,7 @@ mod docs;
 mod files;
 mod hooks;
 mod images;
+mod keys;
 mod leaver;
 mod office;
 mod ops;
@@ -52,8 +53,10 @@ pub fn packages() -> std::result::Result<Vec<ferrum_meta::Package>, ferrum_meta:
     ferrum_meta::catalog::load_embedded(EMBEDDED)
 }
 
-/// Registers this app's document hooks (and web endpoints).
+/// Registers this app's document hooks (and web endpoints). Call it inside the platform's registration of the app,
+/// `hooks.app("drive", …)`: Drive takes its own vault handle there (its keys, `keys.rs`).
 pub fn register(hooks: &mut HookRegistry) {
+    keys::remember(hooks.vault());
     hooks.register("DriveSpace", Arc::new(hooks::SpaceHook));
     for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar", "DriveTemplate"] {
         hooks.register(entity, Arc::new(hooks::Guard));

@@ -19,13 +19,12 @@
 
 use crate::acl::{Grants, Level};
 use crate::files::{self, Content};
+use crate::keys;
 use crate::tree::{self, Item, Kind};
 use base64::Engine as _;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use ferrum_kernel::{Ctx, Error, Kernel, Result, SiteRequest, SiteResponse, Tx};
-use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
-use sha2::Sha256;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -44,8 +43,10 @@ struct Config {
     ips: Vec<String>,
 }
 
+/// The editor server's addresses, as the platform's settings say them (`ferrum_kernel::env`: the environment, else the
+/// settings table), read at each use so that a change applies without a restart.
 fn config() -> Option<Config> {
-    let var = |name: &str| std::env::var(name).ok().map(|v| v.trim().trim_end_matches('/').to_string()).filter(|v| !v.is_empty());
+    let var = |name: &str| ferrum_kernel::env::var(name).map(|v| v.trim().trim_end_matches('/').to_string()).filter(|v| !v.is_empty());
     Some(Config {
         office: var("FERRUM_OFFICE_URL")?,
         wopi: var("FERRUM_OFFICE_WOPI_URL")?,
@@ -169,37 +170,61 @@ pub fn proof_valid(d: &Discovery, token: &str, url: &str, ticks: Option<&str>, p
         || proof_old.is_some_and(|p| signed_by(key, &m, p))
 }
 
-fn token_mac(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> Result<Hmac<Sha256>> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(Error::internal)?;
-    mac.update(b"ferrum-drive-wopi:");
+/// What an editor token signs: the workspace, the file, the user, the expiry and whether it only reads.
+fn token_message(tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> Vec<u8> {
+    let mut m = b"ferrum-drive-wopi:".to_vec();
     for id in [tenant, file, user] {
-        mac.update(id.as_bytes());
+        m.extend_from_slice(id.as_bytes());
     }
-    mac.update(&exp.to_be_bytes());
-    mac.update(&[u8::from(read_only)]);
-    Ok(mac)
+    m.extend_from_slice(&exp.to_be_bytes());
+    m.push(u8::from(read_only));
+    m
 }
 
-/// `<user>.<expiry>.<mac>`, or `<user>.<expiry>.r.<mac>` for a session that may only read (a
-/// preview): the workspace and the file are in the URL the token is used with. Whether a session
-/// may write is the token's to say, not the person's rights alone: a preview never writes, even
-/// for someone who may edit the file.
-fn sign(key: &[u8], tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> Result<String> {
-    let mac = URL_SAFE_NO_PAD.encode(token_mac(key, tenant, file, user, exp, read_only)?.finalize().into_bytes());
-    Ok(if read_only { format!("{user}.{exp}.r.{mac}") } else { format!("{user}.{exp}.{mac}") })
+/// `<user>.<expiry>.v<n>.<mac>`, or `<user>.<expiry>.r.v<n>.<mac>` for a session that may only read (a preview), signed
+/// with the key for editor tokens from version n of Drive's key (`keys.rs`): the workspace and the file are in the URL
+/// the token is used with. Whether a session may write is the token's to say, not the person's rights alone: a preview
+/// never writes, even for someone who may edit the file. Before 0.17 tokens named no version: the old key signed them.
+fn sign(key: &[u8], version: i32, tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> String {
+    let signed = keys::signed(key, version, &token_message(tenant, file, user, exp, read_only));
+    if read_only { format!("{user}.{exp}.r.{signed}") } else { format!("{user}.{exp}.{signed}") }
 }
 
-/// The user a token was made for and whether it only reads, if it is genuine, for this file and
-/// not expired (constant time).
-fn verify(key: &[u8], tenant: Uuid, file: Uuid, token: &str, now: i64) -> Option<(Uuid, bool)> {
+/// An editor token as it reads: whom it was made for, its expiry, whether it only reads, the version of Drive's key
+/// that signed it (none: the old key, before 0.17) and its MAC.
+struct Token {
+    user: Uuid,
+    exp: i64,
+    read_only: bool,
+    version: Option<i32>,
+    mac: Vec<u8>,
+}
+
+fn parse(token: &str) -> Option<Token> {
     let parts: Vec<&str> = token.split('.').collect();
-    let (user, exp, read_only, sig) = match parts.as_slice() {
-        [user, exp, sig] => (user, exp, false, sig),
-        [user, exp, "r", sig] => (user, exp, true, sig),
+    let (user, exp, read_only, version, mac) = match parts.as_slice() {
+        [user, exp, mac] => (user, exp, false, None, mac),
+        [user, exp, "r", mac] => (user, exp, true, None, mac),
+        [user, exp, v, mac] => (user, exp, false, Some(keys::version(v)?), mac),
+        [user, exp, "r", v, mac] => (user, exp, true, Some(keys::version(v)?), mac),
         _ => return None,
     };
-    let (Ok(user), Ok(exp), Ok(sig)) = (user.parse::<Uuid>(), exp.parse::<i64>(), URL_SAFE_NO_PAD.decode(sig)) else { return None };
-    (exp > now && token_mac(key, tenant, file, user, exp, read_only).ok()?.verify_slice(&sig).is_ok()).then_some((user, read_only))
+    Some(Token { user: user.parse().ok()?, exp: exp.parse().ok()?, read_only, version, mac: URL_SAFE_NO_PAD.decode(mac).ok()? })
+}
+
+/// Whether `t` is signed by `key` for this workspace and file (in constant time).
+fn genuine(key: &[u8], tenant: Uuid, file: Uuid, t: &Token) -> bool {
+    keys::mac_ok(key, &token_message(tenant, file, t.user, t.exp, t.read_only), &t.mac)
+}
+
+/// The user a token was made for and whether it only reads, if it is genuine, for this file and not expired.
+async fn verify(k: &Kernel, tenant: Uuid, file: Uuid, token: &str, now: i64) -> Result<Option<(Uuid, bool)>> {
+    let Some(t) = parse(token).filter(|t| t.exp > now) else { return Ok(None) };
+    let good = match t.version {
+        Some(v) => keys::at(k, tenant, keys::WOPI, v).await?.is_some_and(|key| genuine(key.bytes(), tenant, file, &t)),
+        None => keys::old_ok(k, tenant, &token_message(tenant, file, t.user, t.exp, t.read_only), &t.mac).await?,
+    };
+    Ok(good.then_some((t.user, t.read_only)))
 }
 
 fn encode(s: &str) -> String {
@@ -306,7 +331,7 @@ pub fn available() -> Value {
 
 /// The editor server for browser editors, as browsers reach it (`FERRUM_EDITORS_URL`).
 fn editors_url() -> Option<String> {
-    let url = std::env::var("FERRUM_EDITORS_URL").ok()?.trim().trim_end_matches('/').to_string();
+    let url = ferrum_kernel::env::var("FERRUM_EDITORS_URL")?.trim().trim_end_matches('/').to_string();
     (url.starts_with("https://") || url.starts_with("http://")).then_some(url)
 }
 
@@ -396,6 +421,8 @@ pub async fn browser_lock(k: &Kernel, ctx: &Ctx, file: Uuid, lock: &str, op: &st
 pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, theme: Option<&str>, lang: Option<&str>) -> Result<Value> {
     let cfg = config().ok_or_else(|| Error::Unavailable("online editing is not set up on this server (FERRUM_OFFICE_URL, FERRUM_OFFICE_WOPI_URL)".into()))?;
     let d = discovery(k, &cfg).await?;
+    // Taken before the transaction: the vault answers on a connection of its own.
+    let key = keys::current(k, ctx.tenant, keys::WOPI).await?;
     let mut tx = k.db.tenant_tx(ctx.tenant).await?;
     let g = Grants::load(&mut tx, ctx).await?;
     let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::View, false).await?;
@@ -406,7 +433,7 @@ pub async fn launch(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, theme: O
         .ok_or_else(|| Error::invalid(format!("{} cannot be opened in the editor", item.name)))?;
     let exp = chrono::Utc::now().timestamp() + TOKEN_SECONDS;
     // A session opened to look (the view action) is bound to look: its token cannot write.
-    let token = sign(&crate::sharing::tenant_key(&mut tx, ctx.tenant).await?, ctx.tenant, file, ctx.user, exp, action == "view")?;
+    let token = sign(key.bytes(), key.version(), ctx.tenant, file, ctx.user, exp, action == "view");
     tree::log(&mut tx, ctx, &item, "Open online", json!({"action": action})).await?;
     tx.commit().await?;
     let mut sys = k.db.system_tx().await?;
@@ -473,11 +500,8 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     };
     let Ok(file) = file.parse::<Uuid>() else { return Ok(status(404)) };
     let token = req.query.get("access_token").and_then(Value::as_str).unwrap_or_default();
-    let mut tx = k.db.tenant_tx(req.tenant).await?;
-    let key = crate::sharing::tenant_key(&mut tx, req.tenant).await?;
-    tx.commit().await?;
     let now = chrono::Utc::now().timestamp();
-    let Some((user, read_only)) = verify(&key, req.tenant, file, token, now) else { return Ok(status(401)) };
+    let Some((user, read_only)) = verify(k, req.tenant, file, token, now).await? else { return Ok(status(401)) };
     let header = |name: &str| req.headers.get(name).and_then(Value::as_str);
     // The URL as the editor called it: this server's address for it, then the path and query
     // exactly as received (the server passes them as x-ferrum-uri).
@@ -735,24 +759,37 @@ mod tests {
         assert!(proof_valid(&Discovery::parse(COLLABORA), "tok", URL, None, None, None, AT), "no key published: nothing to check");
     }
 
+    /// What `verify` says of a token signed with version 1 of `key`'s source.
+    fn check(key: &[u8], t: Uuid, f: Uuid, token: &str, now: i64) -> Option<(Uuid, bool)> {
+        parse(token).filter(|p| p.exp > now && p.version == Some(1) && genuine(key, t, f, p)).map(|p| (p.user, p.read_only))
+    }
+
     #[test]
     fn tokens_are_bound_to_workspace_file_user_and_time() {
         let key = [7u8; 32];
         let (t, f, u) = (Uuid::now_v7(), Uuid::now_v7(), Uuid::now_v7());
-        let token = sign(&key, t, f, u, 1_000, false).unwrap();
-        assert_eq!(verify(&key, t, f, &token, 999), Some((u, false)));
-        assert_eq!(verify(&key, t, f, &token, 1_000), None, "expired");
-        assert_eq!(verify(&key, t, Uuid::now_v7(), &token, 999), None, "another file");
-        assert_eq!(verify(&key, Uuid::now_v7(), f, &token, 999), None, "another workspace");
-        assert_eq!(verify(&[8u8; 32], t, f, &token, 999), None, "another key");
+        let token = sign(&key, 1, t, f, u, 1_000, false);
+        assert!(token.starts_with(&format!("{u}.1000.v1.")), "{token}");
+        assert_eq!(check(&key, t, f, &token, 999), Some((u, false)));
+        assert_eq!(check(&key, t, f, &token, 1_000), None, "expired");
+        assert_eq!(check(&key, t, Uuid::now_v7(), &token, 999), None, "another file");
+        assert_eq!(check(&key, Uuid::now_v7(), f, &token, 999), None, "another workspace");
+        assert_eq!(check(&[8u8; 32], t, f, &token, 999), None, "another key");
         let forged = token.replacen(&u.to_string(), &Uuid::now_v7().to_string(), 1);
-        assert_eq!(verify(&key, t, f, &forged, 999), None, "another user");
-        assert_eq!(verify(&key, t, f, "nonsense", 999), None);
+        assert_eq!(check(&key, t, f, &forged, 999), None, "another user");
+        assert_eq!(check(&key, t, f, "nonsense", 999), None);
         // A session made to look cannot be turned into one that writes by dropping its mark, nor the other way round.
-        let looking = sign(&key, t, f, u, 1_000, true).unwrap();
-        assert_eq!(verify(&key, t, f, &looking, 999), Some((u, true)));
-        assert_eq!(verify(&key, t, f, &looking.replacen(".r.", ".", 1), 999), None);
-        assert_eq!(verify(&key, t, f, &token.replacen(&format!("{u}.1000."), &format!("{u}.1000.r."), 1), 999), None);
+        let looking = sign(&key, 1, t, f, u, 1_000, true);
+        assert_eq!(check(&key, t, f, &looking, 999), Some((u, true)));
+        assert_eq!(check(&key, t, f, &looking.replacen(".r.", ".", 1), 999), None);
+        assert_eq!(check(&key, t, f, &token.replacen(&format!("{u}.1000."), &format!("{u}.1000.r."), 1), 999), None);
+        // Tokens from before 0.17 name no version: the old key checks them.
+        let old = format!("{u}.1000.{}", URL_SAFE_NO_PAD.encode(keys::mac(&key, &token_message(t, f, u, 1_000, false))));
+        let p = parse(&old).unwrap();
+        assert_eq!((p.version, p.read_only, genuine(&key, t, f, &p)), (None, false, true));
+        let p = parse(&format!("{u}.1000.r.{}", URL_SAFE_NO_PAD.encode(keys::mac(&key, &token_message(t, f, u, 1_000, true))))).unwrap();
+        assert_eq!((p.version, p.read_only, genuine(&key, t, f, &p)), (None, true, true));
+        assert!(parse(&format!("{u}.1000.v0.{}", URL_SAFE_NO_PAD.encode([0u8; 32]))).is_none(), "no version 0");
         assert_eq!(encode("http://h:1/a b?c=d"), "http%3A%2F%2Fh%3A1%2Fa%20b%3Fc%3Dd");
     }
 }

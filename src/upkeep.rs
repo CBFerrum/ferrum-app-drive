@@ -1,6 +1,7 @@
 //! Every-minute upkeep for each workspace using Drive: items in the trash longer than the
 //! workspace keeps them are deleted for good (with their stored files and quota), and expired
-//! shares are removed (they already grant nothing; this keeps lists short). Bounded per run;
+//! shares are removed (they already grant nothing; this keeps lists short). The old signing key of
+//! a workspace whose key has not moved into the vault yet moves (`keys.rs`). Bounded per run;
 //! every item is deleted in its own transaction and re-checked under lock, so concurrent runs and
 //! restores never conflict.
 
@@ -13,6 +14,9 @@ use uuid::Uuid;
 const BATCH: i64 = 50;
 
 pub async fn run(k: &Kernel) -> Result<()> {
+    if let Err(e) = crate::keys::move_waiting(k).await {
+        tracing::warn!("drive upkeep: moving old keys into the vault: {e}");
+    }
     let tenants: Vec<Uuid> = {
         let mut tx = k.db.system_tx().await?;
         let t = sqlx::query_scalar(
