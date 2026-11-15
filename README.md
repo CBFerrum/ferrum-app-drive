@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.16.2-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.17.0-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -204,6 +204,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 - **Request access.** Someone who cannot open an item can ask its owner, or a team folder's managers, to share it. A request counts once a day, and the answer never says whether the item exists.
 - **Links that belong to the workspace.** A link can name someone who can manage the item to answer for it, and then stays when its maker leaves.
 - **A public page.** Anyone with a link opens a shared file or folder at `/drive/s/{workspace}/{link}`, with the link's note.
+- **Nothing to forge from the database.** A link's token is kept only as a hash. The grant its password is exchanged for, and the online editor's tokens, are signed with keys derived from Drive's own key in the platform's vault and kept nowhere, so a copy of the database signs nothing.
 
 ### 💬 Comments and presence
 
@@ -433,6 +434,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.17.0**: Link grants and editor tokens are signed with keys from the platform's vault; the key kept unsealed before only checks what it signed, for a day.
 - [x] **0.16.2**: The online editor opens in Ferrum's light or dark theme, whatever the browser's own scheme.
 - [x] **0.16.1**: Comments in Word exports, Stop that discards a large upload, large uploads in the bar's tray.
 - [x] **0.16.0**: Previews in place, previews that cannot write, named and kept versions, zip download, resumable uploads, Undo, filters, exports that keep formatting.
@@ -483,6 +485,7 @@ Drive is a native app compiled into the official Ferrum server image. A workspac
 4. For Word, Excel and PowerPoint in the browser, run an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) and set `FERRUM_OFFICE_URL` and `FERRUM_OFFICE_WOPI_URL` (and `FERRUM_OFFICE_IPS` to accept calls from only those addresses). The platform's standard deployments include one.
 5. For GridCraft, WordCraft and PdfCraft, run the editor server, set `FERRUM_EDITORS_URL` and install the **Browser editors** add-on (`drive-editors`) from this repository's `addons/editors`.
 6. To raise the single-request upload limit above 32 MB, set `FERRUM_DRIVE_MAX_FILE_MB` (up to 1 GiB). Larger files upload in parts.
+7. Drive needs the platform's vault open (it is, wherever the database address has a password, or a key file or a key-management service is given): it signs link grants and editor tokens with keys from it, and refuses to sign or check them while it is closed. The settings above are read through the platform's settings: the environment, else the settings table where the platform stores them.
 
 Everything Drive adds is also available to AI agents over Ferrum's MCP server, within each person's permissions.
 
