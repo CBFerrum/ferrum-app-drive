@@ -22,10 +22,10 @@ const MAX_NAMED: usize = 200;
 /// The most files one archive holds.
 const MAX_FILES: usize = 5000;
 
-/// The most one archive carries, before it is compressed: `FERRUM_DRIVE_MAX_ZIP_MB`, 128 MB unless
-/// set, at most 1 GiB (the archive is built in memory).
+/// The most one archive carries, before it is compressed: `FERRUM_DRIVE_MAX_ZIP_MB` (a setting: the
+/// environment, else the settings table), 128 MB unless set, at most 1 GiB (the archive is built in memory).
 pub fn max_bytes() -> i64 {
-    limit(std::env::var("FERRUM_DRIVE_MAX_ZIP_MB").ok().as_deref())
+    limit(ferrum_kernel::env::var("FERRUM_DRIVE_MAX_ZIP_MB").as_deref())
 }
 
 fn limit(mb: Option<&str>) -> i64 {

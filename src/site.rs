@@ -47,10 +47,10 @@ impl Site for DriveSite {
 }
 
 /// The largest file a request may carry (upload, new version, editor save): the operator's
-/// `FERRUM_DRIVE_MAX_FILE_MB`, 32 MB unless set, at most 1 GiB. Replicas hold a file in memory
-/// while it is stored, so their memory bounds it.
+/// `FERRUM_DRIVE_MAX_FILE_MB` (a setting: the environment, else the settings table), 32 MB unless
+/// set, at most 1 GiB. Replicas hold a file in memory while it is stored, so their memory bounds it.
 pub fn max_file_bytes() -> usize {
-    file_limit(std::env::var("FERRUM_DRIVE_MAX_FILE_MB").ok().as_deref())
+    file_limit(ferrum_kernel::env::var("FERRUM_DRIVE_MAX_FILE_MB").as_deref())
 }
 
 fn file_limit(mb: Option<&str>) -> usize {
