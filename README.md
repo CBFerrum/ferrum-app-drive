@@ -475,7 +475,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ## 🚀 Install
 
-Drive is a native app compiled into the official Ferrum server image. A workspace administrator installs it from **Apps** (`/store/`). Self-hosters who build their own image enable the `drive` feature of the server. It needs Ferrum platform `>=0.3.2, <0.4`. It heads the **Workspace** family; Docs installs with it.
+Drive is a native app compiled into the official Ferrum server image. A workspace administrator installs it from **Apps** (`/store/`). Self-hosters who build their own image enable the `drive` feature of the server. It needs Ferrum platform `>=0.3.9, <0.4`. It heads the **Workspace** family; Docs installs with it.
 
 **First steps**
 
@@ -485,7 +485,7 @@ Drive is a native app compiled into the official Ferrum server image. A workspac
 4. For Word, Excel and PowerPoint in the browser, run an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) and set `FERRUM_OFFICE_URL` and `FERRUM_OFFICE_WOPI_URL` (and `FERRUM_OFFICE_IPS` to accept calls from only those addresses). The platform's standard deployments include one.
 5. For GridCraft, WordCraft and PdfCraft, run the editor server, set `FERRUM_EDITORS_URL` and install the **Browser editors** add-on (`drive-editors`) from this repository's `addons/editors`.
 6. To raise the single-request upload limit above 32 MB, set `FERRUM_DRIVE_MAX_FILE_MB` (up to 1 GiB). Larger files upload in parts.
-7. Drive needs the platform's vault open (it is, wherever the database address has a password, or a key file or a key-management service is given): it signs link grants and editor tokens with keys from it, and refuses to sign or check them while it is closed. The settings above are read through the platform's settings: the environment, else the settings table where the platform stores them.
+7. Drive needs the platform's vault open (it is, wherever the database address has a password, or a key file or a key-management service is given): it signs link grants and editor tokens with keys from it, and refuses to sign or check them while it is closed. The settings above are Drive's operator settings, kept as `drive.office_url`, `drive.office_wopi_url`, `drive.office_ips`, `drive.editors_url`, `drive.max_file_mb` and `drive.max_zip_mb`: set them with `ferrum task settings set`, a settings document or the Operations screen, and every replica takes a change within seconds. The variable, when it is set, still wins.
 
 Everything Drive adds is also available to AI agents over Ferrum's MCP server, within each person's permissions.
 
