@@ -233,15 +233,11 @@ and whoever manages the item can turn it off.
 
 A link's grant (`{expiry}.v{n}.{mac}`) and an editor token (`{user}.{expiry}[.r].v{n}.{mac}`) are HMAC-SHA256 under keys
 derived from Drive's own key in the platform's vault for their purpose (`link-grants`, `wopi-tokens`), from version `n`
-of that key, made when needed and kept nowhere (`src/keys.rs`). While the vault is closed, Drive neither signs nor
-checks them (`503`, "its keys are unavailable"). Until 0.17 one key per workspace signed both, unsealed in
-`drive_secret`; it signs nothing now. It moves into the vault, sealed, as Drive's secret `old-signing-key`, and checks
-the grants and tokens it signed (`{expiry}.{mac}`, `{user}.{expiry}[.r].{mac}`) until ten hours and a day after it
-stopped signing (`drive_secret.retired_at`), never in a sandbox. The rows of `drive_secret` go in the release after 0.17.
+of that key, made when needed and kept nowhere (`src/keys.rs`). One that names no version is refused like any other
+malformed one. While the vault is closed, Drive neither signs nor checks them (`503`, "its keys are unavailable").
 
 ## Upkeep (every minute)
 
-- A workspace's old key that has not moved into the vault yet moves (see Keys).
 - Items in the trash longer than `trash_days` are deleted for good (50 per run, each in its own
   transaction, re-checked under lock, logged without an actor).
 - Expired shares are removed (they grant nothing already) and noted in the item's activity.

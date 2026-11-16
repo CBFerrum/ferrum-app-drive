@@ -1,16 +1,3 @@
--- Drive: the per-tenant key that signs unlock grants of password-protected public links, kept out
--- of every entity (so no API, export, event or audit trail can reveal it).
-create table drive_secret (
-  tenant_id uuid primary key references tenant(id) on delete cascade,
-  secret bytea not null check (length(secret) = 32),
-  created_at timestamptz not null default now()
-);
-alter table drive_secret enable row level security;
-alter table drive_secret force row level security;
-create policy tenant_isolation on drive_secret
-  using (tenant_id = (select ferrum_tenant()) or (select ferrum_is_system()))
-  with check (tenant_id = (select ferrum_tenant()) or (select ferrum_is_system()));
-
 -- Names are unique per folder, ignoring case, among items not in the trash (the trash may hold
 -- several "Report.pdf"; restoring renames on a clash). Team folders are unique by name.
 create unique index if not exists drive_file_live_name on e_drive_file (tenant_id, folder, lower(name)) where not trashed;

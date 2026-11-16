@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.19.0
+
+Needs the same platform as 0.18.0. No interface change. The package's SQL reads as its final schema: `drive_secret` and
+`007_old_key.sql` are gone, and the editor lock's `holder` is made with its table in `002_office.sql` (no more
+`003_editor_holder.sql`). No installation was ever made from them, so a database is made afresh.
+
+**One way to sign and check grants and editor tokens.** Before the vault, one key per workspace signed both, unsealed in
+`drive_secret`; 0.17.0 kept it to check what it had signed, moved into the vault as `old-signing-key` at the first check
+or by upkeep (under its row's lock, taken without waiting and retried), for ten hours and a day. No such key ever signed
+anything someone outside holds, so it goes with its table, its move, its expiry and its upkeep step. A grant
+(`{expiry}.v{n}.{mac}`) and an editor token (`{user}.{expiry}[.r].v{n}.{mac}`) name the version of Drive's key that
+signed them; one that names none is refused like any other malformed one.
+
+Tests: the end-to-end suite refuses a token and a grant without their version, makes a new version of Drive's key (what
+the version before signed still opens, what is signed after names version 2), and keeps the sandbox check (the live
+workspace's token does not open the copy). The checks of the old key went with it.
+
 ## 0.18.0
 
 Needs platform 0.3.9 (Ferrum `22d082f7` or later), which reads apps' operator settings. No database change, no interface
