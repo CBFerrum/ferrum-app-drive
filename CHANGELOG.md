@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.19.1
+
+Needs the same platform as 0.19.0. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
+
+- A public link's line in the share dialog says "password", "ended" or "ends" and its day, and "1 use" or "{n} uses" in
+  the page's language; they were English in Arabic and Hindi.
+- "Modified in the last N days" on a list Drive has whole counts the workspace's days, as the search does: near
+  midnight, someone in another time zone saw yesterday's files as today's.
+- The button for administrators to "where editors are turned on" is gone: it led to a page that only says it is not
+  available. The sentence beside it says where (the server's configuration, or Drive's browser editors in the Store).
+- The page starts through the frontend's `mountApp`; the interface lint has no baseline file any more.
+
 ## 0.19.0
 
 Needs the same platform as 0.18.0. No interface change. The package's SQL reads as its final schema: `drive_secret` and

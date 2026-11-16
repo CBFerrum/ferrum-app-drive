@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.19.0-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.19.1-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -434,6 +434,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.19.1**: A public link's facts in the page's language; "modified in the last days" counts the workspace's days.
 - [x] **0.19.0**: Grants and editor tokens name the version of Drive's key that signed them, or are refused; the key kept unsealed before 0.17 is gone.
 - [x] **0.17.0**: Link grants and editor tokens are signed with keys from the platform's vault; the key kept unsealed before only checks what it signed, for a day.
 - [x] **0.16.2**: The online editor opens in Ferrum's light or dark theme, whatever the browser's own scheme.
