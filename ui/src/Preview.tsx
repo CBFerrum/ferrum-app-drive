@@ -394,11 +394,6 @@ function NoEditor({ down, admin }: { down: () => void; admin: boolean }) {
           <UiButton onClick={down}>
             <Download /> {tr("Download")}
           </UiButton>
-          {admin && (
-            <a className="btn btn-default btn-sm" href="/store/apps/drive/settings">
-              {tr("Where editors are turned on")}
-            </a>
-          )}
         </div>
       }
     >

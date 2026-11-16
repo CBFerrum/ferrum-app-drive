@@ -33,10 +33,10 @@ const day = (iso: string) => formatMoment(iso, { dateStyle: "medium" });
 /** How a link reads in a list: what it allows, what it asks for, how it has been used. */
 function facts(l: PublicLink, ended: boolean): string[] {
   const out: string[] = [];
-  if (l.has_password) out.push("password");
-  if (l.expires_at) out.push(`${ended ? "ended" : "ends"} ${day(l.expires_at)}`);
+  if (l.has_password) out.push(t("password"));
+  if (l.expires_at) out.push(ended ? t("ended {date}", { date: day(l.expires_at) }) : t("ends {date}", { date: day(l.expires_at) }));
   if (l.max_downloads) out.push(t("{value} of {max_downloads} uses", { value: l.download_count ?? 0, max_downloads: l.max_downloads }));
-  else if (l.download_count) out.push(`${l.download_count} ${l.download_count === 1 ? "use" : "uses"}`);
+  else if (l.download_count) out.push(l.download_count === 1 ? t("1 use") : t("{n} uses", { n: l.download_count }));
   out.push(l.last_accessed_at ? t("last opened {value}", { value: relativeTime(l.last_accessed_at) }) : t("not opened yet"));
   return out;
 }
