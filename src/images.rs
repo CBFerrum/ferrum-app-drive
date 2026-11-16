@@ -1,6 +1,6 @@
 //! Images in documents edited live (Ferrum's collaboration.md, C3). A document names an image by
 //! an id (the editor's `image` node); the document keeps the image's bytes itself
-//! (`drive_doc_image`, 006_doc_images.sql): platform files attached to its Drive File, so whoever
+//! (`drive_doc_image`, 001_drive.sql): platform files attached to its Drive File, so whoever
 //! may view the document may view its images, they go when it is deleted for good, and its space
 //! pays for them.
 //!
