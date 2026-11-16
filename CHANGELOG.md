@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.2
+
+Needs the same platform as 0.19.1. Interface unchanged. Database change: the package's SQL is one file, `001_drive.sql`
+(the editor lock, presence, access request, document words and document image tables; no more `002_office.sql`,
+`004_collaboration.sql`, `005_documents.sql` and `006_doc_images.sql`). No installation was ever made from them: a
+development database that applied the old files needs resetting. The suites run on today's platform.
+
 ## 0.19.1
 
 Needs the same platform as 0.19.0. No database change. Interface only, `ui/dist` rebuilt with Ferrum-Frontend `06bd1a2`.
