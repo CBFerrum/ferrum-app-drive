@@ -3,7 +3,7 @@
 // filtering and where the page does it. Pure, so it is tested without a browser.
 
 import { type Item, shownName } from "./files";
-import { t as tr } from "@ferrum/client";
+import { fromZonedInput, t as tr, todayIso } from "@ferrum/client";
 
 /** Drive's views besides a folder of your own (`?view=`). */
 export const VIEWS = [
@@ -148,9 +148,9 @@ export function sortItems(items: Item[], sort: SortKey, order: Order): Item[] {
   });
 }
 
-/** The items a set of filters keeps (for lists the page has whole). `now` is a clock for tests. */
-export function filterItems(items: Item[], q: Pick<Query, "type" | "since" | "owner">, now = new Date()): Item[] {
-  const from = q.since ? new Date(now.getFullYear(), now.getMonth(), now.getDate() - (q.since - 1)).getTime() : null;
+/** The items a set of filters keeps (for lists the page has whole); its days are the workspace's, as the search's. */
+export function filterItems(items: Item[], q: Pick<Query, "type" | "since" | "owner">, today = todayIso()): Item[] {
+  const from = q.since ? Date.parse(fromZonedInput(`${daysAgo(today, q.since - 1)}T00:00`)!) : null;
   return items.filter(
     (i) =>
       (!q.type || (q.type === "folder" ? i.kind === "folder" : i.kind === "file" && i.file_type === q.type)) &&

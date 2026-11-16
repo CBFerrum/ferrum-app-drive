@@ -14,8 +14,8 @@ describe("the preview of a file with no way to show it", () => {
     expect(people).toContain("This file needs an office editor to open");
     expect(people).toContain("administrator has not turned on");
     expect(people).toContain("Download");
-    expect(people).not.toContain("/store/apps/drive/settings");
-    expect(draw("Budget.xlsx", { admin: true })).toContain('href="/store/apps/drive/settings"');
+    expect(people).not.toContain("an online editor such as Collabora");
+    expect(draw("Budget.xlsx", { admin: true })).toContain("an online editor such as Collabora");
     // With an online editor the file opens in its read-only view instead.
     expect(draw("Deck.pptx", { online: true })).not.toContain("needs an office editor");
   });

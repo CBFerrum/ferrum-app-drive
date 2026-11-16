@@ -3,25 +3,14 @@
 // the editors, the viewer, the shared-link page anyone with a link opens (/drive/s/…), and what
 // Drive does for other apps: the pick, preview and share intents and the details panel.
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode, useEffect } from "react";
-import { createRoot } from "react-dom/client";
-import { createBrowserRouter, Link, Outlet, RouterProvider, useRouteError } from "react-router";
-import { addCatalogs, bootstrap, isPublicPage, routeBase, setTimeZone, shell, t, wordsReady } from "@ferrum/client";
-import { ConfirmHost, ListSkeleton, StatePanel, Toaster } from "@ferrum/kit";
+import { useEffect } from "react";
+import { Link, Outlet, useRouteError } from "react-router";
+import { isPublicPage, routeBase, shell, t } from "@ferrum/client";
+import { ListSkeleton, StatePanel } from "@ferrum/kit";
+import { mountApp } from "@ferrum/records/frame";
 import { DrivePage } from "./Drive";
 import { problemKind } from "./files";
 import "./styles.css";
-
-// Its own words in the page's language (src/locales), fetched as the page starts; it is drawn once they are in.
-void addCatalogs({ ar: () => import("./locales/ar.json"), hi: () => import("./locales/hi.json") });
-
-// Days (a link's last day, "today") are counted in the workspace's time zone, as the server counts them.
-setTimeZone(bootstrap()?.locale.timezone);
-
-const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false, staleTime: 30_000 } },
-});
 
 /** A route's first segment as the bootstrap gives it (`drive`). Inside Drive, pages link to
  *  `/drive/…` directly. ponytail: an operator's remapped route covers these four entries only;
@@ -54,47 +43,39 @@ function NotFound() {
 const later = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) => () => load().then((m) => ({ Component: m[name] }));
 const pages = () => import("./Pages");
 
-const router = createBrowserRouter([
-  {
-    path: "/",
-    element: <Frame />,
-    errorElement: <RouteError />,
-    // A first page that loads its code later shows nothing meanwhile (the bar is there already).
-    hydrateFallbackElement: <ListSkeleton rows={7} />,
-    children: [
-      {
-        path: at("drive"),
-        children: [
-          { index: true, element: <DrivePage /> },
-          { path: "edit/:file", lazy: later(() => import("./Edit"), "EditPage") },
-          { path: "edit/:file/:editor", lazy: later(() => import("./BrowserEdit"), "BrowserEditPage") },
-          { path: "view/:file", lazy: later(pages, "ViewPage") },
-          { path: "item/:id", lazy: later(pages, "ItemPage") },
-          { path: "s/:tenant/:link", lazy: later(() => import("./SharedLink"), "SharedLinkPage") },
-          { path: "_intent/pick", lazy: later(pages, "PickPage") },
-          { path: "_intent/preview", lazy: later(pages, "PreviewPage") },
-          { path: "_intent/share", lazy: later(pages, "ShareIntentPage") },
-          { path: "_panel/details", lazy: later(pages, "DetailsPanelPage") },
-          { path: ":folder", element: <DrivePage /> },
-        ],
-      },
-      { path: at("sheets"), element: <DrivePage kind="Spreadsheet" /> },
-      { path: at("slides"), element: <DrivePage kind="Presentation" /> },
-      { path: at("pdf"), element: <DrivePage kind="PDF" /> },
-      { path: "*", element: <NotFound /> },
-    ],
-  },
-]);
-
-// Drawn once the page's words are in (its language's catalogs, fetched as the page starts).
-void wordsReady().then(() =>
-  createRoot(document.getElementById("root")!).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-        <Toaster />
-        <ConfirmHost />
-      </QueryClientProvider>
-    </StrictMode>,
-  ),
-);
+// Its routes sit at the site's root (route ""): Drive, Sheets, Slides and PDF are each a route of its own.
+mountApp({
+  route: "",
+  catalogs: { ar: () => import("./locales/ar.json"), hi: () => import("./locales/hi.json") },
+  routes: [
+    {
+      path: "/",
+      element: <Frame />,
+      errorElement: <RouteError />,
+      // A first page that loads its code later shows nothing meanwhile (the bar is there already).
+      hydrateFallbackElement: <ListSkeleton rows={7} />,
+      children: [
+        {
+          path: at("drive"),
+          children: [
+            { index: true, element: <DrivePage /> },
+            { path: "edit/:file", lazy: later(() => import("./Edit"), "EditPage") },
+            { path: "edit/:file/:editor", lazy: later(() => import("./BrowserEdit"), "BrowserEditPage") },
+            { path: "view/:file", lazy: later(pages, "ViewPage") },
+            { path: "item/:id", lazy: later(pages, "ItemPage") },
+            { path: "s/:tenant/:link", lazy: later(() => import("./SharedLink"), "SharedLinkPage") },
+            { path: "_intent/pick", lazy: later(pages, "PickPage") },
+            { path: "_intent/preview", lazy: later(pages, "PreviewPage") },
+            { path: "_intent/share", lazy: later(pages, "ShareIntentPage") },
+            { path: "_panel/details", lazy: later(pages, "DetailsPanelPage") },
+            { path: ":folder", element: <DrivePage /> },
+          ],
+        },
+        { path: at("sheets"), element: <DrivePage kind="Spreadsheet" /> },
+        { path: at("slides"), element: <DrivePage kind="Presentation" /> },
+        { path: at("pdf"), element: <DrivePage kind="PDF" /> },
+        { path: "*", element: <NotFound /> },
+      ],
+    },
+  ],
+});

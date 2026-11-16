@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { setTimeZone } from "@ferrum/client";
 import type { Item } from "./files";
 import { abilities, daysAgo, defaultSort, filterItems, emptyText, filtersOn, flatten, nextOffset, readQuery, searchQuery, shownOf, sortItems, sourceOf, viewOf, whereLine } from "./listing";
 
@@ -95,8 +96,22 @@ describe("a page's list", () => {
     expect(names).toEqual(["alpha.txt", "file9.txt", "file10.txt", "Notes.fdoc"]);
   });
 
+  it("counts the days of 'modified since' on the workspace's calendar, as the search does", () => {
+    // 11:00 UTC on 5 Nov is already 6 Nov in Kiritimati (UTC+14), and still 5 Nov in any browser west of UTC+13.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-05T11:00:00Z"));
+    setTimeZone("Pacific/Kiritimati");
+    try {
+      const list = [item("yesterday", "a.txt", { modified_at: "2026-11-05T09:00:00Z" }), item("today", "b.txt", { modified_at: "2026-11-05T10:30:00Z" })];
+      expect(filterItems(list, { type: null, since: 1, owner: null }).map((i) => i.id)).toEqual(["today"]);
+    } finally {
+      setTimeZone(undefined);
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps what the chips ask for, in a list it has whole", () => {
-    const now = new Date(2026, 10, 10, 15, 0);
+    const now = "2026-11-10";
     const list = [
       folder("f", "Reports", { modified_at: new Date(2026, 10, 10, 9, 0).toISOString() }),
       item("a", "plan.pdf", { file_type: "PDF", owner: "ana@acme.test", modified_at: new Date(2026, 10, 4, 12, 0).toISOString() }),
