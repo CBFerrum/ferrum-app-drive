@@ -597,21 +597,16 @@ fn grant_message(link: Uuid, password_hash: &str, exp: i64) -> Vec<u8> {
     m
 }
 
-/// `<expiry>.v<n>.<mac>`, signed with the key for grants from version n of Drive's key (`keys.rs`). Before 0.17 a
-/// grant was `<expiry>.<mac>`, signed with the old key.
+/// `<expiry>.v<n>.<mac>`, signed with the key for grants from version n of Drive's key (`keys.rs`).
 fn sign_grant(key: &[u8], version: i32, link: Uuid, password_hash: &str, exp: i64) -> String {
     format!("{exp}.{}", keys::signed(key, version, &grant_message(link, password_hash, exp)))
 }
 
-/// A grant as it reads: its expiry, the version of Drive's key that signed it (none: the old key) and its MAC.
-fn read_grant(grant: &str) -> Option<(i64, Option<i32>, Vec<u8>)> {
+/// A grant as it reads: its expiry, the version of Drive's key that signed it and its MAC; none unless well formed.
+fn read_grant(grant: &str) -> Option<(i64, i32, Vec<u8>)> {
     let parts: Vec<&str> = grant.trim().split('.').collect();
-    let (exp, version, mac) = match parts.as_slice() {
-        [exp, mac] => (exp, None, mac),
-        [exp, v, mac] => (exp, Some(keys::version(v)?), mac),
-        _ => return None,
-    };
-    Some((exp.parse().ok()?, version, URL_SAFE_NO_PAD.decode(mac).ok()?))
+    let [exp, v, mac] = parts.as_slice() else { return None };
+    Some((exp.parse().ok()?, keys::version(v)?, URL_SAFE_NO_PAD.decode(mac).ok()?))
 }
 
 fn header<'a>(req: &'a SiteRequest, name: &str) -> Option<&'a str> {
@@ -624,26 +619,20 @@ fn grant_of(req: &SiteRequest) -> Option<&str> {
 }
 
 /// The key a request's grant was signed with, taken before any transaction (the vault answers on a connection of its
-/// own); none for a grant from before 0.17, or none at all.
+/// own); none without a well-formed grant, or once its version is gone.
 async fn grant_key(k: &Kernel, req: &SiteRequest) -> Result<Option<Derived>> {
     match grant_of(req).and_then(read_grant) {
-        Some((_, Some(version), _)) => keys::at(k, req.tenant, keys::GRANTS, version).await,
-        _ => Ok(None),
+        Some((_, version, _)) => keys::at(k, req.tenant, keys::GRANTS, version).await,
+        None => Ok(None),
     }
 }
 
 /// Password-protected links need a valid grant: unexpired, for this link and its current password (in constant time).
-async fn gate(k: &Kernel, req: &SiteRequest, link: &Link, key: Option<&Derived>) -> Result<()> {
+fn gate(req: &SiteRequest, link: &Link, key: Option<&Derived>) -> Result<()> {
     let Some(hash) = &link.password_hash else { return Ok(()) };
     let refused = || Error::Unauthorized("this link needs its password: send it to the link's /unlock address".into());
-    let Some((exp, version, mac)) = grant_of(req).and_then(read_grant).filter(|g| g.0 > Utc::now().timestamp()) else { return Err(refused()) };
-    let message = grant_message(link.id, hash, exp);
-    let good = match version {
-        Some(_) => key.is_some_and(|key| keys::mac_ok(key.bytes(), &message, &mac)),
-        // One from before 0.17: the old key checks it, for a day and an hour after it stopped signing at most.
-        None => keys::old_ok(k, req.tenant, &message, &mac).await?,
-    };
-    if good { Ok(()) } else { Err(refused()) }
+    let Some((exp, _, mac)) = grant_of(req).and_then(read_grant).filter(|g| g.0 > Utc::now().timestamp()) else { return Err(refused()) };
+    if key.is_some_and(|key| keys::mac_ok(key.bytes(), &grant_message(link.id, hash, exp), &mac)) { Ok(()) } else { Err(refused()) }
 }
 
 /// An item inside the link's item (or the item itself), out of the trash.
@@ -690,7 +679,7 @@ async fn view(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteResponse
     let key = grant_key(k, req).await?;
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let (link, item) = active_link(&mut tx, req.tenant, token).await?;
-    gate(k, req, &link, key.as_ref()).await?;
+    gate(req, &link, key.as_ref())?;
     let left = link.max_downloads.filter(|m| *m > 0).map(|m| m - link.download_count.unwrap_or(0));
     let mut out = json!({
         "link": {"access": link.access, "expires_at": link.expires_at, "downloads_left": left, "has_password": link.password_hash.is_some(), "note": link.note},
@@ -783,7 +772,7 @@ async fn fetch(k: &Kernel, req: &SiteRequest, token: &str) -> Result<SiteRespons
     let key = grant_key(k, req).await?;
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let (link, item) = active_link(&mut tx, req.tenant, token).await?;
-    gate(k, req, &link, key.as_ref()).await?;
+    gate(req, &link, key.as_ref())?;
     let file = within(&mut tx, req.tenant, &item, q.uuid("file").map_err(|_| gone())?, Kind::File).await?;
     let row: Option<(Option<String>, Option<String>)> =
         sqlx::query_as("select stored_file, content_type from e_drive_file_version where tenant_id = $1 and file = $2 and version_no = $3")
@@ -854,7 +843,7 @@ mod tests {
 
     /// What `gate` says of a grant signed with version 1 of `key`'s source.
     fn valid(key: &[u8], link: Uuid, password_hash: &str, grant: &str, now: i64) -> bool {
-        read_grant(grant).is_some_and(|(exp, v, mac)| exp > now && v == Some(1) && keys::mac_ok(key, &grant_message(link, password_hash, exp), &mac))
+        read_grant(grant).is_some_and(|(exp, v, mac)| exp > now && v == 1 && keys::mac_ok(key, &grant_message(link, password_hash, exp), &mac))
     }
 
     #[test]
@@ -873,10 +862,8 @@ mod tests {
         let stretched = format!("{}.{rest}", exp.parse::<i64>().unwrap() + 86_400);
         assert!(!valid(&key, link, "$argon2id$hash-1", &stretched, now), "the expiry is signed");
         assert!(!valid(&key, link, "$argon2id$hash-1", "garbage", now));
-        // One from before 0.17 names no version: the old key checks it.
-        let old = format!("{}.{}", now + 3600, URL_SAFE_NO_PAD.encode(keys::mac(&key, &grant_message(link, "$argon2id$hash-1", now + 3600))));
-        let (exp, version, mac) = read_grant(&old).unwrap();
-        assert_eq!((exp, version), (now + 3600, None));
-        assert!(keys::mac_ok(&key, &grant_message(link, "$argon2id$hash-1", exp), &mac));
+        // One that names no version is refused, however it was signed.
+        let (_, mac) = rest.split_once('.').unwrap();
+        assert!(read_grant(&format!("{exp}.{mac}")).is_none() && read_grant(&format!("{exp}.v0.{mac}")).is_none());
     }
 }

@@ -184,32 +184,31 @@ fn token_message(tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool
 /// `<user>.<expiry>.v<n>.<mac>`, or `<user>.<expiry>.r.v<n>.<mac>` for a session that may only read (a preview), signed
 /// with the key for editor tokens from version n of Drive's key (`keys.rs`): the workspace and the file are in the URL
 /// the token is used with. Whether a session may write is the token's to say, not the person's rights alone: a preview
-/// never writes, even for someone who may edit the file. Before 0.17 tokens named no version: the old key signed them.
+/// never writes, even for someone who may edit the file.
 fn sign(key: &[u8], version: i32, tenant: Uuid, file: Uuid, user: Uuid, exp: i64, read_only: bool) -> String {
     let signed = keys::signed(key, version, &token_message(tenant, file, user, exp, read_only));
     if read_only { format!("{user}.{exp}.r.{signed}") } else { format!("{user}.{exp}.{signed}") }
 }
 
 /// An editor token as it reads: whom it was made for, its expiry, whether it only reads, the version of Drive's key
-/// that signed it (none: the old key, before 0.17) and its MAC.
+/// that signed it and its MAC.
 struct Token {
     user: Uuid,
     exp: i64,
     read_only: bool,
-    version: Option<i32>,
+    version: i32,
     mac: Vec<u8>,
 }
 
+/// A token, if it is well formed: one that names no version is not.
 fn parse(token: &str) -> Option<Token> {
     let parts: Vec<&str> = token.split('.').collect();
-    let (user, exp, read_only, version, mac) = match parts.as_slice() {
-        [user, exp, mac] => (user, exp, false, None, mac),
-        [user, exp, "r", mac] => (user, exp, true, None, mac),
-        [user, exp, v, mac] => (user, exp, false, Some(keys::version(v)?), mac),
-        [user, exp, "r", v, mac] => (user, exp, true, Some(keys::version(v)?), mac),
+    let (user, exp, read_only, v, mac) = match parts.as_slice() {
+        [user, exp, v, mac] => (user, exp, false, v, mac),
+        [user, exp, "r", v, mac] => (user, exp, true, v, mac),
         _ => return None,
     };
-    Some(Token { user: user.parse().ok()?, exp: exp.parse().ok()?, read_only, version, mac: URL_SAFE_NO_PAD.decode(mac).ok()? })
+    Some(Token { user: user.parse().ok()?, exp: exp.parse().ok()?, read_only, version: keys::version(v)?, mac: URL_SAFE_NO_PAD.decode(mac).ok()? })
 }
 
 /// Whether `t` is signed by `key` for this workspace and file (in constant time).
@@ -220,10 +219,7 @@ fn genuine(key: &[u8], tenant: Uuid, file: Uuid, t: &Token) -> bool {
 /// The user a token was made for and whether it only reads, if it is genuine, for this file and not expired.
 async fn verify(k: &Kernel, tenant: Uuid, file: Uuid, token: &str, now: i64) -> Result<Option<(Uuid, bool)>> {
     let Some(t) = parse(token).filter(|t| t.exp > now) else { return Ok(None) };
-    let good = match t.version {
-        Some(v) => keys::at(k, tenant, keys::WOPI, v).await?.is_some_and(|key| genuine(key.bytes(), tenant, file, &t)),
-        None => keys::old_ok(k, tenant, &token_message(tenant, file, t.user, t.exp, t.read_only), &t.mac).await?,
-    };
+    let good = keys::at(k, tenant, keys::WOPI, t.version).await?.is_some_and(|key| genuine(key.bytes(), tenant, file, &t));
     Ok(good.then_some((t.user, t.read_only)))
 }
 
@@ -761,7 +757,7 @@ mod tests {
 
     /// What `verify` says of a token signed with version 1 of `key`'s source.
     fn check(key: &[u8], t: Uuid, f: Uuid, token: &str, now: i64) -> Option<(Uuid, bool)> {
-        parse(token).filter(|p| p.exp > now && p.version == Some(1) && genuine(key, t, f, p)).map(|p| (p.user, p.read_only))
+        parse(token).filter(|p| p.exp > now && p.version == 1 && genuine(key, t, f, p)).map(|p| (p.user, p.read_only))
     }
 
     #[test]
@@ -783,12 +779,9 @@ mod tests {
         assert_eq!(check(&key, t, f, &looking, 999), Some((u, true)));
         assert_eq!(check(&key, t, f, &looking.replacen(".r.", ".", 1), 999), None);
         assert_eq!(check(&key, t, f, &token.replacen(&format!("{u}.1000."), &format!("{u}.1000.r."), 1), 999), None);
-        // Tokens from before 0.17 name no version: the old key checks them.
-        let old = format!("{u}.1000.{}", URL_SAFE_NO_PAD.encode(keys::mac(&key, &token_message(t, f, u, 1_000, false))));
-        let p = parse(&old).unwrap();
-        assert_eq!((p.version, p.read_only, genuine(&key, t, f, &p)), (None, false, true));
-        let p = parse(&format!("{u}.1000.r.{}", URL_SAFE_NO_PAD.encode(keys::mac(&key, &token_message(t, f, u, 1_000, true))))).unwrap();
-        assert_eq!((p.version, p.read_only, genuine(&key, t, f, &p)), (None, true, true));
+        // One that names no version is refused, however it was signed.
+        let unversioned = |read_only: bool| URL_SAFE_NO_PAD.encode(keys::mac(&key, &token_message(t, f, u, 1_000, read_only)));
+        assert!(parse(&format!("{u}.1000.{}", unversioned(false))).is_none() && parse(&format!("{u}.1000.r.{}", unversioned(true))).is_none());
         assert!(parse(&format!("{u}.1000.v0.{}", URL_SAFE_NO_PAD.encode([0u8; 32]))).is_none(), "no version 0");
         assert_eq!(encode("http://h:1/a b?c=d"), "http%3A%2F%2Fh%3A1%2Fa%20b%3Fc%3Dd");
     }

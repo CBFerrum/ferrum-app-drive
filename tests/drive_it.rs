@@ -317,13 +317,8 @@ async fn scenario() {
     let catalog = drive_catalog();
     let mut hooks = HookRegistry::default();
     ferrum_domain::register(&mut hooks);
-    // As the server registers it, with its own vault handle; the test keeps one too, to look at what Drive keeps there.
-    let mut drive_vault = None;
-    hooks.app("drive", &[], |h| {
-        ferrum_app_drive::register(h);
-        drive_vault = Some(h.vault());
-    });
-    let drive_vault = drive_vault.expect("Drive's handle");
+    // As the server registers it, with its own vault handle.
+    hooks.app("drive", &[], ferrum_app_drive::register);
     for source in ferrum_app_drive::reports() {
         ferrum_domain::reports::add_source(source);
     }
@@ -1222,107 +1217,30 @@ async fn scenario() {
     t.consistent().await;
 
     // ── keys in the vault (src/keys.rs) ──
-    // What Drive signs names the version of the key it came from, and no other key opens it.
+    // What Drive signs names the version of the key it came from, and no other key opens it. What names no version is
+    // refused like anything else malformed.
     let kept_wopi = token.clone();
     let plain = t.ok(&alice, "create_link", json!({"item": doc})).await["token"].as_str().unwrap().to_string();
     assert!(token.starts_with(&format!("{}.", alice.id)) && token.split('.').nth(2) == Some("v1"), "{token}");
     assert!(grant.split('.').nth(1) == Some("v1"), "{grant}");
-    let scope = ferrum_kernel::vault::Scope::Workspace(tenant);
-    assert!(drive_vault.describe(&k, scope, "old-signing-key").await.unwrap().is_none(), "nothing to move: no workspace here had a key of the old kind");
-    assert_eq!(t.scalar("select count(*) from drive_secret where tenant_id = $1 and $2::uuid is null", None).await, 0, "and none is made");
-    // A workspace upgraded from 0.16: the key the build before kept unsealed, and a token and a grant it signed with it.
-    let old_key = [5u8; 32];
-    let unsealed = |sql: &'static str| {
-        let k = k.clone();
-        async move {
-            let mut tx = k.db.tenant_tx(tenant).await.unwrap();
-            sqlx::query(sql).bind(tenant).bind(&old_key[..]).execute(&mut *tx).await.unwrap();
-            tx.commit().await.unwrap();
-        }
-    };
-    unsealed("insert into drive_secret (tenant_id, secret) values ($1, $2)").await;
-    let mac = |key: &[u8], message: &[u8]| {
-        use hmac::Mac;
-        let mut m = hmac::Hmac::<sha2::Sha256>::new_from_slice(key).unwrap();
-        m.update(message);
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(m.finalize().into_bytes())
-    };
-    let wopi_message = |file: Uuid, user: Uuid, exp: i64, read_only: bool| {
-        let mut m = b"ferrum-drive-wopi:".to_vec();
-        for id in [tenant, file, user] {
-            m.extend_from_slice(id.as_bytes());
-        }
-        m.extend_from_slice(&exp.to_be_bytes());
-        m.push(u8::from(read_only));
-        m
-    };
-    let exp = chrono::Utc::now().timestamp() + 3600;
-    let old_token = format!("{}.{exp}.{}", alice.id, mac(&old_key, &wopi_message(doc, alice.id, exp, false)));
-    let old_looking = format!("{}.{exp}.r.{}", alice.id, mac(&old_key, &wopi_message(doc, alice.id, exp, true)));
-    let password_hash = {
-        let mut tx = k.db.tenant_tx(tenant).await.unwrap();
-        let h: String = sqlx::query_scalar("select password_hash from e_drive_link where tenant_id = $1 and id = $2")
-            .bind(tenant)
-            .bind(uid(&locked))
-            .fetch_one(&mut *tx)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-        h
-    };
-    let grant_message = |exp: i64| {
-        use sha2::Digest;
-        let mut m = b"ferrum-drive-link-grant:".to_vec();
-        m.extend_from_slice(uid(&locked).as_bytes());
-        m.extend_from_slice(&exp.to_be_bytes());
-        m.extend_from_slice(&sha2::Sha256::digest(password_hash.as_bytes()));
-        m
-    };
-    let old_grant = format!("{exp}.{}", mac(&old_key, &grant_message(exp)));
-    // Replicas checking them at once move the old key into the vault once, and each answers.
-    let mut checks = Vec::new();
-    for i in 0..8 {
-        let (k, site, path) = (k.clone(), k.hooks.site("drive").unwrap().clone(), format!("/wopi/files/{doc}"));
-        let token = if i % 2 == 0 { old_token.clone() } else { old_looking.clone() };
-        checks.push(tokio::spawn(async move { site.handle(&k, request(tenant, None, "GET", &path, &[("access_token", &token)], &[], vec![])).await }));
-    }
-    for (i, check) in checks.into_iter().enumerate() {
-        let info = t.json(check.await.unwrap().unwrap());
-        assert_eq!(info["UserCanWrite"], json!(i % 2 == 0), "the old token keeps working, and keeps its mode");
-    }
-    let moved = drive_vault.describe(&k, scope, "old-signing-key").await.unwrap().expect("moved");
-    assert_eq!((moved.version, moved.rule.reveal), (1, false), "moved once, and never revealed");
-    let retired_at = t.scalar("select floor(extract(epoch from retired_at))::bigint from drive_secret where tenant_id = $1 and $2::uuid is null", None).await;
-    let until = moved.rule.expires_at.expect("it checks for a while").timestamp();
-    assert_eq!(until - retired_at, 34 * 3600, "until ten hours and a day after it stopped signing");
-    let inside = t.json(t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &old_grant)], vec![]).await.expect("an old grant still opens the link"));
-    assert_eq!(names(&inside["items"]), ["salary.xlsx"]);
-    let forged = format!("{exp}.{}", mac(&[6u8; 32], &grant_message(exp)));
-    assert_eq!(code(&t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &forged)], vec![]).await.expect_err("another key")), "unauthorized");
-    // From now on nothing reads the unsealed table: with it out of reach, Drive signs and checks as before, the old
-    // token and grant included, and what it signs now does not check with the old key.
-    unsealed("alter table drive_secret rename to drive_secret_parked").await;
-    let opened = t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.expect("signed without the old key"));
+    assert_eq!(wopi(doc, "", "GET", token.replacen(".v1.", ".", 1), vec![], vec![]).await.status, 401, "a token without its version");
+    let unversioned = grant.replacen(".v1.", ".", 1);
+    let refused = t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &unversioned)], vec![]).await.expect_err("a grant without its version");
+    assert_eq!(code(&refused), "unauthorized");
+    // A new version of Drive's key signs from then on, and what the version before signed keeps working until it expires.
+    assert_eq!(k.rotate_owner_key(ferrum_kernel::vault::Scope::Workspace(tenant), "drive").await.expect("a new version"), 2);
+    let opened = t.json(t.site(Some(&alice.ctx), "POST", &format!("/editor/{doc}"), &[], &[], vec![]).await.expect("an editor session"));
     let fresh = opened["access_token"].as_str().unwrap().to_string();
-    let parts: Vec<&str> = fresh.split('.').collect();
-    let fresh_exp: i64 = parts[1].parse().unwrap();
-    assert_ne!(parts[3], mac(&old_key, &wopi_message(doc, alice.id, fresh_exp, false)), "not the old key's");
+    assert_eq!(fresh.split('.').nth(2), Some("v2"), "{fresh}");
     assert_eq!(wopi(doc, "", "GET", fresh, vec![], vec![]).await.status, 200);
-    assert_eq!(wopi(doc, "", "GET", old_token.clone(), vec![], vec![]).await.status, 200, "the old key checks from the vault");
-    let new_grant = t.json(unlock("open sesame").await.expect("a grant without the old key"))["grant"].as_str().unwrap().to_string();
-    t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &new_grant)], vec![]).await.expect("the new grant opens it");
-    t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &old_grant)], vec![]).await.expect("so does the old one");
-    let grant_exp: i64 = new_grant.split('.').next().unwrap().parse().unwrap();
-    assert_ne!(new_grant.split('.').nth(2), Some(mac(&old_key, &grant_message(grant_exp)).as_str()), "not the old key's");
-    unsealed("alter table drive_secret_parked rename to drive_secret").await;
-    // Past what it still checks (ten hours and a day after it stopped signing), the old key opens nothing.
-    assert!(drive_vault.remove(&k, scope, "old-signing-key").await.unwrap());
-    unsealed("update drive_secret set retired_at = now() - interval '35 hours' where tenant_id = $1 and secret = $2").await;
-    assert_eq!(wopi(doc, "", "GET", old_token.clone(), vec![], vec![]).await.status, 401);
-    assert_eq!(code(&t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", &old_grant)], vec![]).await.expect_err("too late")), "unauthorized");
-    assert!(drive_vault.describe(&k, scope, "old-signing-key").await.unwrap().is_none(), "and nothing moved");
-    // A sandbox of this workspace (made as the platform makes one: a copy under another id, marked) never takes the old
-    // key: the workspace's old tokens do not open the copy, nor do its new ones.
+    assert_eq!(wopi(doc, "", "GET", token.clone(), vec![], vec![]).await.status, 200, "signed before the new version");
+    let new_grant = t.json(unlock("open sesame").await.expect("a grant"))["grant"].as_str().unwrap().to_string();
+    assert_eq!(new_grant.split('.').nth(1), Some("v2"), "{new_grant}");
+    for g in [&grant, &new_grant] {
+        t.site(None, "GET", &tok(&lt), &[], &[("x-drive-grant", g)], vec![]).await.expect("a grant from either version opens the link");
+    }
+    // A sandbox of this workspace (made as the platform makes one: a copy under another id, marked) has keys of its own:
+    // the live workspace's tokens do not open the copy.
     let copy = k
         .create_tenant(NewTenant {
             slug: "acme-try".into(),
@@ -1341,34 +1259,14 @@ async fn scenario() {
             "alter table tenant disable trigger tenant_sandbox_kept",
             "update tenant set sandbox_of = $1, sandbox_from = 'here', sandbox_until = current_date + 30 where id = $2",
             "alter table tenant enable trigger tenant_sandbox_kept",
-            "insert into drive_secret (tenant_id, secret) select $2, secret from drive_secret where tenant_id = $1",
         ] {
             sqlx::query(sql).bind(tenant).bind(copy).execute(&mut *tx).await.unwrap();
         }
         tx.commit().await.unwrap();
     }
-    let copied = |file: Uuid, user: Uuid, read_only: bool| {
-        let mut m = b"ferrum-drive-wopi:".to_vec();
-        for id in [copy, file, user] {
-            m.extend_from_slice(id.as_bytes());
-        }
-        m.extend_from_slice(&exp.to_be_bytes());
-        m.push(u8::from(read_only));
-        mac(&old_key, &m)
-    };
-    let in_copy = format!("{}.{exp}.{}", alice.id, copied(doc, alice.id, false));
     let site = k.hooks.site("drive").unwrap().clone();
-    let r = site.handle(&k, request(copy, None, "GET", &format!("/wopi/files/{doc}"), &[("access_token", &in_copy)], &[], vec![])).await.unwrap();
-    assert_eq!(r.status, 401, "the old key opens nothing in a sandbox");
     let r = site.handle(&k, request(copy, None, "GET", &format!("/wopi/files/{doc}"), &[("access_token", &token)], &[], vec![])).await.unwrap();
-    assert_eq!(r.status, 401, "nor does the live workspace's new token");
-    assert!(drive_vault.describe(&k, ferrum_kernel::vault::Scope::Workspace(copy), "old-signing-key").await.unwrap().is_none());
-    // Upkeep moves what is left once, and leaves the sandbox's alone.
-    unsealed("update drive_secret set retired_at = null where tenant_id = $1 and secret = $2").await;
-    ferrum_app_drive::maintenance(&k).await.expect("upkeep");
-    assert!(drive_vault.describe(&k, scope, "old-signing-key").await.unwrap().is_some(), "moved by upkeep");
-    assert_eq!(t.scalar("select count(*) from drive_secret where retired_at is null and $1::uuid is not null and $2::uuid is null", None).await, 0);
-    assert!(drive_vault.describe(&k, ferrum_kernel::vault::Scope::Workspace(copy), "old-signing-key").await.unwrap().is_none(), "never in a sandbox");
+    assert_eq!(r.status, 401, "the live workspace's token opens nothing in the copy");
 
     // ── browser editors (src/office.rs; Ferrum docs/plan/browser-editors.md) ──
     let budget = uid(&t.upload(&alice, alice.root, "budget.xlsx", b"PK budget 1").await);
@@ -2152,9 +2050,6 @@ async fn scenario() {
         site.handle(&closed, request(tenant, None, "GET", &format!("/wopi/files/{doc}"), &[("access_token", &kept_wopi)], &[], vec![]))
             .await
             .expect_err("no check"),
-        site.handle(&closed, request(tenant, None, "GET", &format!("/wopi/files/{doc}"), &[("access_token", &old_token)], &[], vec![]))
-            .await
-            .expect_err("nor of an old one"),
         site.handle(
             &closed,
             request(tenant, None, "POST", &format!("/links/{lt}/unlock"), &[], &[], serde_json::to_vec(&json!({"password": "open sesame"})).unwrap()),
