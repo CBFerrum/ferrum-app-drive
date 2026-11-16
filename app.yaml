@@ -1,6 +1,6 @@
 id: drive
 name: Drive
-version: 0.17.0
+version: 0.18.0
 publisher: cbferrum
 summary: "Team and personal file storage: folders, versions, documents edited together live, sharing with people and teams, expiring public links, trash, quotas and search"
 description: README.md
@@ -9,7 +9,40 @@ license: AGPL-3.0-only
 homepage: https://github.com/CBFerrum/ferrum-app-drive
 support: https://github.com/CBFerrum/ferrum-app-drive/issues
 runtime: native
-platform: ">=0.3.2, <0.4"
+platform: ">=0.3.9, <0.4"
+# What the operator chooses for the whole installation (Ferrum docs/app-contract.md, Operator settings): kept as
+# drive.<key>, read through ferrum_kernel::env::var at each use; the variable, when set, still wins.
+operator_settings:
+  - key: office_url
+    env: FERRUM_OFFICE_URL
+    applies: live
+    doc: With online editing, the editor server (Collabora Online or ONLYOFFICE Docs) as the server reaches it.
+  - key: office_wopi_url
+    env: FERRUM_OFFICE_WOPI_URL
+    applies: live
+    doc: With online editing, this server as the editor server reaches it.
+  - key: office_ips
+    env: FERRUM_OFFICE_IPS
+    applies: live
+    doc: Optional. The only addresses WOPI calls are accepted from, separated by commas.
+  - key: editors_url
+    env: FERRUM_EDITORS_URL
+    applies: live
+    doc: The browser editors' server (GridCraft, WordCraft, PdfCraft) as browsers reach it.
+  - key: max_file_mb
+    env: FERRUM_DRIVE_MAX_FILE_MB
+    type: int
+    default: "32"
+    applies: live
+    doc: >-
+      Largest file in one request to Drive, in MB (an upload, a new version or an editor save), at most 1024. A replica
+      holds each such file in memory while storing it. Raise any proxy's body limit in front with it.
+  - key: max_zip_mb
+    env: FERRUM_DRIVE_MAX_ZIP_MB
+    type: int
+    default: "128"
+    applies: live
+    doc: The largest folder Drive downloads as one zip, in MB before compression, at most 1024.
 packages: [drive]
 uninstall: ask
 # Drive's own interface (Ferrum docs/plan/apps-ui.md): files, and Sheets, Slides and PDF as entries

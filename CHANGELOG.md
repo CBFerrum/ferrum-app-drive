@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.18.0
+
+Needs platform 0.3.9 (Ferrum `22d082f7` or later), which reads apps' operator settings. No database change, no interface
+change.
+
+**Drive's settings can live in the database.** Drive declares the six settings it reads (`operator_settings` in
+`app.yaml`): `drive.office_url`, `drive.office_wopi_url`, `drive.office_ips`, `drive.editors_url`, `drive.max_file_mb`
+(32 unless set) and `drive.max_zip_mb` (128 unless set). Each is kept in the server's settings table, set with `ferrum
+task settings set`, a settings document or the Operations screen, and applies at once: Drive reads it at each use, so
+every replica takes a change within seconds, without a restart. The variables that set them until now
+(`FERRUM_OFFICE_URL`, `FERRUM_OFFICE_WOPI_URL`, `FERRUM_OFFICE_IPS`, `FERRUM_EDITORS_URL`, `FERRUM_DRIVE_MAX_FILE_MB`,
+`FERRUM_DRIVE_MAX_ZIP_MB`) still work and win over the table through this release; the server adopts their values into
+the table once. Nothing to do on upgrade.
+
 ## 0.17.0
 
 Needs a platform with the vault (Ferrum `8e6b1f0` or later). A database change (`drive/007_old_key.sql`: the column

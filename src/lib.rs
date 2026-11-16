@@ -120,6 +120,47 @@ mod tests {
         ferrum_apps::AppManifest::parse(EDITORS_MANIFEST).expect("the add-on's app.yaml");
     }
 
+    /// Drive's operator settings are declared under the names the platform's registry moves to it (`app: drive` in its
+    /// `settings.yaml`), and its readers take what the server resolved (the table's value with nothing in the
+    /// environment), at each use, so that a change is seen without a restart.
+    #[test]
+    fn its_settings_are_declared_and_read_from_what_the_server_resolved() {
+        let m = ferrum_apps::AppManifest::parse(MANIFEST).expect("app.yaml");
+        let declared: Vec<(&str, &str, &str)> = m.operator_settings.iter().map(|s| (s.key.as_str(), s.env.as_str(), s.applies.as_str())).collect();
+        assert_eq!(
+            declared,
+            [
+                ("office_url", "FERRUM_OFFICE_URL", "live"),
+                ("office_wopi_url", "FERRUM_OFFICE_WOPI_URL", "live"),
+                ("office_ips", "FERRUM_OFFICE_IPS", "live"),
+                ("editors_url", "FERRUM_EDITORS_URL", "live"),
+                ("max_file_mb", "FERRUM_DRIVE_MAX_FILE_MB", "live"),
+                ("max_zip_mb", "FERRUM_DRIVE_MAX_ZIP_MB", "live"),
+            ]
+        );
+        let vars =
+            ["FERRUM_OFFICE_URL", "FERRUM_OFFICE_WOPI_URL", "FERRUM_OFFICE_IPS", "FERRUM_EDITORS_URL", "FERRUM_DRIVE_MAX_FILE_MB", "FERRUM_DRIVE_MAX_ZIP_MB"];
+        assert!(vars.iter().all(|v| std::env::var(v).is_err()), "nothing in the environment");
+        let resolve = |pairs: &[(&str, &str)]| {
+            ferrum_kernel::env::set(vars.iter().map(|v| (v.to_string(), pairs.iter().find(|(n, _)| n == v).map(|(_, x)| x.to_string()))).collect())
+        };
+        resolve(&[]);
+        assert_eq!(office::available(), serde_json::json!({"online": false, "browser": false}), "not set up: nothing offered");
+        assert_eq!((site::max_file_bytes(), archive::max_bytes()), (32 << 20, 128 << 20), "the app's own defaults");
+        resolve(&[
+            ("FERRUM_OFFICE_URL", "http://office:9980/"),
+            ("FERRUM_OFFICE_WOPI_URL", "http://ferrum:5150"),
+            ("FERRUM_EDITORS_URL", "https://editors.example.com"),
+            ("FERRUM_DRIVE_MAX_FILE_MB", "64"),
+            ("FERRUM_DRIVE_MAX_ZIP_MB", "256"),
+        ]);
+        assert_eq!(office::available(), serde_json::json!({"online": true, "browser": true}), "the stored addresses reach Drive");
+        assert_eq!((site::max_file_bytes(), archive::max_bytes()), (64 << 20, 256 << 20), "the stored limits reach Drive");
+        // A live change (another snapshot swapped in) is seen at the next use, without a restart.
+        resolve(&[("FERRUM_DRIVE_MAX_FILE_MB", "8")]);
+        assert_eq!((site::max_file_bytes(), office::available()["online"].clone()), (8 << 20, serde_json::json!(false)));
+    }
+
     #[test]
     fn days_start_at_local_midnight_across_daylight_saving() {
         let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
