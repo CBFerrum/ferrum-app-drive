@@ -14,7 +14,7 @@
 ![Rust](https://img.shields.io/badge/Rust-server-b7410e?style=flat-square&logo=rust)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-data-336791?style=flat-square&logo=postgresql&logoColor=white)
 ![React](https://img.shields.io/badge/React%20%2B%20TypeScript-interface-0ea5e9?style=flat-square&logo=react&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-36%20Rust%20%C2%B7%20135%20interface-16a34a?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-38%20Rust%20%C2%B7%20136%20interface-16a34a?style=flat-square)
 
 ### Your team's files, versions, sharing and Office documents in one self-hosted drive.
 
@@ -38,13 +38,13 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 | | |
 |---|---|
-| 📦 **Version** | 0.16.2 |
+| 📦 **Version** | 0.19.2 |
 | 🖥️ **Kind** | Its own interface: four launcher apps, Drive at `/drive/`, Sheets at `/sheets/`, Slides at `/slides/` and PDF at `/pdf/` |
 | ➕ **What it adds** | 12 entities (with team members) in one package, 2 roles, 5 reports, 4 launcher apps, 3 intents, a contextual side panel, bar search, a public link page and an add-on for browser editors |
 | 🧱 **Depends on** | The platform's `core` package. Nothing else is required |
 | 🤝 **Works with** | Docs (live documents, in the same Workspace family), Mail (attach from Drive, save attachments to Drive, share notices) and any app that picks, previews or shares files |
 | 🌍 **Languages** | English, Arabic, Hindi |
-| 🧪 **Tests** | 36 Rust test functions and 135 interface tests, counted from the source |
+| 🧪 **Tests** | 38 Rust test functions and 136 interface tests, counted from the source |
 | 📄 **Licence** | AGPL-3.0-only |
 
 ## 📸 Screenshots
@@ -173,7 +173,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 - **Several at once.** Choose items with the boxes (Shift for a stretch) and move, copy, share, download or trash them all.
 - **Drag and drop.** Drag items onto a folder in the list, the path above it or the places beside it (Ctrl or Option copies), or use a folder picker from a menu by keyboard or touch. Drop files and folders on the page to upload them, folders with their contents; the page says what it will do and leaves out what it would refuse, with the reason.
 - **Rename inline** with F2, **star** items, and use the clipboard keys (Ctrl or ⌘ C, X, V and A).
-- **Undo.** Move, copy, trash and rename say what happened and offer Undo; trash no longer asks first.
+- **Undo.** Move, copy, trash and rename say what happened and offer Undo; trash does not ask first.
 - **Recent, Starred, Shared with me and Trash** as places of their own. Recent shows the last 100 items.
 - **Keys.** `j` and `k` or the arrows move, `x` chooses, `m` moves, `c` copies, `h` shares, `s` stars, F2 renames, Delete trashes, `n` makes a folder, `u` uploads, Space previews, `/` searches and `?` lists them.
 - **The bar's search** (⌘K or Ctrl+K) finds files and folders by name and live documents by their words.
@@ -341,6 +341,8 @@ Drive is ordinary Ferrum metadata and Rust, so its records get the platform's pe
 | Platform uploads in parts | Large files past the single-request limit | Included |
 | Webhooks and automations | Outbox events of its records | Platform webhooks |
 
+**What the tests exercise.** The tests run Drive's online-editing (WOPI) endpoints and the link, token and version rules against PostgreSQL by calling the endpoints as an editor server would. No Collabora Online, ONLYOFFICE Docs or browser-editors server runs in them, so opening a file in a real editor is not covered by a routine check.
+
 ## 📊 How it compares
 
 Drive is compared with Google Drive, OneDrive (with SharePoint), Dropbox and Nextcloud, the open and self-hosted option.
@@ -436,8 +438,9 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 - [x] **0.19.2**: The package's SQL is one file.
 - [x] **0.19.1**: A public link's facts in the page's language; "modified in the last days" counts the workspace's days.
-- [x] **0.19.0**: Grants and editor tokens name the version of Drive's key that signed them, or are refused; the key kept unsealed before 0.17 is gone.
-- [x] **0.17.0**: Link grants and editor tokens are signed with keys from the platform's vault; the key kept unsealed before only checks what it signed, for a day.
+- [x] **0.19.0**: Grants and editor tokens name the version of Drive's key that signed them, or are refused.
+- [x] **0.18.0**: Drive's settings can live in the database (`drive.office_url`, `drive.max_file_mb` and the rest).
+- [x] **0.17.0**: Link grants and editor tokens are signed with keys from the platform's vault.
 - [x] **0.16.2**: The online editor opens in Ferrum's light or dark theme, whatever the browser's own scheme.
 - [x] **0.16.1**: Comments in Word exports, Stop that discards a large upload, large uploads in the bar's tray.
 - [x] **0.16.0**: Previews in place, previews that cannot write, named and kept versions, zip download, resumable uploads, Undo, filters, exports that keep formatting.
@@ -546,14 +549,14 @@ src/                  Rust: access rules, files and versions, sharing, links, of
                       live documents, templates, archives, upkeep jobs
 ui/src/               React interface: list and grid, previews, share dialog, versions, uploads
 ui/src/locales/       Arabic and Hindi words
-tests/                integration tests against PostgreSQL
+tests/                integration tests against PostgreSQL (the office editor is a stand-in, see Integrations)
 docs/                 banner and screenshots
 CHANGELOG.md          what changed in each version
 ```
 
 ## 📜 Changelog
 
-Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.16.2**; **0.16.0** made Drive work the way people expect a drive to.
+Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.19.2**.
 
 ## 🤝 Contributing
 
