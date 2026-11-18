@@ -575,7 +575,7 @@ async fn scenario() {
     t.hidden(&frank, "list_folder", json!({"folder": drafts})).await;
     t.hidden(&frank, "download", json!({"file": plan})).await;
     assert_eq!(t.ok(&frank, "search", json!({"query": "draft"})).await["items"], json!([]));
-    ferrum_app_drive::maintenance(&k).await.expect("upkeep");
+    ferrum_app_drive::maintenance(&k, tenant).await.expect("upkeep");
     assert_eq!(t.scalar("select count(*) from e_drive_share where tenant_id = $1 and id = $2", Some(uid(&timed))).await, 0);
     let expired = t.scalar("select count(*) from e_drive_activity where tenant_id = $1 and folder = $2 and action = 'Share Expired'", Some(drafts)).await;
     assert_eq!(expired, 1);
@@ -818,7 +818,7 @@ async fn scenario() {
     assert_eq!(code(&t.no(&alice, "restore", json!({"item": old_inner})).await), "not_found", "inside the trash, not trashed itself");
     t.exec("update e_drive_folder set trashed_at = now() - interval '31 days' where tenant_id = $1 and id = $2", old).await;
     let before = t.used(alice.space).await;
-    ferrum_app_drive::maintenance(&k).await.expect("upkeep");
+    ferrum_app_drive::maintenance(&k, tenant).await.expect("upkeep");
     assert_eq!(t.scalar("select count(*) from e_drive_folder where tenant_id = $1 and id = $2", Some(old_inner)).await, 0);
     assert_eq!(objects_of(old_file).await, 0);
     assert_eq!(t.used(alice.space).await, before - 8);
@@ -1760,7 +1760,7 @@ async fn scenario() {
     // Documents from before Drive kept their words get them from upkeep.
     t.exec("delete from drive_doc_words where tenant_id = $1 and file = $2", launch).await;
     assert!(!t.ok(&alice, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch));
-    ferrum_app_drive::maintenance(&k).await.unwrap();
+    ferrum_app_drive::maintenance(&k, tenant).await.unwrap();
     assert!(t.ok(&alice, "search", json!({"query": "venue"})).await["items"].as_array().unwrap().iter().any(|i| uid(i) == launch), "kept again");
 
     // In the trash nobody opens it; deleted for good, its live content goes too.

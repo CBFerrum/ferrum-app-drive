@@ -1,4 +1,4 @@
-//! Every-minute upkeep for each workspace using Drive: items in the trash longer than the
+//! Every-minute upkeep of one workspace using Drive: items in the trash longer than the
 //! workspace keeps them are deleted for good (with their stored files and quota), and expired
 //! shares are removed (they already grant nothing; this keeps lists short). Bounded per run;
 //! every item is deleted in its own transaction and re-checked under lock, so concurrent runs and
@@ -12,32 +12,8 @@ use uuid::Uuid;
 
 const BATCH: i64 = 50;
 
-pub async fn run(k: &Kernel) -> Result<()> {
-    let tenants: Vec<Uuid> = {
-        let mut tx = k.db.system_tx().await?;
-        let t = sqlx::query_scalar(
-            "select p.tenant_id from installed_package p join tenant t on t.id = p.tenant_id where p.name = 'drive' and t.status = 'active' order by 1",
-        )
-        .fetch_all(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        t
-    };
-    let mut first_error = None;
-    for tenant in tenants {
-        if let Err(e) = for_tenant(k, tenant).await {
-            tracing::warn!(%tenant, "drive upkeep failed: {e}");
-            first_error.get_or_insert(e);
-        }
-    }
-    first_error.map_or(Ok(()), Err)
-}
-
-async fn for_tenant(k: &Kernel, tenant: Uuid) -> Result<()> {
+pub async fn run(k: &Kernel, tenant: Uuid) -> Result<()> {
     let schema = k.registry.schema(tenant).await?;
-    if !schema.packages.iter().any(|p| p == "drive") {
-        return Ok(());
-    }
     let mut ctx = Ctx::system(tenant, schema);
     ctx.request_id = format!("drive-upkeep-{}", Uuid::now_v7());
     let purged = purge_trash(k, &ctx).await?;

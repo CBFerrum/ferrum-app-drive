@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.20.0
+
+Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).
+
+- **Upkeep is one workspace's.** `maintenance(k, tenant)` empties the trash that is past its days, removes expired shares and does the other housekeeping for the workspace the platform hands it; the list of workspaces and the installation check are the platform's.
+
+No database or interface change.
+
 ## 0.19.2
 
 Needs the same platform as 0.19.1. Interface unchanged. Database change: the package's SQL is one file, `001_drive.sql`
