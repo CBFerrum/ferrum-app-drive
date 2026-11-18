@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.21.0
+
+Needs the same platform as 0.20.1. Package `drive` 0.3.2.
+
+- **What other apps may know of a file.** `drive.drive_file.facts`, a hidden read-only action on a file, answers what
+  the file is now (its type, size, digest and version, whether it or a folder around it is in the trash), the stored
+  file holding its current version and, when asked, one version's (null once it is no longer kept). An app declares it
+  in its `uses`; among people only Drive Administrators and administrators may run it.
+- **What other apps hear.** `drive.file_changed` (a file has a new version, however it was made: an upload, a restore,
+  an editor's save) and `drive.files_removed` (files deleted for good, 500 ids an event at most) carry ids and facts,
+  never a name or a person, and are written in the transaction of the change.
+- **Item details through the gate.** `item_info` declares its one parameter (`item`) and is read-only, so another app
+  can ask it for a person, who sees only what they may.
+
+No database or interface change.
+
 ## 0.20.1
 
 Needs the same platform as 0.20.0. Package `drive` 0.3.1, so that an app using Drive's actions can ask for this behaviour.

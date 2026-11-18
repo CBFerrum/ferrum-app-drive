@@ -336,6 +336,10 @@ pub(crate) async fn add_version(
         doc.insert("locked_at".into(), Value::Null);
     }
     k.update_tx(&elevated(ctx), tx, "DriveFile", file.id, doc, None).await?;
+    // Other apps hear of it (package.yaml, `events`), whoever made it: ids and facts only.
+    let facts = json!({"file": file.id, "version_no": no, "sha256": c.sha256, "size": c.size(), "content_type": c.content_type,
+                       "file_type": content::file_type(c.content_type)});
+    ferrum_kernel::outbox::enqueue(tx, ctx.tenant, "drive.file_changed", Some("DriveFile"), Some(file.id), facts).await?;
     attach(tx, ctx.tenant, object, file.id).await?;
     let item = tree::load_kind(tx, ctx.tenant, Kind::File, file.id, false).await?.ok_or_else(|| Error::internal("file vanished"))?;
     tree::log(tx, ctx, &item, if check_in { "Check In" } else { "New Version" }, json!({"version": no, "size": c.size()})).await?;

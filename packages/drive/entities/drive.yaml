@@ -50,7 +50,15 @@
     - {name: shared_with_me, label: Shared With Me, permission: read}
     - {name: list_trash, label: Trash, permission: read}
     - {name: usage, label: Storage Usage, permission: read}
-    - {name: item_info, label: Item Details, permission: read}
+    - name: item_info
+      label: Item Details
+      permission: read
+      read_only: true
+      params:
+        - {name: item, label: Item, required: true, description: "A file's or a folder's id"}
+      contract:
+        effect: query
+        completion: "The item as the caller may see it, with its place and counts; not found for an item they may not see"
     - {name: list_versions, label: Versions, permission: read}
     - {name: download, label: Download, permission: read}
     - {name: list_shares, label: Who Has Access, permission: read}
@@ -211,6 +219,24 @@
     - {label: Version, fields: [version_no, current_version, modified_at, modified_by, locked_by, locked_at]}
     - {label: Trash, collapsible: true, fields: [trashed, trashed_at, trashed_by]}
   list: {columns: [name, folder, owner, file_type, size, modified_at], sort: modified_at desc}
+  actions:
+    - name: facts
+      label: File Facts
+      permission: read
+      read_only: true
+      hidden: true
+      params:
+        - {name: version, label: Version, type: int, description: "Also answer this version of the file; only the current one when empty"}
+      contract:
+        effect: query
+        returns: {type: object, required: [file, version_no, trashed], properties: {
+          file: {type: string, format: uuid}, name: {type: string}, file_type: {type: [string, "null"]},
+          content_type: {type: [string, "null"]}, size: {type: integer}, sha256: {type: [string, "null"]},
+          version_no: {type: integer}, trashed: {type: boolean},
+          stored_file: {type: [string, "null"], format: uuid},
+          version: {type: [object, "null"], properties: {version_no: {type: integer}, stored_file: {type: [string, "null"], format: uuid},
+                    size: {type: integer}, sha256: {type: [string, "null"]}, content_type: {type: [string, "null"]}}}}}
+        completion: "What the file is now: its type, size, digest and version, whether it or a folder around it is in the trash, the stored file holding its current version, and the version asked for (null when it is no longer kept)"
 
 - name: DriveFileVersion
   label: Drive File Version

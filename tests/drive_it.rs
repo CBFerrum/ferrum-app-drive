@@ -285,8 +285,12 @@ fn drive_catalog() -> Catalog {
         ])
         .expect("mail stand-in"),
     );
-    // Another app (a stand-in) that uses every action of a Drive Space through the gate, as Docs uses some.
-    let uses: String = space_actions().iter().map(|(a, _)| format!("  - {{capability: drive.drive_space.{a}, version: '>=0.3.1, <0.5'}}\n")).collect();
+    // Another app (a stand-in) that uses every action of a Drive Space through the gate, as Docs uses some, and what
+    // other apps are told of a file.
+    let mut uses: String = space_actions().iter().map(|(a, _)| format!("  - {{capability: drive.drive_space.{a}, version: '>=0.3.1, <0.5'}}\n")).collect();
+    for capability in ["drive.drive_file.facts", "drive.drive_space.list"] {
+        uses.push_str(&format!("  - {{capability: {capability}, version: '>=0.3.2, <0.5'}}\n"));
+    }
     let probe = format!("package: probe\nversion: 0.0.0\nlabel: Probe (stand-in)\ndepends: [core, drive]\nuses:\n{uses}");
     packages.extend(ferrum_meta::catalog::load_embedded(&[("probe", "package.yaml", &probe)]).expect("probe stand-in"));
     Catalog::from_packages(packages).expect("catalog")
@@ -877,6 +881,133 @@ async fn scenario() {
     let actions: Vec<&str> = log["activity"].as_array().unwrap().iter().map(|a| a["action"].as_str().unwrap()).collect();
     assert_eq!(&actions[..3], ["Check In", "Check Out", "Check In"]);
     assert_eq!(log["activity"][0]["details"]["forced_from"], json!("bob@acme.test"));
+
+    // ── what other apps are told of a file ──
+    // Another app asks, through the gate, what a file is now and which stored file holds a version of it
+    // (`drive.drive_file.facts`), and hears of new versions and of files deleted for good (`drive.file_changed`,
+    // `drive.files_removed`): ids and facts, no name and no person. Each check is named after its test; all are said
+    // at the end.
+    let ask = |ctx: &Ctx, capability: &'static str, input: Value| {
+        let (k, probe, ctx) = (&k, &probe, ctx.clone());
+        async move {
+            let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+            let r = k.call_tx(probe, &ctx, &mut tx, &Invocation::new(capability, input)).await.map(|r| r.result);
+            tx.commit().await.unwrap();
+            r
+        }
+    };
+    let system = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    let stored = |at: Value| {
+        let (k, system) = (&k, &system);
+        async move {
+            let id: Uuid = at.as_str().and_then(|s| s.parse().ok()).ok_or_else(|| format!("no stored file in {at}"))?;
+            k.read_file(system, id).await.map(|f| f.2).map_err(|e| e.to_string())
+        }
+    };
+    let changed = |file: Uuid| {
+        let t = &t;
+        async move {
+            t.scalar("select count(*) from outbox where tenant_id = $1 and topic = 'drive.file_changed' and payload->>'file' = $2::text", Some(file)).await
+        }
+    };
+    let mut untold: Vec<String> = Vec::new();
+    // a_new_version_is_announced_once_per_version: none for a new file, one for its next version, none for a rename.
+    let told = uid(&t.upload(&alice, alice.root, "told.txt", b"one").await);
+    let new_file = changed(told).await;
+    t.ok(&alice, "upload_version", json!({"file": told, "text": "two"})).await;
+    let new_version = changed(told).await;
+    let which = "select coalesce(max((payload->>'version_no')::bigint), 0) from outbox where tenant_id = $1 and topic = 'drive.file_changed' and payload->>'file' = $2::text";
+    let numbered = t.scalar(which, Some(told)).await;
+    t.ok(&alice, "rename", json!({"item": told, "name": "told again.txt"})).await;
+    let renamed = changed(told).await;
+    if (new_file, new_version, numbered, renamed) != (0, 1, 2, 1) {
+        untold.push(format!(
+            "a_new_version_is_announced_once_per_version: (new file, new version, its number, rename) {:?}",
+            (new_file, new_version, numbered, renamed)
+        ));
+    }
+    // facts_answer_the_current_version_and_its_stored_file
+    match ask(&system, "drive.drive_file.facts", json!({"id": told})).await {
+        Ok(f) => {
+            let digest = json!(hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"two")));
+            let bytes = stored(f["stored_file"].clone()).await;
+            if (f["version_no"].as_i64(), f["size"].as_i64(), f["trashed"].as_bool(), &f["sha256"], &f["version"])
+                != (Some(2), Some(3), Some(false), &digest, &Value::Null)
+                || bytes.as_deref() != Ok(&b"two"[..])
+            {
+                untold.push(format!("facts_answer_the_current_version_and_its_stored_file: {f}, stored {bytes:?}"));
+            }
+        }
+        Err(e) => untold.push(format!("facts_answer_the_current_version_and_its_stored_file: {e}")),
+    }
+    match ask(&system, "drive.drive_file.facts", json!({"id": told, "params": {"version": 1}})).await {
+        Ok(f) => {
+            let bytes = stored(f["version"]["stored_file"].clone()).await;
+            if (f["version_no"].as_i64(), f["version"]["version_no"].as_i64()) != (Some(2), Some(1)) || bytes.as_deref() != Ok(&b"one"[..]) {
+                untold.push(format!("facts_answer_the_current_version_and_its_stored_file (version 1): {f}, stored {bytes:?}"));
+            }
+        }
+        Err(e) => untold.push(format!("facts_answer_the_current_version_and_its_stored_file (version 1): {e}")),
+    }
+    let e = ask(&system, "drive.drive_file.facts", json!({"id": told, "params": {"version": "two"}})).await;
+    if !matches!(&e, Err(e) if code(e) == "validation_failed") {
+        untold.push(format!("facts_answer_the_current_version_and_its_stored_file (a version that is no number): {e:?}"));
+    }
+    // facts_of_a_pruned_version_are_null: plan.txt keeps three versions; its first went.
+    match ask(&system, "drive.drive_file.facts", json!({"id": plan, "params": {"version": 1}})).await {
+        Ok(f) if f["version"].is_null() && f["stored_file"].is_string() => {}
+        other => untold.push(format!("facts_of_a_pruned_version_are_null: {other:?}")),
+    }
+    // facts_are_refused_without_the_right: among people, Drive Administrators and administrators only.
+    let bobs = k.run_action(&bob.ctx, "DriveFile", told, "facts", json!({})).await;
+    let erins = k.run_action(&erin.ctx, "DriveFile", told, "facts", json!({})).await;
+    if !matches!(&bobs, Err(e) if code(e) == "forbidden") || erins.as_ref().map(|f| f["version_no"].clone()).ok() != Some(json!(2)) {
+        untold.push(format!("facts_are_refused_without_the_right: bob {bobs:?}, erin {erins:?}"));
+    }
+    // the_capability_is_in_the_catalog_with_its_contract
+    let effect = k.capability(&admin, "drive.drive_file.facts").map(|c| format!("{:?}", c.effect));
+    if effect.as_deref().ok() != Some("Query") {
+        untold.push(format!("the_capability_is_in_the_catalog_with_its_contract: {effect:?}"));
+    }
+    // item_info_is_asked_through_the_gate_for_a_person
+    let spaces = ask(&bob.ctx, "drive.drive_space.list", json!({"filters": [["owner", "eq", "bob@acme.test"]]})).await;
+    let his = uid(&t.upload(&bob, bob.root, "his.txt", b"mine").await);
+    let info = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": his}})).await;
+    let hers = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": salary}})).await;
+    let odd = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": his, "x": 1}})).await;
+    if spaces.as_ref().ok().and_then(Value::as_array).map(|s| s.iter().map(uid).collect::<Vec<_>>()) != Some(vec![bob.space])
+        || info.as_ref().map(|i| i["name"].clone()).ok() != Some(json!("his.txt"))
+        || hers.as_ref().map_err(ToString::to_string).err().as_deref() != Some("Drive item not found")
+        || !matches!(&odd, Err(e) if code(e) == "validation_failed")
+    {
+        untold.push(format!("item_info_is_asked_through_the_gate_for_a_person: {spaces:?} / {info:?} / {hers:?} / {odd:?}"));
+    }
+    // facts_say_when_a_file_is_in_the_trash; files_deleted_for_good_are_announced
+    let bin = t.folder(&alice, alice.root, "Bin").await;
+    let (inside, beside) = (uid(&t.upload(&alice, bin, "inside.txt", b"in").await), uid(&t.upload(&alice, bin, "beside.txt", b"by").await));
+    let trashed = |file: Uuid| {
+        let (ask, system) = (&ask, &system);
+        async move { ask(system, "drive.drive_file.facts", json!({"id": file})).await.map(|f| f["trashed"].clone()).map_err(|e| e.to_string()) }
+    };
+    t.ok(&alice, "trash", json!({"item": inside})).await;
+    let alone = trashed(inside).await;
+    t.ok(&alice, "restore", json!({"item": inside})).await;
+    let back = trashed(inside).await;
+    t.ok(&alice, "trash", json!({"item": bin})).await;
+    let within = (trashed(inside).await, trashed(beside).await);
+    if (alone.clone(), back.clone(), within.clone()) != (Ok(json!(true)), Ok(json!(false)), (Ok(json!(true)), Ok(json!(true)))) {
+        untold.push(format!("facts_say_when_a_file_is_in_the_trash: trashed {alone:?}, restored {back:?}, in a trashed folder {within:?}"));
+    }
+    t.ok(&alice, "delete_forever", json!({"item": bin})).await;
+    let both = format!(
+        "select count(*) from outbox where tenant_id = $1 and topic = 'drive.files_removed' and payload->'files' ? $2::text and payload->'files' ? '{beside}'"
+    );
+    let removed = t.scalar(&both, Some(inside)).await;
+    let after = ask(&system, "drive.drive_file.facts", json!({"id": inside})).await;
+    if removed != 1 || !matches!(&after, Err(e) if code(e) == "not_found") {
+        untold.push(format!("files_deleted_for_good_are_announced: {removed} events naming both; the facts of one now {after:?}"));
+    }
+    assert!(untold.is_empty(), "what other apps are told of a file:\n{}", untold.join("\n"));
 
     // ───────────── moves: cycles refused, inheritance follows the place, bytes follow the payer ─────────────
     let e = t.no(&alice, "move", json!({"item": projects, "to": drafts})).await;

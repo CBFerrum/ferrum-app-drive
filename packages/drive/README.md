@@ -133,6 +133,16 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
 | `delete_comment` | `comment` → `{deleted}` (its author, or Manage) |
 
+### For other apps
+
+What an app that declares them in its `uses` (Ferrum docs/app-contract.md) may also ask and hear:
+
+| Operation | Parameters → result |
+|---|---|
+| `drive.drive_file.facts` (hidden, read-only, on a file) | `version?` → `{file, name, file_type, content_type, size, sha256, version_no, trashed, stored_file, version}`: what the file is now, whatever its sharing; `stored_file` holds its current version; `version` (`{version_no, stored_file, size, sha256, content_type}`) is null when not asked for or no longer kept. Among people, Drive Administrators and administrators only |
+| `drive.file_changed` (event, entity `DriveFile`) | `{file, version_no, sha256, size, content_type, file_type}`: the file has a new version, however it was made |
+| `drive.files_removed` (event) | `{files}` (at most 500 ids an event): files deleted for good |
+
 Errors: `not_found` (404 — missing, invisible and trashed alike), `forbidden` (403 — level too
 low), `conflict` (409 — a taken name, a checked-out file, a team name), `validation_failed` (422 —
 parameters, e.g. upload size), `invalid` (422 — cycles, top folders, depth, and

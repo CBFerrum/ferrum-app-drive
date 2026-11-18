@@ -1,5 +1,5 @@
 package: drive
-version: 0.3.1
+version: 0.3.2
 label: Drive
 description: Team and personal file storage - folders, versions, check-out, sharing with people and roles, team folders with members, expiring public links with passwords and download limits, trash, quotas, search and storage reports.
 depends: [core]
@@ -51,3 +51,14 @@ handover:
   - {entity: DriveFolder, field: owner}
   - {entity: DriveFolder, field: members.member}
 export_tables: [drive_access_request, drive_doc_image]
+# What other apps hear of files (docs/guides/06): ids and facts only, never a name or a person.
+events:
+  - name: file_changed
+    label: File has a new version
+    entity: DriveFile
+    payload: {type: object, required: [file, version_no], properties: {file: {type: string, format: uuid},
+              version_no: {type: integer}, sha256: {type: [string, "null"]}, size: {type: integer},
+              content_type: {type: [string, "null"]}, file_type: {type: [string, "null"]}}}
+  - name: files_removed
+    label: Files deleted for good
+    payload: {type: object, required: [files], properties: {files: {type: array, maxItems: 500, items: {type: string, format: uuid}}}}
