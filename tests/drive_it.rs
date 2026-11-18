@@ -14,6 +14,7 @@
 
 use async_trait::async_trait;
 use base64::Engine as _;
+use ferrum_kernel::capability::Invocation;
 use ferrum_kernel::tenant::NewTenant;
 use ferrum_kernel::{Ctx, Db, DbConfig, Doc, Error, HookRegistry, Kernel, KernelSettings, ListQuery, SiteRequest, SiteResponse};
 use ferrum_meta::Catalog;
@@ -284,7 +285,18 @@ fn drive_catalog() -> Catalog {
         ])
         .expect("mail stand-in"),
     );
+    // Another app (a stand-in) that uses every action of a Drive Space through the gate, as Docs uses some.
+    let uses: String = space_actions().iter().map(|(a, _)| format!("  - {{capability: drive.drive_space.{a}, version: '>=0.3.1, <0.5'}}\n")).collect();
+    let probe = format!("package: probe\nversion: 0.0.0\nlabel: Probe (stand-in)\ndepends: [core, drive]\nuses:\n{uses}");
+    packages.extend(ferrum_meta::catalog::load_embedded(&[("probe", "package.yaml", &probe)]).expect("probe stand-in"));
     Catalog::from_packages(packages).expect("catalog")
+}
+
+/// Every action of a Drive Space, with the parameters it declares (the gate lets no other through).
+fn space_actions() -> Vec<(String, Vec<String>)> {
+    let drive = ferrum_app_drive::packages().expect("app packages").into_iter().find(|p| p.name() == "drive").expect("the drive package");
+    let space = drive.entities.iter().find(|e| e.name == "DriveSpace").expect("DriveSpace");
+    space.actions.iter().map(|a| (a.name.clone(), a.params.iter().map(|p| p.name.clone()).collect())).collect()
 }
 
 /// What opens the test's vault: the database password of `url`, with Argon2id kept cheap for tests.
@@ -319,6 +331,11 @@ async fn scenario() {
     ferrum_domain::register(&mut hooks);
     // As the server registers it, with its own vault handle.
     hooks.app("drive", &[], ferrum_app_drive::register);
+    // The stand-in app calling Drive, with the handle its registration is given and its package its own.
+    let mut probe = None;
+    hooks.app("probe", &[], |h| probe = Some(h.vault()));
+    hooks.own("probe", &["probe".to_string()]);
+    let probe = probe.expect("the probe's handle");
     for source in ferrum_app_drive::reports() {
         ferrum_domain::reports::add_source(source);
     }
@@ -334,7 +351,7 @@ async fn scenario() {
             admin_email: "admin@acme.test".into(),
             admin_password: "Correct-Horse-9".into(),
             admin_name: None,
-            packages: vec!["drive".into(), "comms".into()],
+            packages: vec!["drive".into(), "comms".into(), "probe".into()],
             settings: Some(json!({"timezone": "America/New_York"})),
         })
         .await
@@ -579,6 +596,155 @@ async fn scenario() {
     assert_eq!(t.scalar("select count(*) from e_drive_share where tenant_id = $1 and id = $2", Some(uid(&timed))).await, 0);
     let expired = t.scalar("select count(*) from e_drive_activity where tenant_id = $1 and folder = $2 and action = 'Share Expired'", Some(drafts)).await;
     assert_eq!(expired, 1);
+
+    // ── run for a person through the gate ──
+    // Another app's call (Kernel::call_tx) and a configured action's effects run Drive's actions as the system acting for
+    // a person, a context shaped as `elevated` makes it: Drive applies that person's own sharing, as if they had called.
+    // Work with no person behind it keeps the system's reach. Each check names its test; all are said at the end.
+    let acting = |u: &U| ferrum_domain::util::elevated(&u.ctx);
+    let ended = |r: ferrum_kernel::Result<Value>| r.map_err(|e| e.to_string());
+    let not_found: Result<Value, String> = Err("Drive item not found".into());
+    let mut wider: Vec<String> = Vec::new();
+    // a_call_for_a_person_does_not_open_what_they_cannot: Alice's salary file and top folder were never Bob's.
+    let unseen = [
+        ("download", json!({"file": salary})),
+        ("item_info", json!({"item": salary})),
+        ("list_versions", json!({"file": salary})),
+        ("list_folder", json!({"folder": alice.root})),
+    ];
+    for (action, params) in &unseen {
+        let got = ended(k.run_action(&acting(&bob), "DriveSpace", bob.space, action, params.clone()).await);
+        if got != not_found {
+            wider.push(format!("a_call_for_a_person_does_not_open_what_they_cannot: {action} {params} gave {got:?}"));
+        }
+    }
+    // a_call_for_a_person_changes_only_what_they_may: a file Bob may view.
+    let memo = uid(&t.upload(&alice, alice.root, "memo.txt", b"for bob to read").await);
+    t.ok(&alice, "share", json!({"item": memo, "email": "bob@acme.test", "permission": "View"})).await;
+    let read = ended(k.run_action(&acting(&bob), "DriveSpace", bob.space, "download", json!({"file": memo})).await);
+    if read.as_ref().map(|r| r["text"].clone()) != Ok(json!("for bob to read")) {
+        wider.push(format!("a_call_for_a_person_changes_only_what_they_may: download gave {read:?}"));
+    }
+    for (action, params) in [
+        ("upload_version", json!({"file": memo, "text": "changed"})),
+        ("rename", json!({"item": memo, "name": "mine.txt"})),
+        ("trash", json!({"item": memo})),
+        ("share", json!({"item": memo, "email": "frank@acme.test", "permission": "View"})),
+    ] {
+        let got = ended(k.run_action(&acting(&bob), "DriveSpace", bob.space, action, params.clone()).await);
+        let own = ended(t.act(&bob, action, params).await);
+        if own.is_ok() || got != own {
+            wider.push(format!("a_call_for_a_person_changes_only_what_they_may: {action} gave {got:?}, bob's own call {own:?}"));
+        }
+    }
+    // a_call_for_a_person_runs_on_their_own_space
+    let got = k.run_action(&acting(&bob), "DriveSpace", alice.space, "usage", json!({})).await;
+    if !matches!(got, Err(Error::Forbidden(_))) {
+        wider.push(format!("a_call_for_a_person_runs_on_their_own_space: usage of alice's space gave {got:?}"));
+    }
+    // a_drive_administrator_acted_for_keeps_their_reach: Erin (Drive Administrator) and the workspace's administrator.
+    let boss_space = uid(&t.json(t.site(Some(&admin), "GET", "/space", &[], &[], vec![]).await.expect("the administrator's space")));
+    for (ctx, space) in [(&erin.ctx, erin.space), (&admin, boss_space)] {
+        for (action, params) in &unseen {
+            let got = k.run_action(&ferrum_domain::util::elevated(ctx), "DriveSpace", space, action, params.clone()).await;
+            if got.is_err() {
+                wider.push(format!("a_drive_administrator_acted_for_keeps_their_reach: {} {action} gave {got:?}", ctx.email));
+            }
+        }
+    }
+    // the_system_with_no_person_reaches_every_file (upkeep, the leaver sink, public links and live documents work so).
+    let system = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    let got = ended(k.run_action(&system, "DriveSpace", alice.space, "item_info", json!({"item": salary})).await);
+    if got.as_ref().map(|i| i["name"].clone()) != Ok(json!("salary.xlsx")) {
+        wider.push(format!("the_system_with_no_person_reaches_every_file: {got:?}"));
+    }
+    // every_action_for_a_person_ends_as_their_own_call: each action of a Drive Space, naming what Bob may not open or
+    // doing what only administrators do, ends for Bob as his own call ends: run with the gate's context (as an effect runs
+    // it), and through the gate as another app's call with the parameters the action declares.
+    let lapsed = uid(&t.upload(&alice, secret, "old salary.xlsx", b"PK\x03\x04 old").await);
+    t.ok(&alice, "trash", json!({"item": lapsed})).await;
+    let link = uid(&t.ok(&alice, "create_link", json!({"item": salary})).await);
+    let remark = uid(&t.ok(&alice, "add_comment", json!({"file": salary, "body": "for me"})).await);
+    let every = [
+        ("list_folder", json!({"folder": secret})),
+        ("search", json!({"query": "salary"})),
+        ("recent", json!({})),
+        ("starred", json!({})),
+        ("shared_with_me", json!({})),
+        ("list_trash", json!({})),
+        ("usage", json!({})),
+        ("item_info", json!({"item": salary})),
+        ("list_versions", json!({"file": salary})),
+        ("download", json!({"file": salary})),
+        ("list_shares", json!({"item": salary})),
+        ("list_links", json!({"item": salary})),
+        ("activity", json!({"item": secret})),
+        ("list_comments", json!({"file": salary})),
+        ("upload", json!({"folder": secret, "name": "planted.txt", "text": "x"})),
+        ("upload_version", json!({"file": salary, "text": "overwritten"})),
+        ("create_folder", json!({"parent": secret, "name": "inside"})),
+        ("create_team_folder", json!({"name": "Bob's own"})),
+        ("add_team_member", json!({"folder": secret, "member": "bob@acme.test", "role": "Manager"})),
+        ("remove_team_member", json!({"folder": secret, "member": "alice@acme.test"})),
+        ("set_team_quota", json!({"folder": secret, "quota_mb": 1})),
+        ("rename", json!({"item": salary, "name": "mine.xlsx"})),
+        ("set_colour", json!({"folder": secret, "colour": "#ff0000"})),
+        ("move", json!({"item": salary, "to": bob.root})),
+        ("copy", json!({"item": salary, "to": bob.root})),
+        ("trash", json!({"item": salary})),
+        ("restore", json!({"item": lapsed})),
+        ("delete_forever", json!({"item": lapsed})),
+        ("empty_trash", json!({})),
+        ("check_out", json!({"file": salary})),
+        ("check_in", json!({"file": salary})),
+        ("restore_version", json!({"file": salary, "version": 1})),
+        ("keep_version", json!({"file": salary, "version": 1, "kept": true})),
+        ("share", json!({"item": salary, "email": "bob@acme.test", "permission": "Manage"})),
+        ("unshare", json!({"item": salary, "email": "alice@acme.test"})),
+        ("create_link", json!({"item": salary})),
+        ("revoke_link", json!({"link": link})),
+        ("star", json!({"item": salary})),
+        ("unstar", json!({"item": salary})),
+        ("add_comment", json!({"file": salary, "body": "seen it"})),
+        ("resolve_comment", json!({"comment": remark})),
+        ("delete_comment", json!({"comment": remark})),
+        ("request_access", json!({"item": salary})),
+        ("create_document", json!({"title": "Planted", "folder": secret})),
+        ("read_document", json!({"file": salary})),
+        ("append_to_document", json!({"file": salary, "markdown": "planted"})),
+        ("list_templates", json!({})),
+        ("create_from_template", json!({"template": "budget", "folder": secret})),
+        ("save_as_template", json!({"file": salary})),
+        ("delete_template", json!({"template": "budget"})),
+    ];
+    let declared = space_actions();
+    let mut tried: Vec<&str> = every.iter().map(|(a, _)| *a).collect();
+    let mut all: Vec<&str> = declared.iter().map(|(a, _)| a.as_str()).collect();
+    tried.sort_unstable();
+    all.sort_unstable();
+    assert_eq!(tried, all, "every action of a Drive Space is tried");
+    for (action, params) in &every {
+        let own = ended(t.act(&bob, action, params.clone()).await);
+        let got = ended(k.run_action(&acting(&bob), "DriveSpace", bob.space, action, params.clone()).await);
+        if got != own {
+            wider.push(format!("every_action_for_a_person_ends_as_their_own_call: {action} with the gate's context gave {got:?}, bob's own call {own:?}"));
+        }
+        let asks = &declared.iter().find(|(a, _)| a == action).expect("declared").1;
+        let given: Map<String, Value> = params.as_object().unwrap().iter().filter(|(p, _)| asks.contains(p)).map(|(p, v)| (p.clone(), v.clone())).collect();
+        let own = ended(t.act(&bob, action, Value::Object(given.clone())).await);
+        let call = Invocation::new(format!("drive.drive_space.{action}"), json!({"id": bob.space, "params": given})).key(format!("for-bob-{action}"));
+        let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+        let got = ended(k.call_tx(&probe, &bob.ctx, &mut tx, &call).await.map(|r| r.result));
+        tx.commit().await.unwrap();
+        if got != own {
+            wider.push(format!("every_action_for_a_person_ends_as_their_own_call: {action} through the gate gave {got:?}, bob's own call {own:?}"));
+        }
+    }
+    assert!(wider.is_empty(), "a call made for a person reaches what they reach, no more:\n{}", wider.join("\n"));
+    // What the checks made goes: the rest of the scenario counts Alice's trash, links and comments.
+    t.ok(&alice, "delete_forever", json!({"item": lapsed})).await;
+    t.ok(&alice, "revoke_link", json!({"link": link})).await;
+    t.ok(&alice, "delete_comment", json!({"comment": remark})).await;
 
     // ───────────── the generic records API, files API, collaboration, audit, reports: closed ─────────────
     for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar"] {
@@ -1897,6 +2063,9 @@ async fn scenario() {
     t.no(&heir, "item_info", json!({"item": kept})).await;
     t.k.deprovision_user(&admin, leaver.id, Some(heir.id), "left the company").await.expect("deprovisioned");
     drain().await;
+    // a_deactivated_person_is_refused: a call made for someone who has left reaches nothing, not even their own space.
+    let gone_call = k.run_action(&ferrum_domain::util::elevated(&leaver.ctx), "DriveSpace", leaver.space, "list_folder", json!({})).await;
+    assert!(gone_call.is_err(), "a call for someone deactivated: {gone_call:?}");
     assert_eq!(
         t.scalar("select count(*) from e_drive_share where tenant_id = $1 and email = 'parting@acme.test' and file = $2", Some(theirs)).await,
         0,

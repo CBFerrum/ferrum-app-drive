@@ -16,7 +16,10 @@ check-out) — is the highest of:
 - unexpired shares to them (by email) or to a role they hold, on the item or any folder above it.
 
 Drive administrators — workspace administrators and roles that may read every Drive File through
-the generic API (the **Drive Administrator** role) — manage everything.
+the generic API (the **Drive Administrator** role) — manage everything. An action another app or an
+automation runs for a person (the platform's gate, a configured action's effects) runs with that
+person's own level, on their own space; only the system with no person behind it (upkeep) manages
+everything.
 
 Every item stores its enclosing folders (`ancestors`) and top folder (`root`), so levels are
 computed per item and every list filters with one predicate built from the same grants. Access is
