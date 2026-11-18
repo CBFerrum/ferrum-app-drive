@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.24.0
+
+Needs the same platform as 0.23.0. Package `drive` 0.3.4 (two new actions).
+
+- **`adopt`**: a file stored in the platform's file storage (an upload in parts: the caller's own, tied to nothing yet)
+  becomes a Drive file in a folder, or with `replace` a new version of the same-named file, checked as an upload is
+  (the name, Edit on the folder, the size limit, the quota). The page's large uploads run it, and another app or an
+  agent runs it the same way.
+- **`editor_lock`** (hidden): keeps a browser editor's hold on a file for another 30 minutes, or lets it go. The
+  browser editors run it; the page's route does nothing else.
+
+No database change. The page works as before.
+
+## 0.23.0
+
+Needs the same platform as 0.22.2. Package `drive` 0.3.3, so that an app using Drive's actions can ask for this.
+
+- **Every action says what it takes, does and answers.** Each action of a Drive Space declares its parameters and
+  carries a contract (what it does, what it answers, when it is done), so the platform's gate passes another app's or
+  an agent's parameters to it and an agent can tell a read from a change. The reads (listing, search, recent, starred,
+  shared with me, trash, usage, details, versions, shares, links, activity, comments, templates) run read-only. A share
+  link's password is a secret parameter, and the call's receipt keeps no copy of the link's token and address: a
+  repeated call does not give them again.
+- Not through the gate yet: a new team folder's member list (the platform has no list parameter); through the gate a
+  team folder starts empty and members are added one at a time.
+
+No database change, no interface change.
+
+## 0.22.2
+
+Needs the same platform as 0.22.1. Package `drive` unchanged.
+
+- **Fix: a retention rule could delete file versions behind Drive's back.** The platform accepted a delete rule on
+  File Version (Drive declares no `retain` there), and the kernel let the system delete version rows: the stored
+  bytes stayed, the space's usage stayed charged and the file lost its current version. The kernel now refuses every
+  delete of a folder, a file or a version, the system's included ("Drive deletes its files itself; use Delete
+  Forever"); a retention run counts those records as failed and goes on. Drive's own deletes (delete forever, the
+  trash purge, version pruning) are its own SQL and work as before.
+
+No database change, no interface change.
+
+## 0.22.1
+
+Needs the same platform as 0.22.0. No behaviour change: nothing runs the new code yet.
+
+- **What Drive will make of files** (file services, slice D1): the words of a PDF and of Word, Excel, PowerPoint and
+  OpenDocument files, a picture at a size turned as its camera says, a PDF's first page, the picture an Office file
+  carries, and an image in a size, fit and format asked for, with the bounds every one keeps (pages, pixels, what an
+  archive unpacks to). The engine that runs them in the platform's confined helper and keeps what they make comes with
+  slice D2, once the platform has that helper.
+- New dependencies: `lopdf`, `hayro`, `image`, `quick-xml` (the versions Sign, Contracts, DAM and Comms use).
+
+No database change, no interface change.
+
+## 0.22.0
+
+Needs the same platform as 0.21.0. Package `drive` unchanged.
+
+- **Save As from the online editor.** The editor's Save As, Save a copy and Export as write a new file beside the one
+  open, in the same folder, for whoever may add files there (WOPI `PutRelativeFile`). A name the editor suggests is
+  numbered when taken; a name it fixes is refused when taken unless it asks to overwrite, which adds a version to that
+  file. The copy is charged to the folder's space or team folder like any upload, and the editor gets a token for the
+  new file alone. `CheckFileInfo` offers Save As only to people with Edit on the folder, and a session opened to look
+  makes no file. Tested against a stand-in editor server, not a real one.
+- **Two people in one presentation.** The suite shows two people sharing the online editor's lock on a `.pptx`, each
+  save a version in its saver's name, and a browser editor kept out meanwhile.
+
+No database change, no interface change.
+
+## 0.21.0
+
+Needs the same platform as 0.20.1. Package `drive` 0.3.2.
+
+- **What other apps may know of a file.** `drive.drive_file.facts`, a hidden read-only action on a file, answers what
+  the file is now (its type, size, digest and version, whether it or a folder around it is in the trash), the stored
+  file holding its current version and, when asked, one version's (null once it is no longer kept). An app declares it
+  in its `uses`; among people only Drive Administrators and administrators may run it.
+- **What other apps hear.** `drive.file_changed` (a file has a new version, however it was made: an upload, a restore,
+  an editor's save) and `drive.files_removed` (files deleted for good, 500 ids an event at most) carry ids and facts,
+  never a name or a person, and are written in the transaction of the change.
+- **Item details through the gate.** `item_info` declares its one parameter (`item`) and is read-only, so another app
+  can ask it for a person, who sees only what they may.
+
+No database or interface change.
+
 ## 0.20.1
 
 Needs the same platform as 0.20.0. Package `drive` 0.3.1, so that an app using Drive's actions can ask for this behaviour.

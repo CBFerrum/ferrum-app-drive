@@ -105,13 +105,15 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 |---|---|
 | `upload` | `name`, `content_base64` (standard or URL-safe, padding optional) or `text`, `folder?`, `on_conflict?` keep_both (default: `name (2)`) / replace (new version of the same-named file) / fail, `comment?` → Item (Edit on the folder) |
 | `upload_version` | `file`, `content_base64` or `text`, `comment?` → Item (Edit; refused while someone else has it checked out, and for live documents) |
+| `adopt` | `file` (a file you stored in the platform's file storage, such as an upload in parts with `POST /api/files/uploads`: yours and attached to nothing), `name`, `folder?`, `on_conflict?` and `comment?` as `upload` → Item, the stored file itself becoming the file or the new version (Edit on the folder; the size limit and the quota as `upload`). The page's `POST /adopt` runs it |
+| `editor_lock` (hidden) | `file`, `lock` (a browser editor session's, as opening the editor gave it), `op` refresh / release → `{lock_seconds}` or `{released}` (Edit to refresh). The browser editors' `POST /editor/{file}/lock` runs it |
 | `create_document` | `title?` (Untitled), `markdown?`, `folder?` → Item: a new live document from Markdown (Edit on the folder; a taken name gets a number) |
 | `create_from_template` | `template` (an id from `list_templates`; Drive's own are names such as `budget`), `folder?`, `name?` (the template's title) → Item: a new Office file with the template's content (Edit on the folder; a taken name gets a number) |
 | `save_as_template` | `file` (a docx, xlsx, pptx, odt, ods or odp file you may view, ≤ 25 MB), `title?` (the file's name), `category?`, `description?` → `{id, kind, title}` (Drive administrators; at most 200 per workspace) |
 | `delete_template` | `template` → `{deleted}` (Drive administrators; Drive's own stay) |
 | `append_to_document` | `file`, `markdown` → `{file, name, appended, change}` (Edit): added at the end of a live document as a change everyone with it open sees at once; its next version includes it |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
-| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators) |
+| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators). Another app or an agent going through the platform's gate cannot pass `members` yet (the gate has no list parameter): it adds them with `add_team_member` |
 | `add_team_member` / `remove_team_member` | `folder`, `member`, `role?` → `{folder, members}` (Manage on the team folder) |
 | `set_team_quota` | `folder`, `quota_mb` → `{folder, quota_mb}` (Drive administrators) |
 | `rename` | `item`, `name` → Item (Edit; team folders Manage); a taken name is **409** |
@@ -130,8 +132,18 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?`, `note?` (280 characters, shown to whoever opens the link), `answerable?` (an active member who can manage the item: the link is then the workspace's and outlives its maker) → `{id, item, token, url, page, access, expires_at, has_password, max_downloads, note, belongs_to, answerable}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
 | `revoke_link` | `link` → `{link, revoked}` (Manage on its item, even in the trash) |
 | `star` / `unstar` | `item` → `{item, starred}` (View) |
-| `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
+| `add_comment` | `file`, `body`, `mentions?` (emails, a list or separated by commas), `reply_to?` (a comment starting a thread), `anchor?` (a live document's text, as JSON `{from, to}`), `quote?` → `{id, file, author, body}` (Comment) |
 | `delete_comment` | `comment` → `{deleted}` (its author, or Manage) |
+
+### For other apps
+
+What an app that declares them in its `uses` (Ferrum docs/app-contract.md) may also ask and hear:
+
+| Operation | Parameters → result |
+|---|---|
+| `drive.drive_file.facts` (hidden, read-only, on a file) | `version?` → `{file, name, file_type, content_type, size, sha256, version_no, trashed, stored_file, version}`: what the file is now, whatever its sharing; `stored_file` holds its current version; `version` (`{version_no, stored_file, size, sha256, content_type}`) is null when not asked for or no longer kept. Among people, Drive Administrators and administrators only |
+| `drive.file_changed` (event, entity `DriveFile`) | `{file, version_no, sha256, size, content_type, file_type}`: the file has a new version, however it was made |
+| `drive.files_removed` (event) | `{files}` (at most 500 ids an event): files deleted for good |
 
 Errors: `not_found` (404 — missing, invisible and trashed alike), `forbidden` (403 — level too
 low), `conflict` (409 — a taken name, a checked-out file, a team name), `validation_failed` (422 —
@@ -252,8 +264,8 @@ malformed one. While the vault is closed, Drive neither signs nor checks them (`
   (their keys are logged) until it does.
 - One upload is one request, held in memory while it is stored: at most the server's
   `FERRUM_DRIVE_MAX_FILE_MB` (32 MB unless raised, at most 1 GiB). `content_base64` through the
-  generic API or MCP is also bound by that API's JSON body limit; use `POST /api/app/drive/upload`
-  for large files. Drive's other routes take at most 1 MB.
+  generic API or MCP is also bound by that API's JSON body limit; use `POST /api/app/drive/upload`,
+  or upload in parts to the platform's file storage and run `adopt`, for large files. Drive's other routes take at most 1 MB.
 - Public links stay valid when the person who created them loses access (as in other drives):
   review an item's links with `list_links`.
 - Role shares notify nobody; email notifications need the Mail app.

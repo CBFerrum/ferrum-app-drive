@@ -13,7 +13,9 @@ use uuid::Uuid;
 const DIRECT: &str = "Drive records change only through Drive's actions: run them on your Drive Space";
 
 /// Refuses direct writes and deletes of folders, files, versions, shares, links, comments,
-/// stars, templates and activity.
+/// stars, templates and activity. Folders, files and versions are never deleted through the kernel, the system's
+/// deletes included (a platform retention rule's): Drive deletes them itself, with their stored bytes and the space's
+/// usage (`ops::purge`, `files::prune`).
 pub struct Guard;
 
 #[async_trait]
@@ -22,7 +24,46 @@ impl DocHook for Guard {
         if hc.ctx.is_system { Ok(()) } else { Err(Error::Forbidden(DIRECT.into())) }
     }
     async fn before_delete(&self, hc: &mut HookCtx<'_>, _doc: &Doc) -> Result<()> {
+        if matches!(hc.entity.def.name.as_str(), "DriveFolder" | "DriveFile" | "DriveFileVersion") {
+            return Err(Error::Forbidden("Drive deletes its files itself; use Delete Forever".into()));
+        }
         if hc.ctx.is_system { Ok(()) } else { Err(Error::Forbidden(DIRECT.into())) }
+    }
+
+    /// `facts` of a file (hidden, read-only): what another app may know of it now, whatever its sharing (the action's
+    /// permission, or an app's approved use, is the right to it): its type, size, digest and version, whether it or a
+    /// folder around it is in the trash, the stored file holding its current version, and the version asked for. It
+    /// only reads, and logs nothing: it is not a download.
+    async fn action(&self, hc: &mut HookCtx<'_>, name: &str, doc: &Doc, params: &Value) -> Result<Option<Value>> {
+        if hc.entity.def.name != "DriveFile" || name != "facts" {
+            return Ok(None);
+        }
+        let file = id(doc, "id").ok_or_else(|| Error::internal("file without id"))?;
+        let item = tree::load_kind(hc.tx, hc.ctx.tenant, tree::Kind::File, file, false).await?.ok_or_else(tree::missing)?;
+        let asked = match ops::Params(params).int("version")? {
+            Some(v) if v < 1 => return Err(Error::field("version", "must be a whole number from 1")),
+            v => v,
+        };
+        let wanted: Vec<i64> = [Some(item.version_no), asked].into_iter().flatten().collect();
+        type Row = (i64, Option<String>, Option<i64>, Option<String>, Option<String>);
+        let rows: Vec<Row> = sqlx::query_as(
+            "select version_no, stored_file, size, sha256, content_type from e_drive_file_version where tenant_id = $1 and file = $2 and version_no = any($3)",
+        )
+        .bind(hc.ctx.tenant)
+        .bind(file)
+        .bind(&wanted)
+        .fetch_all(&mut **hc.tx)
+        .await?;
+        let row = |no: i64| rows.iter().find(|r| r.0 == no);
+        let stored = |no: i64| row(no).and_then(|r| r.1.as_deref()).and_then(|s| s.parse::<Uuid>().ok());
+        let version = asked.and_then(row).map(|(no, _, size, sha256, content_type)| {
+            json!({"version_no": no, "stored_file": stored(*no), "size": size.unwrap_or(0), "sha256": sha256, "content_type": content_type})
+        });
+        let trashed = tree::in_trash(hc.tx, hc.ctx.tenant, &item).await?;
+        Ok(Some(json!({
+            "file": item.id, "name": item.name, "file_type": item.file_type, "content_type": item.content_type, "size": item.size,
+            "sha256": item.sha256, "version_no": item.version_no, "trashed": trashed, "stored_file": stored(item.version_no), "version": version,
+        })))
     }
 }
 

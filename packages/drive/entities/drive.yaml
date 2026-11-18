@@ -43,58 +43,507 @@
     - {name: used_bytes, type: int, label: Used (Bytes), default: 0, read_only: true, in_list: true}
     - {name: root_folder, type: link, to: DriveFolder, label: My Folders, read_only: true}
   actions:
-    - {name: list_folder, label: List Folder, permission: read}
-    - {name: search, label: Search, permission: read}
-    - {name: recent, label: Recent Files, permission: read}
-    - {name: starred, label: Starred, permission: read}
-    - {name: shared_with_me, label: Shared With Me, permission: read}
-    - {name: list_trash, label: Trash, permission: read}
-    - {name: usage, label: Storage Usage, permission: read}
-    - {name: item_info, label: Item Details, permission: read}
-    - {name: list_versions, label: Versions, permission: read}
-    - {name: download, label: Download, permission: read}
-    - {name: list_shares, label: Who Has Access, permission: read}
-    - {name: list_links, label: Public Links, permission: read}
-    - {name: activity, label: Activity, permission: read}
-    - {name: list_comments, label: Comments, permission: read}
-    - {name: upload, label: Upload File, permission: read}
-    - {name: upload_version, label: Upload New Version, permission: read}
-    - {name: create_folder, label: New Folder, permission: read}
-    - {name: create_team_folder, label: New Team Folder, permission: read}
-    - {name: add_team_member, label: Add Team Member, permission: read}
-    - {name: remove_team_member, label: Remove Team Member, permission: read}
-    - {name: set_team_quota, label: Set Team Folder Quota, permission: read}
-    - {name: rename, label: Rename, permission: read}
-    - {name: set_colour, label: Folder Colour, permission: read}
-    - {name: move, label: Move, permission: read}
-    - {name: copy, label: Copy, permission: read}
-    - {name: trash, label: Move to Trash, permission: read}
-    - {name: restore, label: Restore from Trash, permission: read}
-    - {name: delete_forever, label: Delete Forever, permission: read, confirm: "The item and every version of its files are deleted for good. Continue?"}
-    - {name: empty_trash, label: Empty Trash, permission: read, confirm: "Everything in the trash is deleted for good. Continue?"}
-    - {name: check_out, label: Check Out, permission: read}
-    - {name: check_in, label: Check In, permission: read}
-    - {name: restore_version, label: Restore Version, permission: read}
-    - {name: keep_version, label: Name or Keep Version, permission: read}
-    - {name: share, label: Share, permission: read}
-    - {name: unshare, label: Stop Sharing, permission: read}
-    - {name: create_link, label: Create Public Link, permission: read}
-    - {name: revoke_link, label: Revoke Public Link, permission: read}
-    - {name: star, label: Star, permission: read}
-    - {name: unstar, label: Unstar, permission: read}
+    # Reading. An item is {id, kind, name, parent, team, owner, size, content_type, file_type, version, permission, ...};
+    # what the caller may not see is not found.
+    - name: list_folder
+      label: List Folder
+      permission: read
+      read_only: true
+      params:
+        - {name: folder, label: Folder, description: "A folder's id; your top folder by default"}
+        - {name: sort, label: Sort, type: select, options: [name, modified, size, type], description: "name unless asked; folders come first"}
+        - {name: order, label: Order, type: select, options: [asc, desc]}
+        - {name: limit, label: Limit, type: int, description: "1 to 200, 50 by default"}
+        - {name: offset, label: Offset, type: int}
+      contract:
+        effect: query
+        returns: {type: object, properties: {folder: {type: object}, breadcrumbs: {type: array}, items: {type: array, items: {type: object}},
+                  total: {type: integer}, folders: {type: integer}, files: {type: integer}, limit: {type: integer}, offset: {type: integer}}}
+        completion: "The folder's items as the caller may see them, sub-folders first, a page at a time, with the folders above it they may see"
+    - name: search
+      label: Search
+      permission: read
+      read_only: true
+      params:
+        - {name: query, label: Name or words, description: "Part of a name, any case; documents edited live are found by their words too (100 characters at most)"}
+        - {name: type, label: Type, type: select, options: [folder, Document, Spreadsheet, Presentation, PDF, Image, Video, Audio, Archive, Text, Other]}
+        - {name: owner, label: Owner, description: "The email of the space's owner"}
+        - {name: modified_from, label: Modified From, type: date}
+        - {name: modified_to, label: Modified To, type: date}
+        - {name: folder, label: Within Folder, description: "A folder's id"}
+        - {name: live, label: Documents Only, type: check, description: "Only documents edited live"}
+        - {name: sort, label: Sort, type: select, options: [modified, name, size]}
+        - {name: limit, label: Limit, type: int}
+        - {name: offset, label: Offset, type: int}
+      contract:
+        effect: query
+        returns: {type: object, properties: {items: {type: array, items: {type: object}}, has_more: {type: boolean}, limit: {type: integer}, offset: {type: integer}}}
+        completion: "The items the caller may see that match, out of the trash, each with its path and, for a document found by its words, where"
+    - name: recent
+      label: Recent Files
+      permission: read
+      read_only: true
+      params:
+        - {name: limit, label: Limit, type: int, description: "1 to 100, 20 by default"}
+        - {name: live, label: Documents Only, type: check}
+      contract:
+        effect: query
+        returns: {type: object, properties: {items: {type: array, items: {type: object}}}}
+        completion: "The files the caller worked with in the last 90 days that they may still see, newest first"
+    - name: starred
+      label: Starred
+      permission: read
+      read_only: true
+      params:
+        - {name: live, label: Documents Only, type: check}
+      contract:
+        effect: query
+        returns: {type: object, properties: {items: {type: array, items: {type: object}}}}
+        completion: "The caller's starred items they may still see, newest star first"
+    - name: shared_with_me
+      label: Shared With Me
+      permission: read
+      read_only: true
+      params:
+        - {name: live, label: Documents Only, type: check}
+      contract:
+        effect: query
+        returns: {type: object, properties: {items: {type: array, items: {type: object}}}}
+        completion: "The items shared with the caller or their roles, not their own, newest share first, each with who shared it"
+    - name: list_trash
+      label: Trash
+      permission: read
+      read_only: true
+      params:
+        - {name: root, label: Space or Team Folder, description: "A top folder's id: only what is in the trash there"}
+        - {name: limit, label: Limit, type: int}
+        - {name: offset, label: Offset, type: int}
+      contract:
+        effect: query
+        returns: {type: object, properties: {items: {type: array, items: {type: object}}, total: {type: integer}}}
+        completion: "What the caller may restore from the trash, newest first"
+    - name: usage
+      label: Storage Usage
+      permission: read
+      read_only: true
+      contract:
+        effect: query
+        returns: {type: object, properties: {space: {type: object}, teams: {type: array}, admin: {type: boolean}, limits: {type: object}}}
+        completion: "The caller's quota and use, those of their team folders, whether they administer Drive, and the limits uploads meet"
+    - name: item_info
+      label: Item Details
+      permission: read
+      read_only: true
+      params:
+        - {name: item, label: Item, required: true, description: "A file's or a folder's id"}
+      contract:
+        effect: query
+        returns: {type: object, properties: {id: {type: string}, kind: {type: string}, name: {type: string}, permission: {type: string},
+                  breadcrumbs: {type: array}, path: {type: [string, "null"]}}}
+        completion: "The item as the caller may see it, with its place and counts; not found for an item they may not see"
+    - name: list_versions
+      label: Versions
+      permission: read
+      read_only: true
+      params:
+        - {name: file, label: File, required: true}
+      contract:
+        effect: query
+        returns: {type: object, properties: {file: {type: string}, name: {type: string}, versions: {type: array, items: {type: object}}}}
+        completion: "The file's versions newest first, with their authors, comments, names and whether they are kept for good"
+    - name: download
+      label: Download
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: version, label: Version, type: int, description: "One of its versions; the current one by default"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {file: {type: string}, name: {type: string}, version: {type: integer}, content_type: {type: string},
+                  size: {type: integer}, sha256: {type: [string, "null"]}, content_base64: {type: string}, text: {type: [string, "null"]}}}
+        completion: "The file's content (5 MB at most), as text too when it is text, and the download is in its activity"
+    - name: list_shares
+      label: Who Has Access
+      permission: read
+      read_only: true
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: query
+        returns: {type: object, properties: {item: {type: string}, owner: {type: [string, "null"]}, team: {type: [object, "null"]}, shares: {type: array}}}
+        completion: "Who has the item: its owner or team folder members, and the shares on it and on the folders above it the caller may see"
+    - name: list_links
+      label: Public Links
+      permission: read
+      read_only: true
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: query
+        returns: {type: object, properties: {links: {type: array}, policy: {type: object}}}
+        completion: "The item's public links, newest first, without their tokens, and the workspace's rules for the next one (Manage access)"
+    - name: activity
+      label: Activity
+      permission: read
+      read_only: true
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: limit, label: Limit, type: int, description: "1 to 200, 50 by default"}
+      contract:
+        effect: query
+        returns: {type: object, properties: {item: {type: string}, activity: {type: array}}}
+        completion: "What happened to the item, and for a folder to everything in it, newest first"
+    - name: list_comments
+      label: Comments
+      permission: read
+      read_only: true
+      params:
+        - {name: file, label: File, required: true}
+      contract:
+        effect: query
+        returns: {type: object, properties: {file: {type: string}, comments: {type: array}}}
+        completion: "The file's comments, oldest first, with their threads and whether they are resolved"
+    # Changing. Each is one transaction: done whole, or not at all.
+    - name: upload
+      label: Upload File
+      permission: read
+      params:
+        - {name: name, label: Name, required: true}
+        - {name: content_base64, label: Content (Base64), type: text, description: "The file's bytes, standard or URL-safe base64; or text"}
+        - {name: text, label: Text, type: text, description: "The file's content as text, instead of content_base64"}
+        - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+        - {name: on_conflict, label: On a Taken Name, type: select, options: [keep_both, replace, fail], description: "keep_both numbers the new file; replace adds a version"}
+        - {name: comment, label: Comment}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, version: {type: integer}, size: {type: integer}, content_type: {type: string}}}
+        completion: "A new file (or, with replace, a new version of the one of that name) stored, charged to the folder's space or team folder"
+    - name: upload_version
+      label: Upload New Version
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: content_base64, label: Content (Base64), type: text}
+        - {name: text, label: Text, type: text}
+        - {name: comment, label: Comment}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, version: {type: integer}, size: {type: integer}}}
+        completion: "The content is the file's newest version (Edit access; not while someone else has it checked out or open in an editor)"
+    - name: adopt
+      label: Add a Stored File
+      permission: read
+      params:
+        - {name: file, label: Stored File, required: true, description: "A file you stored in the platform's file storage (an upload in parts), yours and tied to nothing yet"}
+        - {name: name, label: Name, required: true}
+        - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+        - {name: on_conflict, label: On a Taken Name, type: select, options: [keep_both, replace, fail], description: "keep_both numbers the new file; replace adds a version"}
+        - {name: comment, label: Comment}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, size: {type: integer}, version: {type: integer}}}
+        completion: "The stored file is a Drive file in the folder (or, with replace, a new version of the same-named one), charged to the folder's space or team folder"
+    - name: editor_lock
+      label: Browser Editor Lock
+      permission: read
+      hidden: true
+      params:
+        - {name: file, label: File, required: true}
+        - {name: lock, label: Lock, required: true, description: "The browser editor session's lock, as opening the editor gave it"}
+        - {name: op, label: What, type: select, options: [refresh, release], required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {lock_seconds: {type: integer}, released: {type: boolean}}}
+        completion: "The browser editor session keeps the file for another 30 minutes (Edit access), or lets it go"
+    - name: create_folder
+      label: New Folder
+      permission: read
+      params:
+        - {name: name, label: Name, required: true}
+        - {name: parent, label: In Folder, description: "A folder's id (Edit access); your top folder by default"}
+        - {name: colour, label: Colour, description: "A hex colour such as #3b82f6"}
+        - {name: on_conflict, label: On a Taken Name, type: select, options: [keep_both, fail]}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, parent: {type: string}}}
+        completion: "A new folder in the folder given; a taken name is numbered unless fail is asked"
+    - name: create_team_folder
+      label: New Team Folder
+      permission: read
+      params:
+        - {name: name, label: Name, required: true}
+        - {name: quota_mb, label: Quota (MB), type: int, description: "0 = unlimited; the workspace's default when empty"}
+        - {name: colour, label: Colour}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {folder: {type: object}, members: {type: array}}}
+        completion: "A team folder with its members, each told (Drive administrators only)"
+    - name: add_team_member
+      label: Add Team Member
+      permission: read
+      params:
+        - {name: folder, label: Team Folder, required: true}
+        - {name: member, label: Member, required: true, description: "An active member's email"}
+        - {name: role, label: Role, type: select, options: [Viewer, Commenter, Editor, Manager], description: "Viewer by default; an existing member's role changes"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {folder: {type: string}, members: {type: array}}}
+        completion: "The person is a member of the team folder in that role, and is told (Manage access)"
+    - name: remove_team_member
+      label: Remove Team Member
+      permission: read
+      params:
+        - {name: folder, label: Team Folder, required: true}
+        - {name: member, label: Member, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {folder: {type: string}, members: {type: array}}}
+        completion: "The person is no longer a member of the team folder (Manage access)"
+    - name: set_team_quota
+      label: Set Team Folder Quota
+      permission: read
+      params:
+        - {name: folder, label: Team Folder, required: true}
+        - {name: quota_mb, label: Quota (MB), type: int, required: true, description: "0 = unlimited"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {folder: {type: string}, quota_mb: {type: integer}}}
+        completion: "The team folder's quota is set (Drive administrators only)"
+    - name: rename
+      label: Rename
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: name, label: New Name, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}}}
+        completion: "The item has the new name; a name taken in its folder is refused (Edit access; Manage for a team folder)"
+    - name: set_colour
+      label: Folder Colour
+      permission: read
+      params:
+        - {name: folder, label: Folder, required: true}
+        - {name: colour, label: Colour, description: "A hex colour such as #3b82f6; empty clears it"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, colour: {type: [string, "null"]}}}
+        completion: "The folder shows in that colour (Edit access)"
+    - name: move
+      label: Move
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: to, label: To Folder, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, parent: {type: string}}}
+        completion: "The item is in the folder given, with everything in it; to another space or team folder its bytes move to that quota (Manage access)"
+    - name: copy
+      label: Copy
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: to, label: To Folder, required: true}
+        - {name: name, label: Name, description: "The item's own name by default; a taken name is numbered"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}}}
+        completion: "A copy of the file, or of the folder with what is in it out of the trash (current versions), in the folder given"
+    - name: trash
+      label: Move to Trash
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, trashed: {type: boolean}}}
+        completion: "The item and everything in it are in the trash, out of every list, search and public link until restored"
+    - name: restore
+      label: Restore from Trash
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}}}
+        completion: "The item is back where it was, renamed when its name was taken meanwhile"
+    - name: delete_forever
+      label: Delete Forever
+      permission: read
+      confirm: "The item and every version of its files are deleted for good. Continue?"
+      params:
+        - {name: item, label: Item, required: true, description: "An item in the trash"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {deleted: {type: string}, freed_bytes: {type: integer}}}
+        completion: "The item and everything in it are gone for good, with their stored bytes; the quota is refunded (Manage access)"
+    - name: empty_trash
+      label: Empty Trash
+      permission: read
+      confirm: "Everything in the trash is deleted for good. Continue?"
+      params:
+        - {name: root, label: Space or Team Folder, description: "A top folder's id: only the trash there"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {deleted: {type: integer}, freed_bytes: {type: integer}, more: {type: boolean}}}
+        completion: "What the caller manages in the trash is deleted for good, 200 items at most a call (more says to call again)"
+    - name: check_out
+      label: Check Out
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, locked_by: {type: string}}}
+        completion: "The file is checked out to the caller: nobody else changes it until it is checked in"
+    - name: check_in
+      label: Check In
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: content_base64, label: New Content (Base64), type: text, description: "Checks in with this as the newest version"}
+        - {name: text, label: New Content (Text), type: text}
+        - {name: comment, label: Comment}
+        - {name: force, label: Force, type: check, description: "Someone with Manage access ends another person's check-out"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, locked_by: {type: [string, "null"]}}}
+        completion: "The file is checked in, with a new version when content was given"
+    - name: restore_version
+      label: Restore Version
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: version, label: Version, type: int, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, version: {type: integer}}}
+        completion: "The version's content is the file's newest version; for a document edited live, a copy beside it"
+    - name: keep_version
+      label: Name or Keep Version
+      permission: read
+      params:
+        - {name: file, label: File, required: true}
+        - {name: version, label: Version, type: int, required: true}
+        - {name: kept, label: Keep for Good, type: check, description: "A kept version is never removed to make room (25 at most a file)"}
+        - {name: label, label: Name, description: "A name to find it by (80 characters at most); empty clears it"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {file: {type: string}, version: {type: integer}, kept: {type: boolean}, label: {type: [string, "null"]}}}
+        completion: "The version has the name given and is kept for good or not, as asked (Edit access)"
+    - name: share
+      label: Share
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: email, label: Person, description: "An email: a member, or a guest outside the workspace (View only, by a link mailed to them)"}
+        - {name: role, label: Role, description: "Everyone holding this role, instead of a person"}
+        - {name: permission, label: Permission, type: select, options: [View, Comment, Edit, Manage], description: "View by default"}
+        - {name: expires_at, label: Until, description: "A date (the end of that day where the workspace is) or an RFC 3339 date-time"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, permission: {type: string}, expires_at: {type: [string, "null"]}}}
+        completion: "The person or role has the item, and what is in it, at that level until then, and is told (Manage access)"
+    - name: unshare
+      label: Stop Sharing
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: share, label: Share, description: "A share's id; or the email or role it is for"}
+        - {name: email, label: Person}
+        - {name: role, label: Role}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {removed: {type: string}}}
+        completion: "The share is gone: leaving needs only to see the item, removing anyone else's needs Manage access"
+    - name: create_link
+      label: Create Public Link
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: access, label: Access, type: select, options: [View, Download], description: "View by default"}
+        - {name: expires_at, label: Ends, description: "A date or an RFC 3339 date-time, within the workspace's rule"}
+        - {name: password, label: Password, secret: true, description: "8 to 256 characters"}
+        - {name: max_downloads, label: Most Uses, type: int, description: "0 or empty: no limit"}
+        - {name: note, label: Note, description: "What the people who open it read"}
+        - {name: answerable, label: Answered For By, description: "A member who manages the item: the link is then the workspace's and outlives its maker"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, token: {type: string}, url: {type: string}, page: {type: string}, access: {type: string},
+                  expires_at: {type: [string, "null"]}, has_password: {type: boolean}}}
+        completion: "A public link to the item within the workspace's rules; its token is in this answer only (Manage access)"
+        answer_once: {fields: [token, url, page], then: "Revoke it and create a new link"}
+    - name: revoke_link
+      label: Revoke Public Link
+      permission: read
+      params:
+        - {name: link, label: Link, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {link: {type: string}, revoked: {type: boolean}}}
+        completion: "The link opens nothing any more (Manage access to its item)"
+    - name: star
+      label: Star
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {item: {type: string}, starred: {type: boolean}}}
+        completion: "The item is among the caller's starred"
+    - name: unstar
+      label: Unstar
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {item: {type: string}, starred: {type: boolean}}}
+        completion: "The item is no longer among the caller's starred"
     - name: add_comment
       label: Comment
       permission: read
       params:
         - {name: file, label: File, required: true}
         - {name: body, label: Comment, type: text, required: true, description: "At most 4000 characters"}
-        - {name: mentions, label: Mentions, description: "Emails of people to tell (those who may see the file)"}
+        - {name: mentions, label: Mentions, description: "Emails of people to tell, separated by commas (those who may see the file)"}
         - {name: reply_to, label: In reply to, description: "A comment starting a thread on the same file"}
-        - {name: anchor, label: Anchor, type: json, description: "A live document's text the comment is on: {from, to}, Yjs relative positions (the Docs editor makes them)"}
+        - {name: anchor, label: Anchor, description: "A live document's text the comment is on, as JSON: {from, to}, Yjs relative positions (the Docs editor makes them)"}
         - {name: quote, label: Quote, description: "The text commented on, as it read (500 characters at most)"}
-    - {name: resolve_comment, label: Resolve Comment, permission: read}
-    - {name: delete_comment, label: Delete Comment, permission: read}
-    - {name: request_access, label: Request Access, permission: read}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, file: {type: string}, author: {type: [string, "null"]}, mentioned: {type: array}}}
+        completion: "The comment is on the file (Comment access); those mentioned who may see the file, a thread's starter and the owner are told"
+    - name: resolve_comment
+      label: Resolve Comment
+      permission: read
+      params:
+        - {name: comment, label: Comment, required: true, description: "The comment that starts the thread"}
+        - {name: resolved, label: Resolved, type: check, description: "Empty or true resolves it; false opens it again"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {comment: {type: string}, resolved: {type: boolean}}}
+        completion: "The thread is resolved or open again (Comment access)"
+    - name: delete_comment
+      label: Delete Comment
+      permission: read
+      params:
+        - {name: comment, label: Comment, required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {deleted: {type: string}}}
+        completion: "The comment is gone, with its replies when it starts a thread (its author, or Manage access)"
+    - name: request_access
+      label: Request Access
+      permission: read
+      params:
+        - {name: item, label: Item, required: true}
+        - {name: message, label: Message, description: "500 characters at most"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {requested: {type: boolean}, has_access: {type: boolean}}}
+        completion: "The item's owner, or a team folder's managers, are asked to share it, once a day; the answer never says whether the item exists"
     - name: create_document
       label: New Document
       permission: read
@@ -103,6 +552,10 @@
         - {name: markdown, label: Content, type: text,
            description: "Markdown: headings, paragraphs, bullet, numbered and task lists, quotes, fenced code, rules, pipe tables; bold, italic, strikethrough, code and links to the web or mail"}
         - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, content_type: {type: string}}}
+        completion: "A new document edited live, from the Markdown given, in the folder given (Edit access)"
     - name: read_document
       label: Read Document
       permission: read
@@ -110,17 +563,31 @@
         - {name: file, label: Document, required: true, description: "A document edited live (a .fdoc file)"}
         - {name: format, label: Format, type: select, options: [markdown, text, html], description: "markdown unless asked"}
         - {name: version, label: Version, type: int, description: "One of its saved versions; as its editors left it by default"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {file: {type: string}, name: {type: string}, version: {type: integer}, format: {type: string},
+                  content: {type: string}, not_carried: {type: array}}}
+        completion: "The document's text as its editors left it, or as one of its versions was, in the format asked; the read is in its activity"
     - name: append_to_document
       label: Add to Document
       permission: read
       params:
         - {name: file, label: Document, required: true, description: "A document edited live (Edit access)"}
         - {name: markdown, label: Content, type: text, required: true, description: "Markdown, added at the end; everyone with the document open sees it at once"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {file: {type: string}, appended: {type: boolean}, change: {type: integer}}}
+        completion: "The Markdown is at the end of the document, as a change everyone who has it open sees at once (Edit access)"
     - name: list_templates
       label: Templates
       permission: read
+      read_only: true
       params:
         - {name: kind, label: Kind, type: select, options: [docx, xlsx, pptx, odt, ods, odp], description: "Only templates making this kind of file; all by default"}
+      contract:
+        effect: query
+        returns: {type: object, properties: {templates: {type: array}, manage: {type: boolean}}}
+        completion: "What new Office files may start from, Drive's own first, and whether the caller manages the workspace's"
     - name: create_from_template
       label: New File from Template
       permission: read
@@ -128,6 +595,10 @@
         - {name: template, label: Template, required: true, description: "A template's id from list_templates (Drive's own are names, such as budget)"}
         - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
         - {name: name, label: Name, description: "The template's title by default; a taken name gets a number"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}}}
+        completion: "A new Office file made from the template, in the folder given (Edit access)"
     - name: save_as_template
       label: Save as Template
       permission: read
@@ -136,12 +607,20 @@
         - {name: title, label: Title, description: "The file's name by default"}
         - {name: category, label: Category, description: "Groups templates in the gallery, such as Finance"}
         - {name: description, label: Description, description: "What it is for, in a line"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, kind: {type: string}, title: {type: string}}}
+        completion: "The workspace has the file's current version as a template of its own (Drive administrators only)"
     - name: delete_template
       label: Delete Template
       permission: read
       confirm: "The template is deleted for everyone; files made from it stay as they are. Continue?"
       params:
         - {name: template, label: Template, required: true, description: "One of the workspace's templates (Drive's own stay); Drive administrators only"}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {deleted: {type: string}}}
+        completion: "The workspace's template is gone; files made from it stay (Drive administrators only)"
   list: {columns: [owner, full_name, quota_mb, used_bytes], sort: owner asc}
 
 - name: DriveTeamMember
@@ -211,6 +690,24 @@
     - {label: Version, fields: [version_no, current_version, modified_at, modified_by, locked_by, locked_at]}
     - {label: Trash, collapsible: true, fields: [trashed, trashed_at, trashed_by]}
   list: {columns: [name, folder, owner, file_type, size, modified_at], sort: modified_at desc}
+  actions:
+    - name: facts
+      label: File Facts
+      permission: read
+      read_only: true
+      hidden: true
+      params:
+        - {name: version, label: Version, type: int, description: "Also answer this version of the file; only the current one when empty"}
+      contract:
+        effect: query
+        returns: {type: object, required: [file, version_no, trashed], properties: {
+          file: {type: string, format: uuid}, name: {type: string}, file_type: {type: [string, "null"]},
+          content_type: {type: [string, "null"]}, size: {type: integer}, sha256: {type: [string, "null"]},
+          version_no: {type: integer}, trashed: {type: boolean},
+          stored_file: {type: [string, "null"], format: uuid},
+          version: {type: [object, "null"], properties: {version_no: {type: integer}, stored_file: {type: [string, "null"], format: uuid},
+                    size: {type: integer}, sha256: {type: [string, "null"]}, content_type: {type: [string, "null"]}}}}}
+        completion: "What the file is now: its type, size, digest and version, whether it or a folder around it is in the trash, the stored file holding its current version, and the version asked for (null when it is no longer kept)"
 
 - name: DriveFileVersion
   label: Drive File Version

@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.20.1-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.24.0-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -38,7 +38,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 | | |
 |---|---|
-| 📦 **Version** | 0.20.1 |
+| 📦 **Version** | 0.24.0 |
 | 🖥️ **Kind** | Its own interface: four launcher apps, Drive at `/drive/`, Sheets at `/sheets/`, Slides at `/slides/` and PDF at `/pdf/` |
 | ➕ **What it adds** | 12 entities (with team members) in one package, 2 roles, 5 reports, 4 launcher apps, 3 intents, a contextual side panel, bar search, a public link page and an add-on for browser editors |
 | 🧱 **Depends on** | The platform's `core` package. Nothing else is required |
@@ -243,7 +243,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 ### 📊 Sheets, 🎞️ Slides and 📄 PDF
 
 - **Their own launcher entries.** Sheets, Slides and PDF are Drive's files of one kind, each with its own New button, template gallery and list.
-- **Office files in the browser.** With an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) that your operator runs, Excel, PowerPoint and Word files open and are edited together in the page. The editor opens in Ferrum's light or dark theme and language, shows presence, saves each change as a new version with the person's own Drive rights, and says "The office editor is not answering. Your file is safe in Drive." with Retry and Download when it does not answer.
+- **Office files in the browser.** With an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) that your operator runs, Excel, PowerPoint and Word files open and are edited together in the page. The editor opens in Ferrum's light or dark theme and language, shows presence, saves each change as a new version with the person's own Drive rights, writes Save As and Save a copy as a new file in the same folder for whoever may add files there (tested against a stand-in editor server, not a real one), and says "The office editor is not answering. Your file is safe in Drive." with Retry and Download when it does not answer.
 - **Browser editors add-on.** An add-on shipped with Drive contributes GridCraft (xlsx, csv, tsv), WordCraft (docx, odt, rtf) and PdfCraft (pdf) from an editor server (`FERRUM_EDITORS_URL`). They run in the person's browser, and each save is a new version.
 - **Read-only for viewers.** Viewers of a spreadsheet or deck see the data without being able to change it.
 - **Documents opened as live documents.** A Word file offers "Open as a Ferrum document" when Docs is installed, last in the Open with list and never the default; the Word file is left as it is. Live documents open in Docs.
@@ -253,7 +253,8 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 - **Intents.** `pick file` answers `{files: [{id, name, size, url}]}`, `preview file` and `share file` take `{id}`, and a contextual **Comments and history** side panel shows a file's details.
 - **Open from anywhere.** `/open/DriveFile/{id}` and `/open/DriveFolder/{id}` open an item.
-- **Actions** on your Drive Space for people and agents, over the REST API or MCP: list, search, recent, starred, shared with me, trash, usage, item info, versions, download, shares, links, activity, comments, upload, upload a version, create a folder, team folders and members, rename, move, copy, trash, restore, delete forever, empty trash, check out and in, restore or keep a version, share, unshare, create and revoke links, star, comment, request access, create, read and append to documents, and templates.
+- **Actions** on your Drive Space for people and agents, over the REST API or MCP: list, search, recent, starred, shared with me, trash, usage, item info, versions, download, shares, links, activity, comments, upload, upload a version, add a file uploaded in parts, create a folder, team folders and members, rename, move, copy, trash, restore, delete forever, empty trash, check out and in, restore or keep a version, share, unshare, create and revoke links, star, comment, request access, create, read and append to documents, and templates.
+- **What other apps may know of a file.** `drive.drive_file.facts` (hidden, read-only) answers a file's type, size, digest and version, whether it is in the trash, and the stored file holding its current version or one named version. The events `drive.file_changed` (a new version, however it was made) and `drive.files_removed` (deleted for good) carry ids and facts, never a name or a person. An app declares them in its `uses`; among people only Drive Administrators and administrators run `facts`.
 - **The assistant** knows what Drive's records mean and suggests questions such as "Which files are shared outside with a link?" and "What takes the most space?".
 
 ## 🧭 How it works
@@ -335,6 +336,7 @@ Drive is ordinary Ferrum metadata and Rust, so its records get the platform's pe
 | Docs | `.fdoc` live documents edited together; Word files offer "Open as a Ferrum document" | Docs `0.8` or later for the Word offer |
 | Mail | Attach from Drive, save attachments to Drive; share notices by email | The Mail app (Comms) |
 | Other apps | Pick, preview and share through intents; open by `/open/DriveFile/{id}` | Nothing |
+| Other apps | `drive.drive_file.facts`, and the events `drive.file_changed` and `drive.files_removed` | Declared in the app's `uses` |
 | Collabora Online or ONLYOFFICE Docs | Online editing of Word, Excel and PowerPoint files over WOPI | `FERRUM_OFFICE_URL`, `FERRUM_OFFICE_WOPI_URL`, optionally `FERRUM_OFFICE_IPS` to limit callers |
 | Browser editors add-on | GridCraft, WordCraft and PdfCraft in the browser | `FERRUM_EDITORS_URL` and the add-on installed |
 | Platform exporters | Word, PDF, HTML, text and Markdown of live documents | The platform's document renderer for PDF |
@@ -382,7 +384,7 @@ Drive is compared with Google Drive, OneDrive (with SharePoint), Dropbox and Nex
 | No per-user licence fee | ✅ | ❌ | ❌ | ❌ | ✅ |
 
 ¹ Pictures up to 1 MB show themselves in the grid; larger pictures and PDFs show a type icon.
-² Needs an office editor server (Collabora Online or ONLYOFFICE Docs) that your operator runs. The platform ships Collabora on by default in its standard deployments.
+² Needs an office editor server (Collabora Online or ONLYOFFICE Docs) that your operator runs. The platform ships Collabora on by default in its standard deployments. Save As and Save a copy write a new file in the same folder; that was tested against a stand-in editor server, not a real one.
 ³ Live documents are edited in Ferrum Docs.
 ⁴ When someone leaves, their files move to a successor; handing a file to someone else while the owner stays is not built.
 
@@ -436,6 +438,12 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.24.0**: Adding a file uploaded in parts and keeping a browser editor's lock are actions an agent can run too.
+- [x] **0.23.0**: Every action says what it takes, does and answers, so another app or an agent can run it through the platform's gate.
+- [x] **0.22.2**: A platform retention rule can no longer delete file versions behind Drive's back.
+- [x] **0.22.1**: The makers of thumbnails, previews and searchable words, ready for the engine that will run them.
+- [x] **0.22.0**: Save As and Save a copy from the online editor write a new file beside the one open.
+- [x] **0.21.0**: Other apps learn what a file is now and which stored file holds a version, and hear when files change or go.
 - [x] **0.20.1**: An action another app or an automation runs for a person keeps to that person's access.
 - [x] **0.20.0**: Upkeep runs one workspace at a time, on whichever replica is free.
 - [x] **0.19.2**: The package's SQL is one file.
@@ -558,7 +566,7 @@ CHANGELOG.md          what changed in each version
 
 ## 📜 Changelog
 
-Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.20.1**.
+Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.24.0**.
 
 ## 🤝 Contributing
 

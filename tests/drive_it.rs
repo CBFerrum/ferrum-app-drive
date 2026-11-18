@@ -285,8 +285,12 @@ fn drive_catalog() -> Catalog {
         ])
         .expect("mail stand-in"),
     );
-    // Another app (a stand-in) that uses every action of a Drive Space through the gate, as Docs uses some.
-    let uses: String = space_actions().iter().map(|(a, _)| format!("  - {{capability: drive.drive_space.{a}, version: '>=0.3.1, <0.5'}}\n")).collect();
+    // Another app (a stand-in) that uses every action of a Drive Space through the gate, as Docs uses some, and what
+    // other apps are told of a file.
+    let mut uses: String = space_actions().iter().map(|(a, _)| format!("  - {{capability: drive.drive_space.{a}, version: '>=0.3.1, <0.5'}}\n")).collect();
+    for capability in ["drive.drive_file.facts", "drive.drive_space.list"] {
+        uses.push_str(&format!("  - {{capability: {capability}, version: '>=0.3.2, <0.5'}}\n"));
+    }
     let probe = format!("package: probe\nversion: 0.0.0\nlabel: Probe (stand-in)\ndepends: [core, drive]\nuses:\n{uses}");
     packages.extend(ferrum_meta::catalog::load_embedded(&[("probe", "package.yaml", &probe)]).expect("probe stand-in"));
     Catalog::from_packages(packages).expect("catalog")
@@ -665,6 +669,7 @@ async fn scenario() {
     t.ok(&alice, "trash", json!({"item": lapsed})).await;
     let link = uid(&t.ok(&alice, "create_link", json!({"item": salary})).await);
     let remark = uid(&t.ok(&alice, "add_comment", json!({"file": salary, "body": "for me"})).await);
+    let planted = t.k.store_file(&alice.ctx, None, "planted.bin", "text/plain", b"alice's").await.expect("stored")["id"].as_str().unwrap().to_string();
     let every = [
         ("list_folder", json!({"folder": secret})),
         ("search", json!({"query": "salary"})),
@@ -682,6 +687,8 @@ async fn scenario() {
         ("list_comments", json!({"file": salary})),
         ("upload", json!({"folder": secret, "name": "planted.txt", "text": "x"})),
         ("upload_version", json!({"file": salary, "text": "overwritten"})),
+        ("adopt", json!({"file": planted, "name": "planted.bin"})),
+        ("editor_lock", json!({"file": salary, "lock": "browser:planted", "op": "refresh"})),
         ("create_folder", json!({"parent": secret, "name": "inside"})),
         ("create_team_folder", json!({"name": "Bob's own"})),
         ("add_team_member", json!({"folder": secret, "member": "bob@acme.test", "role": "Manager"})),
@@ -745,6 +752,7 @@ async fn scenario() {
     t.ok(&alice, "delete_forever", json!({"item": lapsed})).await;
     t.ok(&alice, "revoke_link", json!({"link": link})).await;
     t.ok(&alice, "delete_comment", json!({"comment": remark})).await;
+    t.k.remove_file(&alice.ctx, planted.parse().unwrap()).await.expect("removed");
 
     // ───────────── the generic records API, files API, collaboration, audit, reports: closed ─────────────
     for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar"] {
@@ -776,6 +784,24 @@ async fn scenario() {
     assert_eq!(code(&e), "forbidden");
     assert_eq!(code(&k.update(&admin, "DriveFile", plan, obj(json!({"name": "forged.txt"})), None).await.expect_err("direct edit")), "forbidden");
     assert_eq!(code(&k.delete(&admin, "DriveFolder", q3, None).await.expect_err("direct delete")), "forbidden");
+    // kernel_deletes_of_drive_files_are_refused_even_for_the_system: Drive deletes its folders, files and versions
+    // itself, with their stored bytes and the space's usage; a kernel delete (a retention rule's, say) would leave both.
+    let version: Uuid = {
+        let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+        let v = sqlx::query_scalar("select id from e_drive_file_version where tenant_id = $1 and file = $2 limit 1")
+            .bind(tenant)
+            .bind(plan)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        v
+    };
+    let as_system = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    for (entity, id) in [("DriveFileVersion", version), ("DriveFile", plan), ("DriveFolder", q3)] {
+        let refused = k.delete(&as_system, entity, id, None).await.expect_err(entity);
+        assert_eq!((code(&refused), refused.to_string().contains("Delete Forever")), ("forbidden", true), "{entity}: {refused}");
+    }
     let none: HashMap<String, String> = HashMap::new();
     assert_eq!(code(&ferrum_domain::reports::run(&k, &bob.ctx, "drive_largest_files", &none).await.expect_err("reports")), "forbidden");
     let all_files = k.list(&erin.ctx, "DriveFile", &ListQuery { limit: Some(500), ..Default::default() }).await.unwrap();
@@ -877,6 +903,133 @@ async fn scenario() {
     let actions: Vec<&str> = log["activity"].as_array().unwrap().iter().map(|a| a["action"].as_str().unwrap()).collect();
     assert_eq!(&actions[..3], ["Check In", "Check Out", "Check In"]);
     assert_eq!(log["activity"][0]["details"]["forced_from"], json!("bob@acme.test"));
+
+    // ── what other apps are told of a file ──
+    // Another app asks, through the gate, what a file is now and which stored file holds a version of it
+    // (`drive.drive_file.facts`), and hears of new versions and of files deleted for good (`drive.file_changed`,
+    // `drive.files_removed`): ids and facts, no name and no person. Each check is named after its test; all are said
+    // at the end.
+    let ask = |ctx: &Ctx, capability: &'static str, input: Value| {
+        let (k, probe, ctx) = (&k, &probe, ctx.clone());
+        async move {
+            let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+            let r = k.call_tx(probe, &ctx, &mut tx, &Invocation::new(capability, input)).await.map(|r| r.result);
+            tx.commit().await.unwrap();
+            r
+        }
+    };
+    let system = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    let stored = |at: Value| {
+        let (k, system) = (&k, &system);
+        async move {
+            let id: Uuid = at.as_str().and_then(|s| s.parse().ok()).ok_or_else(|| format!("no stored file in {at}"))?;
+            k.read_file(system, id).await.map(|f| f.2).map_err(|e| e.to_string())
+        }
+    };
+    let changed = |file: Uuid| {
+        let t = &t;
+        async move {
+            t.scalar("select count(*) from outbox where tenant_id = $1 and topic = 'drive.file_changed' and payload->>'file' = $2::text", Some(file)).await
+        }
+    };
+    let mut untold: Vec<String> = Vec::new();
+    // a_new_version_is_announced_once_per_version: none for a new file, one for its next version, none for a rename.
+    let told = uid(&t.upload(&alice, alice.root, "told.txt", b"one").await);
+    let new_file = changed(told).await;
+    t.ok(&alice, "upload_version", json!({"file": told, "text": "two"})).await;
+    let new_version = changed(told).await;
+    let which = "select coalesce(max((payload->>'version_no')::bigint), 0) from outbox where tenant_id = $1 and topic = 'drive.file_changed' and payload->>'file' = $2::text";
+    let numbered = t.scalar(which, Some(told)).await;
+    t.ok(&alice, "rename", json!({"item": told, "name": "told again.txt"})).await;
+    let renamed = changed(told).await;
+    if (new_file, new_version, numbered, renamed) != (0, 1, 2, 1) {
+        untold.push(format!(
+            "a_new_version_is_announced_once_per_version: (new file, new version, its number, rename) {:?}",
+            (new_file, new_version, numbered, renamed)
+        ));
+    }
+    // facts_answer_the_current_version_and_its_stored_file
+    match ask(&system, "drive.drive_file.facts", json!({"id": told})).await {
+        Ok(f) => {
+            let digest = json!(hex::encode(<sha2::Sha256 as sha2::Digest>::digest(b"two")));
+            let bytes = stored(f["stored_file"].clone()).await;
+            if (f["version_no"].as_i64(), f["size"].as_i64(), f["trashed"].as_bool(), &f["sha256"], &f["version"])
+                != (Some(2), Some(3), Some(false), &digest, &Value::Null)
+                || bytes.as_deref() != Ok(&b"two"[..])
+            {
+                untold.push(format!("facts_answer_the_current_version_and_its_stored_file: {f}, stored {bytes:?}"));
+            }
+        }
+        Err(e) => untold.push(format!("facts_answer_the_current_version_and_its_stored_file: {e}")),
+    }
+    match ask(&system, "drive.drive_file.facts", json!({"id": told, "params": {"version": 1}})).await {
+        Ok(f) => {
+            let bytes = stored(f["version"]["stored_file"].clone()).await;
+            if (f["version_no"].as_i64(), f["version"]["version_no"].as_i64()) != (Some(2), Some(1)) || bytes.as_deref() != Ok(&b"one"[..]) {
+                untold.push(format!("facts_answer_the_current_version_and_its_stored_file (version 1): {f}, stored {bytes:?}"));
+            }
+        }
+        Err(e) => untold.push(format!("facts_answer_the_current_version_and_its_stored_file (version 1): {e}")),
+    }
+    let e = ask(&system, "drive.drive_file.facts", json!({"id": told, "params": {"version": "two"}})).await;
+    if !matches!(&e, Err(e) if code(e) == "validation_failed") {
+        untold.push(format!("facts_answer_the_current_version_and_its_stored_file (a version that is no number): {e:?}"));
+    }
+    // facts_of_a_pruned_version_are_null: plan.txt keeps three versions; its first went.
+    match ask(&system, "drive.drive_file.facts", json!({"id": plan, "params": {"version": 1}})).await {
+        Ok(f) if f["version"].is_null() && f["stored_file"].is_string() => {}
+        other => untold.push(format!("facts_of_a_pruned_version_are_null: {other:?}")),
+    }
+    // facts_are_refused_without_the_right: among people, Drive Administrators and administrators only.
+    let bobs = k.run_action(&bob.ctx, "DriveFile", told, "facts", json!({})).await;
+    let erins = k.run_action(&erin.ctx, "DriveFile", told, "facts", json!({})).await;
+    if !matches!(&bobs, Err(e) if code(e) == "forbidden") || erins.as_ref().map(|f| f["version_no"].clone()).ok() != Some(json!(2)) {
+        untold.push(format!("facts_are_refused_without_the_right: bob {bobs:?}, erin {erins:?}"));
+    }
+    // the_capability_is_in_the_catalog_with_its_contract
+    let effect = k.capability(&admin, "drive.drive_file.facts").map(|c| format!("{:?}", c.effect));
+    if effect.as_deref().ok() != Some("Query") {
+        untold.push(format!("the_capability_is_in_the_catalog_with_its_contract: {effect:?}"));
+    }
+    // item_info_is_asked_through_the_gate_for_a_person
+    let spaces = ask(&bob.ctx, "drive.drive_space.list", json!({"filters": [["owner", "eq", "bob@acme.test"]]})).await;
+    let his = uid(&t.upload(&bob, bob.root, "his.txt", b"mine").await);
+    let info = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": his}})).await;
+    let hers = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": salary}})).await;
+    let odd = ask(&bob.ctx, "drive.drive_space.item_info", json!({"id": bob.space, "params": {"item": his, "x": 1}})).await;
+    if spaces.as_ref().ok().and_then(Value::as_array).map(|s| s.iter().map(uid).collect::<Vec<_>>()) != Some(vec![bob.space])
+        || info.as_ref().map(|i| i["name"].clone()).ok() != Some(json!("his.txt"))
+        || hers.as_ref().map_err(ToString::to_string).err().as_deref() != Some("Drive item not found")
+        || !matches!(&odd, Err(e) if code(e) == "validation_failed")
+    {
+        untold.push(format!("item_info_is_asked_through_the_gate_for_a_person: {spaces:?} / {info:?} / {hers:?} / {odd:?}"));
+    }
+    // facts_say_when_a_file_is_in_the_trash; files_deleted_for_good_are_announced
+    let bin = t.folder(&alice, alice.root, "Bin").await;
+    let (inside, beside) = (uid(&t.upload(&alice, bin, "inside.txt", b"in").await), uid(&t.upload(&alice, bin, "beside.txt", b"by").await));
+    let trashed = |file: Uuid| {
+        let (ask, system) = (&ask, &system);
+        async move { ask(system, "drive.drive_file.facts", json!({"id": file})).await.map(|f| f["trashed"].clone()).map_err(|e| e.to_string()) }
+    };
+    t.ok(&alice, "trash", json!({"item": inside})).await;
+    let alone = trashed(inside).await;
+    t.ok(&alice, "restore", json!({"item": inside})).await;
+    let back = trashed(inside).await;
+    t.ok(&alice, "trash", json!({"item": bin})).await;
+    let within = (trashed(inside).await, trashed(beside).await);
+    if (alone.clone(), back.clone(), within.clone()) != (Ok(json!(true)), Ok(json!(false)), (Ok(json!(true)), Ok(json!(true)))) {
+        untold.push(format!("facts_say_when_a_file_is_in_the_trash: trashed {alone:?}, restored {back:?}, in a trashed folder {within:?}"));
+    }
+    t.ok(&alice, "delete_forever", json!({"item": bin})).await;
+    let both = format!(
+        "select count(*) from outbox where tenant_id = $1 and topic = 'drive.files_removed' and payload->'files' ? $2::text and payload->'files' ? '{beside}'"
+    );
+    let removed = t.scalar(&both, Some(inside)).await;
+    let after = ask(&system, "drive.drive_file.facts", json!({"id": inside})).await;
+    if removed != 1 || !matches!(&after, Err(e) if code(e) == "not_found") {
+        untold.push(format!("files_deleted_for_good_are_announced: {removed} events naming both; the facts of one now {after:?}"));
+    }
+    assert!(untold.is_empty(), "what other apps are told of a file:\n{}", untold.join("\n"));
 
     // ───────────── moves: cycles refused, inheritance follows the place, bytes follow the payer ─────────────
     let e = t.no(&alice, "move", json!({"item": projects, "to": drafts})).await;
@@ -1376,6 +1529,67 @@ async fn scenario() {
     let bad_kind = t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "exe")], &[], vec![]).await.unwrap_err();
     assert!(bad_kind.to_string().contains("kind must be"), "{bad_kind}");
 
+    // Save As, Save a copy and Export as (MS-WOPI PutRelativeFile): the editor writes a new file beside the open one, for
+    // whoever may add files to its folder. (Tested against this stand-in editor, not a real one.)
+    let relative = |file: Uuid, token: &str, headers: &[(&'static str, &str)], body: &'static [u8]| {
+        let mut h = vec![("x-wopi-override", "PUT_RELATIVE".to_string())];
+        h.extend(headers.iter().map(|(k, v)| (*k, v.to_string())));
+        wopi(file, "", "POST", token.to_string(), h, body.to_vec())
+    };
+    let versions_of = |file: Uuid| {
+        let t = &t;
+        async move { t.scalar("select count(*) from e_drive_file_version where tenant_id = $1 and file = $2", Some(file)).await }
+    };
+    let can_save_as = |token: String| {
+        let t = &t;
+        let info = wopi(doc, "", "GET", token, vec![], vec![]);
+        async move { t.json(info.await)["UserCanNotWriteRelative"].clone() }
+    };
+    assert_eq!(can_save_as(token.clone()).await, json!(false), "alice may add files beside it");
+    // save_as_makes_a_file_beside_it, the_copy_is_counted_in_the_quota
+    let used = t.used(alice.space).await;
+    let r = relative(doc, &token, &[("x-wopi-suggestedtarget", ".docx")], b"PK a copy").await;
+    assert_eq!(r.status, 200);
+    let saved = t.json(r);
+    assert_eq!(saved["Name"], json!("plan (2).docx"), "a suggested name is the open file's, numbered");
+    let url = saved["Url"].as_str().unwrap().to_string();
+    let (at, copy_token) = url.split_once("?access_token=").unwrap_or_else(|| panic!("a token in {url}"));
+    let copy: Uuid = at.rsplit('/').next().unwrap().parse().unwrap();
+    assert_eq!(at, format!("http://ferrum.test/api/site/acme/drive/wopi/files/{copy}"));
+    assert_eq!(
+        (saved["HostEditUrl"].clone(), saved["HostViewUrl"].clone()),
+        (json!(format!("https://erp.acme.test/drive/item/{copy}")), saved["HostEditUrl"].clone())
+    );
+    assert_eq!(t.ok(&alice, "item_info", json!({"item": copy})).await["parent"], json!(alice.root));
+    assert_eq!(t.ok(&alice, "download", json!({"file": copy})).await["content_base64"], json!(b64(b"PK a copy")));
+    assert_eq!(wopi(copy, "", "GET", copy_token.to_string(), vec![], vec![]).await.status, 200);
+    assert_eq!(wopi(doc, "", "GET", copy_token.to_string(), vec![], vec![]).await.status, 401, "its token opens the copy alone");
+    assert_eq!(t.used(alice.space).await, used + 9, "the copy is charged to the folder's payer");
+    // save_as_takes_a_name_in_utf7
+    let r = relative(doc, &token, &[("x-wopi-suggestedtarget", "R+AOk-sum+AOk-.docx")], b"PK cv").await;
+    assert_eq!((r.status, t.json(r)["Name"].clone()), (200, json!("R\u{e9}sum\u{e9}.docx")));
+    // save_as_with_a_fixed_name_does_not_overwrite, unless asked to
+    let before = versions_of(doc).await;
+    assert_eq!(relative(doc, &token, &[("x-wopi-relativetarget", "plan.docx")], b"PK over").await.status, 409);
+    assert_eq!(versions_of(doc).await, before, "a name the editor may not change, taken: nothing is written");
+    let r = relative(doc, &token, &[("x-wopi-relativetarget", "other.docx"), ("x-wopi-overwriterelativetarget", "true")], b"PK over").await;
+    assert_eq!((r.status, t.json(r)["Name"].clone()), (200, json!("other.docx")));
+    assert_eq!(versions_of(other).await, 2, "asked to, it is one more version of that file");
+    // save_as_with_both_names_is_501, save_as_with_a_bad_name_is_400
+    assert_eq!(relative(doc, &token, &[("x-wopi-suggestedtarget", ".docx"), ("x-wopi-relativetarget", "x.docx")], b"PK").await.status, 501);
+    for bad in [&[("x-wopi-relativetarget", "a/b.docx")][..], &[("x-wopi-suggestedtarget", "+AOl-.docx")], &[]] {
+        assert_eq!(relative(doc, &token, bad, b"PK").await.status, 400, "{bad:?}");
+    }
+    // save_as_is_refused_without_edit_on_the_folder: Bob views the file and nothing of Alice's folder.
+    assert_eq!(can_save_as(bob_token.clone()).await, json!(true));
+    let files = || {
+        let t = &t;
+        async move { t.scalar("select count(*) from e_drive_file where tenant_id = $1 and $2::uuid is null", None).await }
+    };
+    let count = files().await;
+    assert_eq!(relative(doc, &bob_token, &[("x-wopi-suggestedtarget", ".docx")], b"PK bob's").await.status, 404);
+    assert_eq!(files().await, count, "and no file");
+
     // Only from the editor's addresses, when the operator lists them.
     unsafe { std::env::set_var("FERRUM_OFFICE_IPS", "10.9.9.9") };
     assert_eq!(wopi(doc, "", "GET", token.clone(), vec![], vec![]).await.status, 403);
@@ -1513,6 +1727,9 @@ async fn scenario() {
 
     // The lock is refreshed, taken back after it lapsed if nobody took it, and released.
     assert_eq!(lock_op(&alice, &l3, "refresh").await.unwrap()["lock_seconds"], json!(1800));
+    // The page's route runs the operation drive.drive_space.editor_lock; an agent runs it by the same door.
+    assert_eq!(t.ok(&alice, "editor_lock", json!({"file": budget, "lock": l3, "op": "refresh"})).await["lock_seconds"], json!(1800));
+    assert_eq!(code(&t.no(&frank, "editor_lock", json!({"file": budget, "lock": l3, "op": "refresh"})).await), "not_found", "not frank's file");
     assert_eq!(code(&lock_op(&alice, &l1, "refresh").await.unwrap_err()), "conflict");
     assert!(lock_op(&alice, "nonsense", "refresh").await.is_err());
     assert!(lock_op(&alice, &l3, "explode").await.is_err());
@@ -1561,6 +1778,50 @@ async fn scenario() {
     let viewer = open(&bob, doc, &[]).await.unwrap();
     assert_eq!((viewer["action"].clone(), viewer["held_by"].clone(), viewer["lock"].clone()), (json!("view"), Value::Null, Value::Null));
     assert_eq!(open(&frank, budget, &[]).await.unwrap_err().to_string(), "Drive item not found");
+    // two_people_save_one_presentation: Alice and Bob in one deck share the online editor's lock; each save is a version
+    // in its saver's name; a browser editor is kept out meanwhile; a session opened to look cannot Save As. (A stand-in
+    // editor: what a real one shows is the team lead's walk.)
+    let deck = uid(&t.upload(&alice, alice.root, "deck.pptx", b"PK deck 1").await);
+    t.ok(&alice, "share", json!({"item": deck, "email": "bob@acme.test", "permission": "Edit"})).await;
+    let session = |u: &U, query: &'static [(&'static str, &'static str)]| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move { t.json(t.site(Some(&ctx), "POST", &format!("/editor/{deck}"), query, &[], vec![]).await.expect("an editor session")) }
+    };
+    let (a, b) = (session(&alice, &[]).await, session(&bob, &[]).await);
+    assert_eq!((a["action"].clone(), b["action"].clone()), (json!("edit"), json!("edit")));
+    let (at, bt) = (a["access_token"].as_str().unwrap().to_string(), b["access_token"].as_str().unwrap().to_string());
+    let deck_op = |token: &str, name: &'static str| {
+        wopi(deck, "", "POST", token.to_string(), vec![("x-wopi-override", name.into()), ("x-wopi-lock", "S1".into())], vec![])
+    };
+    assert_eq!((deck_op(&at, "LOCK").await.status, deck_op(&bt, "LOCK").await.status), (200, 200), "one lock, shared");
+    for tk in [&at, &bt] {
+        assert_eq!(t.json(wopi(deck, "", "GET", tk.clone(), vec![], vec![]).await)["UserCanWrite"], json!(true));
+    }
+    let put_deck = |token: &str, body: &'static [u8]| {
+        wopi(deck, "/contents", "POST", token.to_string(), vec![("x-wopi-override", "PUT".into()), ("x-wopi-lock", "S1".into())], body.to_vec())
+    };
+    assert_eq!((put_deck(&at, b"PK deck 2").await.status, put_deck(&bt, b"PK deck 3").await.status), (200, 200));
+    let versions = t.ok(&alice, "list_versions", json!({"file": deck})).await;
+    let by: Vec<(i64, String)> =
+        versions["versions"].as_array().unwrap().iter().map(|v| (v["version"].as_i64().unwrap(), v["author"].as_str().unwrap().to_string())).collect();
+    assert_eq!(by[..2], [(3, "bob@acme.test".to_string()), (2, "alice@acme.test".to_string())], "each save in its saver's name");
+    let kept_out = open(&bob, deck, &[]).await.unwrap();
+    assert_eq!((kept_out["action"].clone(), kept_out["held_in"].clone()), (json!("view"), json!("online")), "no browser editor meanwhile");
+    assert_eq!(deck_op(&at, "UNLOCK").await.status, 200);
+    let looking = session(&alice, &[("action", "view")]).await;
+    assert_eq!(looking["action"], json!("view"));
+    let look_token = looking["access_token"].as_str().unwrap().to_string();
+    let r = wopi(
+        deck,
+        "",
+        "POST",
+        look_token.clone(),
+        vec![("x-wopi-override", "PUT_RELATIVE".into()), ("x-wopi-suggestedtarget", ".pptx".into())],
+        b"PK".to_vec(),
+    )
+    .await;
+    assert_eq!(r.status, 401, "a session that only looks makes no file");
+    assert_eq!(t.json(wopi(deck, "", "GET", look_token, vec![], vec![]).await)["UserCanNotWriteRelative"], json!(true));
     unsafe { std::env::remove_var("FERRUM_EDITORS_URL") };
     t.consistent().await;
 
@@ -2190,6 +2451,13 @@ async fn scenario() {
     assert_eq!(named, Some(stored_id(parts.clone())), "the stored file itself, streamed");
     assert_eq!(t.site(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content").body, vec![b'p'; 300_000]);
     assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
+    // The page's route runs the operation drive.drive_space.adopt; an agent runs it by the same door.
+    let by_agent = stored_id(t.k.store_file(&alice.ctx, None, "agent.bin", "text/plain", b"from an agent").await.expect("stored"));
+    let made = t.ok(&alice, "adopt", json!({"file": by_agent, "name": "agent.bin"})).await;
+    assert_eq!((made["name"].clone(), made["size"].clone(), made["parent"].clone()), (json!("agent.bin"), json!(13), json!(alice.root)));
+    let bobs_own = stored_id(t.k.store_file(&bob.ctx, None, "b2.txt", "text/plain", b"bob's own").await.expect("stored"));
+    assert_eq!(code(&t.no(&alice, "adopt", json!({"file": bobs_own, "name": "b2.txt"})).await), "not_found", "only one's own stored files");
+    t.k.remove_file(&bob.ctx, bobs_own.parse().unwrap()).await.expect("removed");
     let past = stored_id(t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored"));
     let e = adopt("big.txt", past.clone(), "keep_both").await.expect_err("past the workspace's limit");
     assert!(code(&e) == "validation_failed" && format!("{e:?}").contains("limited to 2 MB"), "{e:?}");
@@ -2239,12 +2507,13 @@ async fn scenario() {
     assert_eq!(open.status, 200);
 }
 
-/// An editor server that only answers discovery: Writer for docx, Calc for xlsx.
+/// An editor server that only answers discovery: Writer for docx, Calc for xlsx, Impress for pptx (to edit or to look).
 async fn fake_editor() -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     const XML: &str = r#"<wopi-discovery><net-zone name="external-http">
 <app name="writer"><action default="true" ext="docx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
 <app name="calc"><action default="true" ext="xlsx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
+<app name="impress"><action default="true" ext="pptx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/><action ext="pptx" name="view" urlsrc="http://office.test/browser/x/cool.html?"/></app>
 </net-zone></wopi-discovery>"#;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

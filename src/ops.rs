@@ -140,6 +140,8 @@ pub async fn run(k: &Kernel, ctx: &Ctx, tx: &mut Tx, space: &Space, name: &str, 
         "activity" => activity(tx, ctx, g, &p).await,
         "list_comments" => list_comments(tx, ctx, g, &p).await,
         "upload" => files::upload_action(k, ctx, tx, g, space, &p).await,
+        "adopt" => files::adopt(k, ctx, tx, g, space, &p).await,
+        "editor_lock" => crate::office::editor_lock(ctx, tx, g, &p).await,
         "upload_version" => files::upload_version_action(k, ctx, tx, g, &p).await,
         "create_folder" => create_folder(k, ctx, tx, g, space, &p).await,
         "create_team_folder" => create_team_folder(k, ctx, tx, g, &p).await,
@@ -1140,6 +1142,10 @@ pub async fn purge(ctx: &Ctx, tx: &mut Tx, item: &Item) -> Result<i64> {
     ferrum_kernel::coedit::forget(tx, ctx.tenant, crate::docs::PACKAGE, &files).await?;
     sqlx::query("delete from drive_doc_words where tenant_id = $1 and file = any($2)").bind(ctx.tenant).bind(&files).execute(&mut **tx).await?;
     sqlx::query("delete from e_drive_file where tenant_id = $1 and id = any($2)").bind(ctx.tenant).bind(&files).execute(&mut **tx).await?;
+    // Other apps hear which files went (package.yaml, `events`), 500 to an event.
+    for group in files.chunks(500) {
+        ferrum_kernel::outbox::enqueue(tx, ctx.tenant, "drive.files_removed", None, None, json!({"files": group})).await?;
+    }
     // Deepest first: a folder goes after everything inside it.
     folders.sort_by_key(|f| std::cmp::Reverse(f.1));
     for depth in folders.chunk_by(|a, b| a.1 == b.1) {

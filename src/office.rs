@@ -18,11 +18,13 @@
 //! file at a time, and every save that does not hold the lock is refused meanwhile ([`hold`]).
 
 use crate::acl::{Grants, Level};
-use crate::files::{self, Content};
+use crate::content;
+use crate::files::{self, Content, OnConflict};
 use crate::keys;
 use crate::tree::{self, Item, Kind};
 use base64::Engine as _;
-use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
+use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE_NO_PAD};
+use ferrum_kernel::vault::Derived;
 use ferrum_kernel::{Ctx, Error, Kernel, Result, SiteRequest, SiteResponse, Tx};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -382,34 +384,32 @@ pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, 
 /// `POST /api/app/drive/editor/{file}/lock?lock=…&op=refresh|release`: keeps a browser editor
 /// session's lock for another 30 minutes (taking it back if it lapsed and nobody else took it),
 /// or ends it. Refreshing needs Edit access still; releasing is always allowed.
-pub async fn browser_lock(k: &Kernel, ctx: &Ctx, file: Uuid, lock: &str, op: &str) -> Result<Value> {
+pub async fn editor_lock(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &crate::ops::Params<'_>) -> Result<Value> {
+    let file = p.req_uuid("file")?;
+    let lock = p.req("lock")?;
     if !lock.starts_with(BROWSER) || lock.len() > 80 {
         return Err(Error::field("lock", "is not a browser editor lock"));
     }
-    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-    let out = match op {
+    Ok(match p.req("op")? {
         "release" => {
             sqlx::query("delete from drive_wopi_lock where tenant_id = $1 and file = $2 and lock = $3")
                 .bind(ctx.tenant)
                 .bind(file)
                 .bind(lock)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             json!({"released": true})
         }
         "refresh" => {
-            let g = Grants::load(&mut tx, ctx).await?;
-            let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::Edit, false).await?;
-            if !take(&mut tx, ctx, file, lock, false).await? {
-                let h = held(&mut tx, ctx.tenant, file).await?;
+            let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
+            if !take(tx, ctx, file, lock, false).await? {
+                let h = held(tx, ctx.tenant, file).await?;
                 return Err(h.map_or_else(|| Error::Unavailable("the file's editor lock is changing; try again".into()), |h| being_edited(&item, &h)));
             }
             json!({"lock_seconds": LOCK_SECONDS})
         }
         _ => return Err(Error::field("op", "must be refresh or release")),
-    };
-    tx.commit().await?;
-    Ok(out)
+    })
 }
 
 /// `POST /api/app/drive/editor/{file}` (`action=view` to only read): the editor page for the file
@@ -509,14 +509,21 @@ pub async fn wopi(k: &Kernel, req: &SiteRequest, path: &[&str]) -> Result<SiteRe
     }
     // A deactivated person's tokens stop working with their account.
     let Ok(ctx) = k.load_ctx(req.tenant, user, None, format!("wopi-{}", Uuid::now_v7())).await else { return Ok(status(401)) };
+    let op = header("x-wopi-override").unwrap_or_default();
+    // Save As signs a token for the file it makes: the key is taken before the transaction, as `launch` takes it.
+    let key = if op == "PUT_RELATIVE" { Some(keys::current(k, req.tenant, keys::WOPI).await?) } else { None };
     let mut tx = k.db.tenant_tx(req.tenant).await?;
     let g = Grants::load(&mut tx, &ctx).await?;
-    let out = match (req.method.as_str(), contents, header("x-wopi-override").unwrap_or_default()) {
+    let out = match (req.method.as_str(), contents, op) {
         ("GET", false, _) => check_file_info(k, &mut tx, &ctx, &g, file, read_only).await,
         ("GET", true, _) => get_file(k, &mut tx, &ctx, &g, file).await,
         // A session that only reads writes nothing and takes no lock.
-        ("POST", _, "PUT" | "LOCK" | "UNLOCK" | "REFRESH_LOCK" | "UNLOCK_AND_RELOCK") if read_only => Ok(status(401)),
+        ("POST", _, "PUT" | "PUT_RELATIVE" | "LOCK" | "UNLOCK" | "REFRESH_LOCK" | "UNLOCK_AND_RELOCK") if read_only => Ok(status(401)),
         ("POST", true, "PUT") => put_file(k, &mut tx, &ctx, &g, file, req).await,
+        ("POST", false, "PUT_RELATIVE") => match &key {
+            Some(key) => put_relative(k, &mut tx, &ctx, &g, file, req, key, &cfg.wopi).await,
+            None => Ok(status(500)),
+        },
         ("POST", false, op) => lock(&mut tx, &ctx, &g, file, op, header("x-wopi-lock"), header("x-wopi-oldlock")).await,
         _ => Ok(status(501)),
     };
@@ -545,6 +552,11 @@ async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: U
     let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, false).await?;
     let h = held(tx, ctx.tenant, file).await?;
     let can_write = !read_only && writable(ctx, g, &item, h.as_ref());
+    // Save As writes beside the file: for whoever may add files to its folder.
+    let beside = match item.parent {
+        Some(folder) if !read_only => tree::open_kind(tx, ctx, g, Kind::Folder, folder, Level::Edit, false).await.is_ok(),
+        _ => false,
+    };
     let mut info = json!({
             "BaseFileName": item.name,
             "Size": item.size,
@@ -560,7 +572,7 @@ async fn check_file_info(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: U
             "SupportsUpdate": true,
             "SupportsRename": false,
             "UserCanRename": false,
-            "UserCanNotWriteRelative": true,
+            "UserCanNotWriteRelative": !beside,
             "UserExtraInfo": {"mail": ctx.email},
     });
     // The web app hears from the editor (Ferrum docs/plan/collaboration.md, C2): who joins and
@@ -640,6 +652,69 @@ async fn put_file(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, re
     Ok(r)
 }
 
+/// `PutRelativeFile` (MS-WOPI): the editor's Save As, Save a copy and Export as. The body becomes a new file in the open
+/// file's folder, for whoever may add files there (`files::upload`: the name, Edit on the folder, the size limit and the
+/// quota, charged to the folder's payer). A suggested name (`X-WOPI-SuggestedTarget`) may be changed: one starting with
+/// `.` is the open file's name with that extension, a taken one is numbered. A relative name (`X-WOPI-RelativeTarget`)
+/// is kept: a taken one is refused (409) unless overwriting it is asked for (`X-WOPI-OverwriteRelativeTarget`), which
+/// adds a version to that file. Both names come in UTF-7. The answer names the file and gives the editor a token for it
+/// alone.
+async fn put_relative(k: &Kernel, tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, req: &SiteRequest, key: &Derived, wopi: &str) -> Result<SiteResponse> {
+    let src = tree::open_kind(tx, ctx, g, Kind::File, file, Level::View, false).await?;
+    let Some(folder) = src.parent else { return Ok(status(501)) };
+    let header = |name: &str| req.headers.get(name).and_then(Value::as_str);
+    let (target, suggested) = match (header("x-wopi-suggestedtarget"), header("x-wopi-relativetarget")) {
+        (Some(_), Some(_)) => return Ok(status(501)),
+        (Some(t), None) => (t, true),
+        (None, Some(t)) => (t, false),
+        (None, None) => return Ok(status(400)),
+    };
+    let Some(target) = utf7(target) else { return Ok(status(400)) };
+    let name = if suggested && target.starts_with('.') { format!("{}{target}", content::stem(&src.name, false)) } else { target };
+    let on = match (suggested, header("x-wopi-overwriterelativetarget")) {
+        (true, _) => OnConflict::KeepBoth,
+        (false, Some(o)) if o.eq_ignore_ascii_case("true") => OnConflict::Replace,
+        (false, _) => OnConflict::Fail,
+    };
+    let made = files::upload(k, ctx, tx, g, folder, &Content::new(&name, &req.body), on, Some("Saved as a copy online")).await?;
+    let new: Uuid = made["id"].as_str().and_then(|s| s.parse().ok()).ok_or_else(|| Error::internal("a saved copy has no id"))?;
+    let token = sign(key.bytes(), key.version(), ctx.tenant, new, ctx.user, chrono::Utc::now().timestamp() + TOKEN_SECONDS, false);
+    let slug: String = sqlx::query_scalar("select slug from tenant where id = $1").bind(ctx.tenant).fetch_one(&mut **tx).await?;
+    let mut out = json!({"Name": made["name"], "Url": format!("{wopi}/api/site/{slug}/drive/wopi/files/{new}?access_token={}", encode(&token))});
+    if let Some(origin) = web_origin(k.settings.public_url.as_deref()) {
+        out["HostEditUrl"] = json!(format!("{origin}/drive/item/{new}"));
+        out["HostViewUrl"] = out["HostEditUrl"].clone();
+    }
+    Ok(SiteResponse::json(200, &out))
+}
+
+/// A name as WOPI sends it in a header: UTF-7 (RFC 2152). `+-` is `+`; `+` starts a run of base64 (UTF-16, big-endian)
+/// that ends at the first character outside base64, a `-` there being dropped. `None` when a run is not whole UTF-16 or
+/// leaves bits that are not zero.
+fn utf7(s: &str) -> Option<String> {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(c) = rest.chars().next() {
+        if let Some(after) = rest.strip_prefix("+-") {
+            out.push('+');
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix('+') {
+            let end = after.find(|c: char| !(c.is_ascii_alphanumeric() || c == '+' || c == '/')).unwrap_or(after.len());
+            let mut bytes = STANDARD_NO_PAD.decode(&after[..end]).ok()?;
+            if bytes.len() % 2 == 1 && bytes.pop() != Some(0) {
+                return None;
+            }
+            let units: Vec<u16> = bytes.chunks(2).map(|p| u16::from_be_bytes([p[0], p[1]])).collect();
+            out.push_str(&String::from_utf16(&units).ok()?);
+            rest = after[end..].strip_prefix('-').unwrap_or(&after[end..]);
+        } else {
+            out.push(c);
+            rest = &rest[c.len_utf8()..];
+        }
+    }
+    Some(out)
+}
+
 async fn lock(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, op: &str, given: Option<&str>, old: Option<&str>) -> Result<SiteResponse> {
     let level = if op == "GET_LOCK" { Level::View } else { Level::Edit };
     tree::open_kind(tx, ctx, g, Kind::File, file, level, false).await?;
@@ -685,6 +760,17 @@ async fn lock(tx: &mut Tx, ctx: &Ctx, g: &Grants, file: Uuid, op: &str, given: O
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn names_from_the_editor_are_utf7() {
+        assert_eq!(utf7("plan.docx").as_deref(), Some("plan.docx"));
+        assert_eq!(utf7("+AOk-").as_deref(), Some("\u{e9}"));
+        assert_eq!(utf7("Report +AOk-t+AOk-.pptx").as_deref(), Some("Report \u{e9}t\u{e9}.pptx"));
+        assert_eq!(utf7("a+-b").as_deref(), Some("a+b"));
+        assert_eq!(utf7("+ZeVnLIqe-.docx").as_deref(), Some("\u{65e5}\u{672c}\u{8a9e}.docx"));
+        assert_eq!(utf7("+AOl-"), None, "bits left over that are not zero");
+        assert_eq!(utf7("+Z-"), None, "not a whole character");
+    }
 
     #[test]
     fn the_editor_is_given_the_look_it_understands_and_nothing_else() {
