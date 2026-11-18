@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.22.2
+
+Needs the same platform as 0.22.1. Package `drive` unchanged.
+
+- **Fix: a retention rule could delete file versions behind Drive's back.** The platform accepted a delete rule on
+  File Version (Drive declares no `retain` there), and the kernel let the system delete version rows: the stored
+  bytes stayed, the space's usage stayed charged and the file lost its current version. The kernel now refuses every
+  delete of a folder, a file or a version, the system's included ("Drive deletes its files itself; use Delete
+  Forever"); a retention run counts those records as failed and goes on. Drive's own deletes (delete forever, the
+  trash purge, version pruning) are its own SQL and work as before.
+
+No database change, no interface change.
+
 ## 0.22.1
 
 Needs the same platform as 0.22.0. No behaviour change: nothing runs the new code yet.

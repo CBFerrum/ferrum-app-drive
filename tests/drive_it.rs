@@ -780,6 +780,24 @@ async fn scenario() {
     assert_eq!(code(&e), "forbidden");
     assert_eq!(code(&k.update(&admin, "DriveFile", plan, obj(json!({"name": "forged.txt"})), None).await.expect_err("direct edit")), "forbidden");
     assert_eq!(code(&k.delete(&admin, "DriveFolder", q3, None).await.expect_err("direct delete")), "forbidden");
+    // kernel_deletes_of_drive_files_are_refused_even_for_the_system: Drive deletes its folders, files and versions
+    // itself, with their stored bytes and the space's usage; a kernel delete (a retention rule's, say) would leave both.
+    let version: Uuid = {
+        let mut tx = k.db.tenant_tx(tenant).await.unwrap();
+        let v = sqlx::query_scalar("select id from e_drive_file_version where tenant_id = $1 and file = $2 limit 1")
+            .bind(tenant)
+            .bind(plan)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        v
+    };
+    let as_system = Ctx::system(tenant, k.registry.schema(tenant).await.unwrap());
+    for (entity, id) in [("DriveFileVersion", version), ("DriveFile", plan), ("DriveFolder", q3)] {
+        let refused = k.delete(&as_system, entity, id, None).await.expect_err(entity);
+        assert_eq!((code(&refused), refused.to_string().contains("Delete Forever")), ("forbidden", true), "{entity}: {refused}");
+    }
     let none: HashMap<String, String> = HashMap::new();
     assert_eq!(code(&ferrum_domain::reports::run(&k, &bob.ctx, "drive_largest_files", &none).await.expect_err("reports")), "forbidden");
     let all_files = k.list(&erin.ctx, "DriveFile", &ListQuery { limit: Some(500), ..Default::default() }).await.unwrap();

@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.22.1-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.22.2-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -38,7 +38,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 | | |
 |---|---|
-| 📦 **Version** | 0.22.1 |
+| 📦 **Version** | 0.22.2 |
 | 🖥️ **Kind** | Its own interface: four launcher apps, Drive at `/drive/`, Sheets at `/sheets/`, Slides at `/slides/` and PDF at `/pdf/` |
 | ➕ **What it adds** | 12 entities (with team members) in one package, 2 roles, 5 reports, 4 launcher apps, 3 intents, a contextual side panel, bar search, a public link page and an add-on for browser editors |
 | 🧱 **Depends on** | The platform's `core` package. Nothing else is required |
@@ -438,6 +438,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.22.2**: A platform retention rule can no longer delete file versions behind Drive's back.
 - [x] **0.22.1**: The makers of thumbnails, previews and searchable words, ready for the engine that will run them.
 - [x] **0.22.0**: Save As and Save a copy from the online editor write a new file beside the one open.
 - [x] **0.21.0**: Other apps learn what a file is now and which stored file holds a version, and hear when files change or go.
@@ -563,7 +564,7 @@ CHANGELOG.md          what changed in each version
 
 ## 📜 Changelog
 
-Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.22.1**.
+Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.22.2**.
 
 ## 🤝 Contributing
 

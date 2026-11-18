@@ -13,7 +13,9 @@ use uuid::Uuid;
 const DIRECT: &str = "Drive records change only through Drive's actions: run them on your Drive Space";
 
 /// Refuses direct writes and deletes of folders, files, versions, shares, links, comments,
-/// stars, templates and activity.
+/// stars, templates and activity. Folders, files and versions are never deleted through the kernel, the system's
+/// deletes included (a platform retention rule's): Drive deletes them itself, with their stored bytes and the space's
+/// usage (`ops::purge`, `files::prune`).
 pub struct Guard;
 
 #[async_trait]
@@ -22,6 +24,9 @@ impl DocHook for Guard {
         if hc.ctx.is_system { Ok(()) } else { Err(Error::Forbidden(DIRECT.into())) }
     }
     async fn before_delete(&self, hc: &mut HookCtx<'_>, _doc: &Doc) -> Result<()> {
+        if matches!(hc.entity.def.name.as_str(), "DriveFolder" | "DriveFile" | "DriveFileVersion") {
+            return Err(Error::Forbidden("Drive deletes its files itself; use Delete Forever".into()));
+        }
         if hc.ctx.is_system { Ok(()) } else { Err(Error::Forbidden(DIRECT.into())) }
     }
 
