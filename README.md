@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.23.0-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.24.0-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -38,7 +38,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 | | |
 |---|---|
-| 📦 **Version** | 0.23.0 |
+| 📦 **Version** | 0.24.0 |
 | 🖥️ **Kind** | Its own interface: four launcher apps, Drive at `/drive/`, Sheets at `/sheets/`, Slides at `/slides/` and PDF at `/pdf/` |
 | ➕ **What it adds** | 12 entities (with team members) in one package, 2 roles, 5 reports, 4 launcher apps, 3 intents, a contextual side panel, bar search, a public link page and an add-on for browser editors |
 | 🧱 **Depends on** | The platform's `core` package. Nothing else is required |
@@ -253,7 +253,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 - **Intents.** `pick file` answers `{files: [{id, name, size, url}]}`, `preview file` and `share file` take `{id}`, and a contextual **Comments and history** side panel shows a file's details.
 - **Open from anywhere.** `/open/DriveFile/{id}` and `/open/DriveFolder/{id}` open an item.
-- **Actions** on your Drive Space for people and agents, over the REST API or MCP: list, search, recent, starred, shared with me, trash, usage, item info, versions, download, shares, links, activity, comments, upload, upload a version, create a folder, team folders and members, rename, move, copy, trash, restore, delete forever, empty trash, check out and in, restore or keep a version, share, unshare, create and revoke links, star, comment, request access, create, read and append to documents, and templates.
+- **Actions** on your Drive Space for people and agents, over the REST API or MCP: list, search, recent, starred, shared with me, trash, usage, item info, versions, download, shares, links, activity, comments, upload, upload a version, add a file uploaded in parts, create a folder, team folders and members, rename, move, copy, trash, restore, delete forever, empty trash, check out and in, restore or keep a version, share, unshare, create and revoke links, star, comment, request access, create, read and append to documents, and templates.
 - **What other apps may know of a file.** `drive.drive_file.facts` (hidden, read-only) answers a file's type, size, digest and version, whether it is in the trash, and the stored file holding its current version or one named version. The events `drive.file_changed` (a new version, however it was made) and `drive.files_removed` (deleted for good) carry ids and facts, never a name or a person. An app declares them in its `uses`; among people only Drive Administrators and administrators run `facts`.
 - **The assistant** knows what Drive's records mean and suggests questions such as "Which files are shared outside with a link?" and "What takes the most space?".
 
@@ -438,6 +438,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.24.0**: Adding a file uploaded in parts and keeping a browser editor's lock are actions an agent can run too.
 - [x] **0.23.0**: Every action says what it takes, does and answers, so another app or an agent can run it through the platform's gate.
 - [x] **0.22.2**: A platform retention rule can no longer delete file versions behind Drive's back.
 - [x] **0.22.1**: The makers of thumbnails, previews and searchable words, ready for the engine that will run them.
@@ -565,7 +566,7 @@ CHANGELOG.md          what changed in each version
 
 ## 📜 Changelog
 
-Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.23.0**.
+Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.24.0**.
 
 ## 🤝 Contributing
 

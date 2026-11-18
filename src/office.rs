@@ -384,34 +384,32 @@ pub async fn launch_browser(k: &Kernel, ctx: &Ctx, file: Uuid, want_edit: bool, 
 /// `POST /api/app/drive/editor/{file}/lock?lock=…&op=refresh|release`: keeps a browser editor
 /// session's lock for another 30 minutes (taking it back if it lapsed and nobody else took it),
 /// or ends it. Refreshing needs Edit access still; releasing is always allowed.
-pub async fn browser_lock(k: &Kernel, ctx: &Ctx, file: Uuid, lock: &str, op: &str) -> Result<Value> {
+pub async fn editor_lock(ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &crate::ops::Params<'_>) -> Result<Value> {
+    let file = p.req_uuid("file")?;
+    let lock = p.req("lock")?;
     if !lock.starts_with(BROWSER) || lock.len() > 80 {
         return Err(Error::field("lock", "is not a browser editor lock"));
     }
-    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-    let out = match op {
+    Ok(match p.req("op")? {
         "release" => {
             sqlx::query("delete from drive_wopi_lock where tenant_id = $1 and file = $2 and lock = $3")
                 .bind(ctx.tenant)
                 .bind(file)
                 .bind(lock)
-                .execute(&mut *tx)
+                .execute(&mut **tx)
                 .await?;
             json!({"released": true})
         }
         "refresh" => {
-            let g = Grants::load(&mut tx, ctx).await?;
-            let item = tree::open_kind(&mut tx, ctx, &g, Kind::File, file, Level::Edit, false).await?;
-            if !take(&mut tx, ctx, file, lock, false).await? {
-                let h = held(&mut tx, ctx.tenant, file).await?;
+            let item = tree::open_kind(tx, ctx, g, Kind::File, file, Level::Edit, false).await?;
+            if !take(tx, ctx, file, lock, false).await? {
+                let h = held(tx, ctx.tenant, file).await?;
                 return Err(h.map_or_else(|| Error::Unavailable("the file's editor lock is changing; try again".into()), |h| being_edited(&item, &h)));
             }
             json!({"lock_seconds": LOCK_SECONDS})
         }
         _ => return Err(Error::field("op", "must be refresh or release")),
-    };
-    tx.commit().await?;
-    Ok(out)
+    })
 }
 
 /// `POST /api/app/drive/editor/{file}` (`action=view` to only read): the editor page for the file

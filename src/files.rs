@@ -683,6 +683,32 @@ pub async fn check_in(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, p: &Params
     Ok(item.json(item.level(g), false))
 }
 
+/// `adopt` action: a file the caller stored in the platform's file storage (an upload in parts, theirs and tied to
+/// nothing yet) becomes a Drive file in `folder` (their top folder by default), or with `replace` a new version of the
+/// same-named one; the name, Edit on the folder, the size limit and the quota are checked as for an upload. Its bytes
+/// stay where they are.
+pub async fn adopt(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, space: &Space, p: &Params<'_>) -> Out {
+    let object = p.req_uuid("file")?;
+    let folder = p.uuid("folder")?.unwrap_or(space.root);
+    let on = OnConflict::parse(p.str("on_conflict"))?;
+    let row: Option<(i64, String)> = sqlx::query_as(
+        "select size_bytes, sha256 from file_object where tenant_id = $1 and id = $2 and created_by = $3 \
+         and entity is null and record_id is null and not is_public",
+    )
+    .bind(ctx.tenant)
+    .bind(object)
+    .bind(ctx.user)
+    .fetch_optional(&mut **tx)
+    .await?;
+    let (size, sha256) = row.ok_or_else(|| Error::NotFound("stored file".into()))?;
+    let c = Content::stored(p.req("name")?, size, &sha256);
+    if c.content_type == content::FDOC {
+        return Err(Error::field("name", "a live document is uploaded whole, not adopted"));
+    }
+    check_upload(tx, ctx, g, folder, &c, on).await?;
+    commit_upload(k, ctx, tx, g, folder, &c, object, on, p.str("comment")).await
+}
+
 /// `upload` action: a new file from `content_base64` or `text`.
 pub async fn upload_action(k: &Kernel, ctx: &Ctx, tx: &mut Tx, g: &Grants, space: &Space, p: &Params<'_>) -> Out {
     let name = p.req("name")?;

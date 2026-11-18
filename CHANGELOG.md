@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.24.0
+
+Needs the same platform as 0.23.0. Package `drive` 0.3.4 (two new actions).
+
+- **`adopt`**: a file stored in the platform's file storage (an upload in parts: the caller's own, tied to nothing yet)
+  becomes a Drive file in a folder, or with `replace` a new version of the same-named file, checked as an upload is
+  (the name, Edit on the folder, the size limit, the quota). The page's large uploads run it, and another app or an
+  agent runs it the same way.
+- **`editor_lock`** (hidden): keeps a browser editor's hold on a file for another 30 minutes, or lets it go. The
+  browser editors run it; the page's route does nothing else.
+
+No database change. The page works as before.
+
 ## 0.23.0
 
 Needs the same platform as 0.22.2. Package `drive` 0.3.3, so that an app using Drive's actions can ask for this.

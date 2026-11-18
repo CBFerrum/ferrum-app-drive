@@ -548,6 +548,14 @@ pub fn space_from_doc(doc: &Doc) -> Result<Space> {
 }
 
 /// The caller's space, created with its top folder on first use (concurrent first uses agree).
+/// The caller's own space, read only (`GET /space` makes it): what a route runs an operation on for the page.
+pub async fn own_space(k: &Kernel, ctx: &Ctx) -> Result<Uuid> {
+    let mut tx = k.db.tenant_tx(ctx.tenant).await?;
+    let space = space_of(&mut tx, ctx.tenant, &ctx.email.trim().to_lowercase()).await?;
+    tx.commit().await?;
+    space.map(|s| s.id).ok_or_else(missing)
+}
+
 pub async fn ensure_space(k: &Kernel, ctx: &Ctx) -> Result<Space> {
     ctx.require("DriveSpace", ferrum_kernel::Action::Read)?;
     let email = ctx.email.trim().to_lowercase();

@@ -230,6 +230,31 @@
         effect: transactional_action
         returns: {type: object, properties: {id: {type: string}, version: {type: integer}, size: {type: integer}}}
         completion: "The content is the file's newest version (Edit access; not while someone else has it checked out or open in an editor)"
+    - name: adopt
+      label: Add a Stored File
+      permission: read
+      params:
+        - {name: file, label: Stored File, required: true, description: "A file you stored in the platform's file storage (an upload in parts), yours and tied to nothing yet"}
+        - {name: name, label: Name, required: true}
+        - {name: folder, label: Folder, description: "A folder's id (Edit access); your top folder by default"}
+        - {name: on_conflict, label: On a Taken Name, type: select, options: [keep_both, replace, fail], description: "keep_both numbers the new file; replace adds a version"}
+        - {name: comment, label: Comment}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {id: {type: string}, name: {type: string}, size: {type: integer}, version: {type: integer}}}
+        completion: "The stored file is a Drive file in the folder (or, with replace, a new version of the same-named one), charged to the folder's space or team folder"
+    - name: editor_lock
+      label: Browser Editor Lock
+      permission: read
+      hidden: true
+      params:
+        - {name: file, label: File, required: true}
+        - {name: lock, label: Lock, required: true, description: "The browser editor session's lock, as opening the editor gave it"}
+        - {name: op, label: What, type: select, options: [refresh, release], required: true}
+      contract:
+        effect: transactional_action
+        returns: {type: object, properties: {lock_seconds: {type: integer}, released: {type: boolean}}}
+        completion: "The browser editor session keeps the file for another 30 minutes (Edit access), or lets it go"
     - name: create_folder
       label: New Folder
       permission: read

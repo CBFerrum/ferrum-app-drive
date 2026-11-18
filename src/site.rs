@@ -154,7 +154,11 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
             let ids = p.str("files").unwrap_or_default().split(',').filter(|s| !s.is_empty()).map(id).collect::<Result<Vec<_>>>()?;
             crate::collab::present(k, ctx, &ids).await?
         }
-        ("POST", ["editor", file, "lock"]) => crate::office::browser_lock(k, ctx, id(file)?, p.req("lock")?, p.req("op")?).await?,
+        // A browser editor keeps or lets go of its lock: the operation drive.drive_space.editor_lock.
+        ("POST", ["editor", file, "lock"]) => {
+            let params = json!({"file": id(file)?, "lock": p.req("lock")?, "op": p.req("op")?});
+            k.run_action(ctx, "DriveSpace", tree::own_space(k, ctx).await?, "editor_lock", params).await?
+        }
         // A blank document, spreadsheet or presentation (the editor fills in an empty file), or one
         // from a `template` ([`crate::templates`]); `fdoc` is a document edited live (`docs`), empty
         // until someone types.
@@ -241,38 +245,9 @@ async fn app(k: &Kernel, ctx: &Ctx, req: &SiteRequest, path: &[&str]) -> Result<
         }
         // A file the caller uploaded to the platform already, in parts that survive a dropped
         // connection (`POST /api/files/uploads` with `parts`), becomes a file in `folder`: one past
-        // the most a request may carry. Only the caller's own, not yet anyone's, and never public.
+        // the most a request may carry. The operation drive.drive_space.adopt.
         ("POST", ["adopt"]) => {
-            let space = tree::ensure_space(k, ctx).await?;
-            let folder = p.uuid("folder")?.unwrap_or(space.root);
-            let object = p.uuid("file")?.ok_or_else(|| Error::field("file", "is required"))?;
-            let on = OnConflict::parse(p.str("on_conflict"))?;
-            let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-            let row: Option<(i64, String)> = sqlx::query_as(
-                "select size_bytes, sha256 from file_object where tenant_id = $1 and id = $2 and created_by = $3 \
-                 and entity is null and record_id is null and not is_public",
-            )
-            .bind(ctx.tenant)
-            .bind(object)
-            .bind(ctx.user)
-            .fetch_optional(&mut *tx)
-            .await?;
-            let (size, sha256) = row.ok_or_else(|| Error::NotFound("stored file".into()))?;
-            let c = Content::stored(p.req("name")?, size, &sha256);
-            if c.content_type == crate::content::FDOC {
-                return Err(Error::field("name", "a live document is uploaded whole, not adopted"));
-            }
-            let g = Grants::load(&mut tx, ctx).await?;
-            files::check_upload(&mut tx, ctx, &g, folder, &c, on).await?;
-            tx.commit().await?;
-            let out = with_retry(|| async {
-                let mut tx = k.db.tenant_tx(ctx.tenant).await?;
-                let g = Grants::load(&mut tx, ctx).await?;
-                let out = files::commit_upload(k, ctx, &mut tx, &g, folder, &c, object, on, p.str("comment")).await?;
-                tx.commit().await?;
-                Ok(out)
-            })
-            .await?;
+            let out = k.run_action(ctx, "DriveSpace", tree::own_space(k, ctx).await?, "adopt", q.clone()).await?;
             return Ok(SiteResponse::json(201, &out));
         }
         ("POST", ["files", file, "versions"]) => {

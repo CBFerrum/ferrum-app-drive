@@ -669,6 +669,7 @@ async fn scenario() {
     t.ok(&alice, "trash", json!({"item": lapsed})).await;
     let link = uid(&t.ok(&alice, "create_link", json!({"item": salary})).await);
     let remark = uid(&t.ok(&alice, "add_comment", json!({"file": salary, "body": "for me"})).await);
+    let planted = t.k.store_file(&alice.ctx, None, "planted.bin", "text/plain", b"alice's").await.expect("stored")["id"].as_str().unwrap().to_string();
     let every = [
         ("list_folder", json!({"folder": secret})),
         ("search", json!({"query": "salary"})),
@@ -686,6 +687,8 @@ async fn scenario() {
         ("list_comments", json!({"file": salary})),
         ("upload", json!({"folder": secret, "name": "planted.txt", "text": "x"})),
         ("upload_version", json!({"file": salary, "text": "overwritten"})),
+        ("adopt", json!({"file": planted, "name": "planted.bin"})),
+        ("editor_lock", json!({"file": salary, "lock": "browser:planted", "op": "refresh"})),
         ("create_folder", json!({"parent": secret, "name": "inside"})),
         ("create_team_folder", json!({"name": "Bob's own"})),
         ("add_team_member", json!({"folder": secret, "member": "bob@acme.test", "role": "Manager"})),
@@ -749,6 +752,7 @@ async fn scenario() {
     t.ok(&alice, "delete_forever", json!({"item": lapsed})).await;
     t.ok(&alice, "revoke_link", json!({"link": link})).await;
     t.ok(&alice, "delete_comment", json!({"comment": remark})).await;
+    t.k.remove_file(&alice.ctx, planted.parse().unwrap()).await.expect("removed");
 
     // ───────────── the generic records API, files API, collaboration, audit, reports: closed ─────────────
     for entity in ["DriveFolder", "DriveFile", "DriveFileVersion", "DriveShare", "DriveLink", "DriveActivity", "DriveComment", "DriveStar"] {
@@ -1723,6 +1727,9 @@ async fn scenario() {
 
     // The lock is refreshed, taken back after it lapsed if nobody took it, and released.
     assert_eq!(lock_op(&alice, &l3, "refresh").await.unwrap()["lock_seconds"], json!(1800));
+    // The page's route runs the operation drive.drive_space.editor_lock; an agent runs it by the same door.
+    assert_eq!(t.ok(&alice, "editor_lock", json!({"file": budget, "lock": l3, "op": "refresh"})).await["lock_seconds"], json!(1800));
+    assert_eq!(code(&t.no(&frank, "editor_lock", json!({"file": budget, "lock": l3, "op": "refresh"})).await), "not_found", "not frank's file");
     assert_eq!(code(&lock_op(&alice, &l1, "refresh").await.unwrap_err()), "conflict");
     assert!(lock_op(&alice, "nonsense", "refresh").await.is_err());
     assert!(lock_op(&alice, &l3, "explode").await.is_err());
@@ -2444,6 +2451,13 @@ async fn scenario() {
     assert_eq!(named, Some(stored_id(parts.clone())), "the stored file itself, streamed");
     assert_eq!(t.site(Some(&alice.ctx), "GET", &path, &[], &[], vec![]).await.expect("its content").body, vec![b'p'; 300_000]);
     assert_eq!(code(&adopt("again.txt", stored_id(parts), "keep_both").await.expect_err("adopted once")), "not_found");
+    // The page's route runs the operation drive.drive_space.adopt; an agent runs it by the same door.
+    let by_agent = stored_id(t.k.store_file(&alice.ctx, None, "agent.bin", "text/plain", b"from an agent").await.expect("stored"));
+    let made = t.ok(&alice, "adopt", json!({"file": by_agent, "name": "agent.bin"})).await;
+    assert_eq!((made["name"].clone(), made["size"].clone(), made["parent"].clone()), (json!("agent.bin"), json!(13), json!(alice.root)));
+    let bobs_own = stored_id(t.k.store_file(&bob.ctx, None, "b2.txt", "text/plain", b"bob's own").await.expect("stored"));
+    assert_eq!(code(&t.no(&alice, "adopt", json!({"file": bobs_own, "name": "b2.txt"})).await), "not_found", "only one's own stored files");
+    t.k.remove_file(&bob.ctx, bobs_own.parse().unwrap()).await.expect("removed");
     let past = stored_id(t.k.store_file(&alice.ctx, None, "big.txt", "text/plain", &big).await.expect("stored"));
     let e = adopt("big.txt", past.clone(), "keep_both").await.expect_err("past the workspace's limit");
     assert!(code(&e) == "validation_failed" && format!("{e:?}").contains("limited to 2 MB"), "{e:?}");
