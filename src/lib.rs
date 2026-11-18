@@ -73,8 +73,8 @@ pub fn reports() -> Vec<Arc<dyn ReportSource>> {
 
 /// Periodic upkeep: every minute, on one replica at a time (advisory lock); must be idempotent and cheap.
 /// Deletes for good what stayed in the trash too long and removes expired shares.
-pub async fn maintenance(k: &Kernel) -> Result<()> {
-    upkeep::run(k).await
+pub async fn maintenance(k: &Kernel, tenant: uuid::Uuid) -> Result<()> {
+    upkeep::run(k, tenant).await
 }
 
 /// Now, as stored in datetime fields.
