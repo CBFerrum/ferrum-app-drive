@@ -113,7 +113,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `delete_template` | `template` → `{deleted}` (Drive administrators; Drive's own stay) |
 | `append_to_document` | `file`, `markdown` → `{file, name, appended, change}` (Edit): added at the end of a live document as a change everyone with it open sees at once; its next version includes it |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
-| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators) |
+| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators). Another app or an agent going through the platform's gate cannot pass `members` yet (the gate has no list parameter): it adds them with `add_team_member` |
 | `add_team_member` / `remove_team_member` | `folder`, `member`, `role?` → `{folder, members}` (Manage on the team folder) |
 | `set_team_quota` | `folder`, `quota_mb` → `{folder, quota_mb}` (Drive administrators) |
 | `rename` | `item`, `name` → Item (Edit; team folders Manage); a taken name is **409** |
@@ -132,7 +132,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `create_link` | `item`, `access?` View/Download, `expires_at?`, `password?` (8–256 characters), `max_downloads?`, `note?` (280 characters, shown to whoever opens the link), `answerable?` (an active member who can manage the item: the link is then the workspace's and outlives its maker) → `{id, item, token, url, page, access, expires_at, has_password, max_downloads, note, belongs_to, answerable}` (Manage; within the workspace's link policy). `page` (`/app/s/{tenant}/{token}`) is the web app's page for the link; `url` its API |
 | `revoke_link` | `link` → `{link, revoked}` (Manage on its item, even in the trash) |
 | `star` / `unstar` | `item` → `{item, starred}` (View) |
-| `add_comment` | `file`, `body` → `{id, file, author, body}` (Comment) |
+| `add_comment` | `file`, `body`, `mentions?` (emails, a list or separated by commas), `reply_to?` (a comment starting a thread), `anchor?` (a live document's text, as JSON `{from, to}`), `quote?` → `{id, file, author, body}` (Comment) |
 | `delete_comment` | `comment` → `{deleted}` (its author, or Manage) |
 
 ### For other apps
