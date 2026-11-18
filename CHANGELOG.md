@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.23.0
+
+Needs the same platform as 0.22.2. Package `drive` 0.3.3, so that an app using Drive's actions can ask for this.
+
+- **Every action says what it takes, does and answers.** Each action of a Drive Space declares its parameters and
+  carries a contract (what it does, what it answers, when it is done), so the platform's gate passes another app's or
+  an agent's parameters to it and an agent can tell a read from a change. The reads (listing, search, recent, starred,
+  shared with me, trash, usage, details, versions, shares, links, activity, comments, templates) run read-only. A share
+  link's password is a secret parameter, and the call's receipt keeps no copy of the link's token and address: a
+  repeated call does not give them again.
+- Not through the gate yet: a new team folder's member list (the platform has no list parameter); through the gate a
+  team folder starts empty and members are added one at a time.
+
+No database change, no interface change.
+
 ## 0.22.2
 
 Needs the same platform as 0.22.1. Package `drive` unchanged.
