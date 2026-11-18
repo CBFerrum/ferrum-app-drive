@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.22.1
+
+Needs the same platform as 0.22.0. No behaviour change: nothing runs the new code yet.
+
+- **What Drive will make of files** (file services, slice D1): the words of a PDF and of Word, Excel, PowerPoint and
+  OpenDocument files, a picture at a size turned as its camera says, a PDF's first page, the picture an Office file
+  carries, and an image in a size, fit and format asked for, with the bounds every one keeps (pages, pixels, what an
+  archive unpacks to). The engine that runs them in the platform's confined helper and keeps what they make comes with
+  slice D2, once the platform has that helper.
+- New dependencies: `lopdf`, `hayro`, `image`, `quick-xml` (the versions Sign, Contracts, DAM and Comms use).
+
+No database change, no interface change.
+
 ## 0.22.0
 
 Needs the same platform as 0.21.0. Package `drive` unchanged.

@@ -30,6 +30,12 @@ sha2 = "0.10"
 # Drive's own templates: spreadsheets (rust_xlsxwriter) and presentations (zip).
 rust_xlsxwriter = "0.102"
 zip = { version = "9", default-features = false, features = ["deflate"] }
+# What Drive makes of a file (src/derive; design S7, section 4): a PDF's words (lopdf, as Sign and Contracts read PDFs)
+# and first page (hayro, as DAM draws it), pictures (image, DAM's features), and the words of Office files (quick-xml).
+hayro = { version = "0.9", features = ["embed-fonts"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "tiff", "bmp"] }
+lopdf = { version = "0.45", default-features = false }
+quick-xml = "0.42"
 
 [dev-dependencies]
 ferrum-apps = { git = "https://github.com/CBFerrum/Ferrum", branch = "main" }

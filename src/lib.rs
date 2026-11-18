@@ -18,6 +18,7 @@ mod acl;
 mod archive;
 mod collab;
 mod content;
+mod derive;
 mod docs;
 mod files;
 mod hooks;
