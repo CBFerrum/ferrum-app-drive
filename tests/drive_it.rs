@@ -1507,6 +1507,67 @@ async fn scenario() {
     let bad_kind = t.site(Some(&alice.ctx), "POST", "/new", &[("kind", "exe")], &[], vec![]).await.unwrap_err();
     assert!(bad_kind.to_string().contains("kind must be"), "{bad_kind}");
 
+    // Save As, Save a copy and Export as (MS-WOPI PutRelativeFile): the editor writes a new file beside the open one, for
+    // whoever may add files to its folder. (Tested against this stand-in editor, not a real one.)
+    let relative = |file: Uuid, token: &str, headers: &[(&'static str, &str)], body: &'static [u8]| {
+        let mut h = vec![("x-wopi-override", "PUT_RELATIVE".to_string())];
+        h.extend(headers.iter().map(|(k, v)| (*k, v.to_string())));
+        wopi(file, "", "POST", token.to_string(), h, body.to_vec())
+    };
+    let versions_of = |file: Uuid| {
+        let t = &t;
+        async move { t.scalar("select count(*) from e_drive_file_version where tenant_id = $1 and file = $2", Some(file)).await }
+    };
+    let can_save_as = |token: String| {
+        let t = &t;
+        let info = wopi(doc, "", "GET", token, vec![], vec![]);
+        async move { t.json(info.await)["UserCanNotWriteRelative"].clone() }
+    };
+    assert_eq!(can_save_as(token.clone()).await, json!(false), "alice may add files beside it");
+    // save_as_makes_a_file_beside_it, the_copy_is_counted_in_the_quota
+    let used = t.used(alice.space).await;
+    let r = relative(doc, &token, &[("x-wopi-suggestedtarget", ".docx")], b"PK a copy").await;
+    assert_eq!(r.status, 200);
+    let saved = t.json(r);
+    assert_eq!(saved["Name"], json!("plan (2).docx"), "a suggested name is the open file's, numbered");
+    let url = saved["Url"].as_str().unwrap().to_string();
+    let (at, copy_token) = url.split_once("?access_token=").unwrap_or_else(|| panic!("a token in {url}"));
+    let copy: Uuid = at.rsplit('/').next().unwrap().parse().unwrap();
+    assert_eq!(at, format!("http://ferrum.test/api/site/acme/drive/wopi/files/{copy}"));
+    assert_eq!(
+        (saved["HostEditUrl"].clone(), saved["HostViewUrl"].clone()),
+        (json!(format!("https://erp.acme.test/drive/item/{copy}")), saved["HostEditUrl"].clone())
+    );
+    assert_eq!(t.ok(&alice, "item_info", json!({"item": copy})).await["parent"], json!(alice.root));
+    assert_eq!(t.ok(&alice, "download", json!({"file": copy})).await["content_base64"], json!(b64(b"PK a copy")));
+    assert_eq!(wopi(copy, "", "GET", copy_token.to_string(), vec![], vec![]).await.status, 200);
+    assert_eq!(wopi(doc, "", "GET", copy_token.to_string(), vec![], vec![]).await.status, 401, "its token opens the copy alone");
+    assert_eq!(t.used(alice.space).await, used + 9, "the copy is charged to the folder's payer");
+    // save_as_takes_a_name_in_utf7
+    let r = relative(doc, &token, &[("x-wopi-suggestedtarget", "R+AOk-sum+AOk-.docx")], b"PK cv").await;
+    assert_eq!((r.status, t.json(r)["Name"].clone()), (200, json!("R\u{e9}sum\u{e9}.docx")));
+    // save_as_with_a_fixed_name_does_not_overwrite, unless asked to
+    let before = versions_of(doc).await;
+    assert_eq!(relative(doc, &token, &[("x-wopi-relativetarget", "plan.docx")], b"PK over").await.status, 409);
+    assert_eq!(versions_of(doc).await, before, "a name the editor may not change, taken: nothing is written");
+    let r = relative(doc, &token, &[("x-wopi-relativetarget", "other.docx"), ("x-wopi-overwriterelativetarget", "true")], b"PK over").await;
+    assert_eq!((r.status, t.json(r)["Name"].clone()), (200, json!("other.docx")));
+    assert_eq!(versions_of(other).await, 2, "asked to, it is one more version of that file");
+    // save_as_with_both_names_is_501, save_as_with_a_bad_name_is_400
+    assert_eq!(relative(doc, &token, &[("x-wopi-suggestedtarget", ".docx"), ("x-wopi-relativetarget", "x.docx")], b"PK").await.status, 501);
+    for bad in [&[("x-wopi-relativetarget", "a/b.docx")][..], &[("x-wopi-suggestedtarget", "+AOl-.docx")], &[]] {
+        assert_eq!(relative(doc, &token, bad, b"PK").await.status, 400, "{bad:?}");
+    }
+    // save_as_is_refused_without_edit_on_the_folder: Bob views the file and nothing of Alice's folder.
+    assert_eq!(can_save_as(bob_token.clone()).await, json!(true));
+    let files = || {
+        let t = &t;
+        async move { t.scalar("select count(*) from e_drive_file where tenant_id = $1 and $2::uuid is null", None).await }
+    };
+    let count = files().await;
+    assert_eq!(relative(doc, &bob_token, &[("x-wopi-suggestedtarget", ".docx")], b"PK bob's").await.status, 404);
+    assert_eq!(files().await, count, "and no file");
+
     // Only from the editor's addresses, when the operator lists them.
     unsafe { std::env::set_var("FERRUM_OFFICE_IPS", "10.9.9.9") };
     assert_eq!(wopi(doc, "", "GET", token.clone(), vec![], vec![]).await.status, 403);
@@ -1692,6 +1753,50 @@ async fn scenario() {
     let viewer = open(&bob, doc, &[]).await.unwrap();
     assert_eq!((viewer["action"].clone(), viewer["held_by"].clone(), viewer["lock"].clone()), (json!("view"), Value::Null, Value::Null));
     assert_eq!(open(&frank, budget, &[]).await.unwrap_err().to_string(), "Drive item not found");
+    // two_people_save_one_presentation: Alice and Bob in one deck share the online editor's lock; each save is a version
+    // in its saver's name; a browser editor is kept out meanwhile; a session opened to look cannot Save As. (A stand-in
+    // editor: what a real one shows is the team lead's walk.)
+    let deck = uid(&t.upload(&alice, alice.root, "deck.pptx", b"PK deck 1").await);
+    t.ok(&alice, "share", json!({"item": deck, "email": "bob@acme.test", "permission": "Edit"})).await;
+    let session = |u: &U, query: &'static [(&'static str, &'static str)]| {
+        let (t, ctx) = (&t, u.ctx.clone());
+        async move { t.json(t.site(Some(&ctx), "POST", &format!("/editor/{deck}"), query, &[], vec![]).await.expect("an editor session")) }
+    };
+    let (a, b) = (session(&alice, &[]).await, session(&bob, &[]).await);
+    assert_eq!((a["action"].clone(), b["action"].clone()), (json!("edit"), json!("edit")));
+    let (at, bt) = (a["access_token"].as_str().unwrap().to_string(), b["access_token"].as_str().unwrap().to_string());
+    let deck_op = |token: &str, name: &'static str| {
+        wopi(deck, "", "POST", token.to_string(), vec![("x-wopi-override", name.into()), ("x-wopi-lock", "S1".into())], vec![])
+    };
+    assert_eq!((deck_op(&at, "LOCK").await.status, deck_op(&bt, "LOCK").await.status), (200, 200), "one lock, shared");
+    for tk in [&at, &bt] {
+        assert_eq!(t.json(wopi(deck, "", "GET", tk.clone(), vec![], vec![]).await)["UserCanWrite"], json!(true));
+    }
+    let put_deck = |token: &str, body: &'static [u8]| {
+        wopi(deck, "/contents", "POST", token.to_string(), vec![("x-wopi-override", "PUT".into()), ("x-wopi-lock", "S1".into())], body.to_vec())
+    };
+    assert_eq!((put_deck(&at, b"PK deck 2").await.status, put_deck(&bt, b"PK deck 3").await.status), (200, 200));
+    let versions = t.ok(&alice, "list_versions", json!({"file": deck})).await;
+    let by: Vec<(i64, String)> =
+        versions["versions"].as_array().unwrap().iter().map(|v| (v["version"].as_i64().unwrap(), v["author"].as_str().unwrap().to_string())).collect();
+    assert_eq!(by[..2], [(3, "bob@acme.test".to_string()), (2, "alice@acme.test".to_string())], "each save in its saver's name");
+    let kept_out = open(&bob, deck, &[]).await.unwrap();
+    assert_eq!((kept_out["action"].clone(), kept_out["held_in"].clone()), (json!("view"), json!("online")), "no browser editor meanwhile");
+    assert_eq!(deck_op(&at, "UNLOCK").await.status, 200);
+    let looking = session(&alice, &[("action", "view")]).await;
+    assert_eq!(looking["action"], json!("view"));
+    let look_token = looking["access_token"].as_str().unwrap().to_string();
+    let r = wopi(
+        deck,
+        "",
+        "POST",
+        look_token.clone(),
+        vec![("x-wopi-override", "PUT_RELATIVE".into()), ("x-wopi-suggestedtarget", ".pptx".into())],
+        b"PK".to_vec(),
+    )
+    .await;
+    assert_eq!(r.status, 401, "a session that only looks makes no file");
+    assert_eq!(t.json(wopi(deck, "", "GET", look_token, vec![], vec![]).await)["UserCanNotWriteRelative"], json!(true));
     unsafe { std::env::remove_var("FERRUM_EDITORS_URL") };
     t.consistent().await;
 
@@ -2370,12 +2475,13 @@ async fn scenario() {
     assert_eq!(open.status, 200);
 }
 
-/// An editor server that only answers discovery: Writer for docx, Calc for xlsx.
+/// An editor server that only answers discovery: Writer for docx, Calc for xlsx, Impress for pptx (to edit or to look).
 async fn fake_editor() -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     const XML: &str = r#"<wopi-discovery><net-zone name="external-http">
 <app name="writer"><action default="true" ext="docx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
 <app name="calc"><action default="true" ext="xlsx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/></app>
+<app name="impress"><action default="true" ext="pptx" name="edit" urlsrc="http://office.test/browser/x/cool.html?"/><action ext="pptx" name="view" urlsrc="http://office.test/browser/x/cool.html?"/></app>
 </net-zone></wopi-discovery>"#;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

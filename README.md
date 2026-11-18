@@ -7,7 +7,7 @@
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-0.21.0-ca8a04?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.22.0-ca8a04?style=flat-square)](CHANGELOG.md)
 [![Licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Ferrum platform](https://img.shields.io/badge/runs%20on-Ferrum-2f5bea?style=flat-square)](https://github.com/CBFerrum/Ferrum)
 [![CI](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml/badge.svg)](https://github.com/CBFerrum/ferrum-app-drive/actions/workflows/ci.yml)
@@ -38,7 +38,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 
 | | |
 |---|---|
-| 📦 **Version** | 0.21.0 |
+| 📦 **Version** | 0.22.0 |
 | 🖥️ **Kind** | Its own interface: four launcher apps, Drive at `/drive/`, Sheets at `/sheets/`, Slides at `/slides/` and PDF at `/pdf/` |
 | ➕ **What it adds** | 12 entities (with team members) in one package, 2 roles, 5 reports, 4 launcher apps, 3 intents, a contextual side panel, bar search, a public link page and an add-on for browser editors |
 | 🧱 **Depends on** | The platform's `core` package. Nothing else is required |
@@ -243,7 +243,7 @@ Ferrum Drive is for teams that use Google Drive, OneDrive or Dropbox and want th
 ### 📊 Sheets, 🎞️ Slides and 📄 PDF
 
 - **Their own launcher entries.** Sheets, Slides and PDF are Drive's files of one kind, each with its own New button, template gallery and list.
-- **Office files in the browser.** With an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) that your operator runs, Excel, PowerPoint and Word files open and are edited together in the page. The editor opens in Ferrum's light or dark theme and language, shows presence, saves each change as a new version with the person's own Drive rights, and says "The office editor is not answering. Your file is safe in Drive." with Retry and Download when it does not answer.
+- **Office files in the browser.** With an office editor server (Collabora Online, or ONLYOFFICE Docs in WOPI mode) that your operator runs, Excel, PowerPoint and Word files open and are edited together in the page. The editor opens in Ferrum's light or dark theme and language, shows presence, saves each change as a new version with the person's own Drive rights, writes Save As and Save a copy as a new file in the same folder for whoever may add files there (tested against a stand-in editor server, not a real one), and says "The office editor is not answering. Your file is safe in Drive." with Retry and Download when it does not answer.
 - **Browser editors add-on.** An add-on shipped with Drive contributes GridCraft (xlsx, csv, tsv), WordCraft (docx, odt, rtf) and PdfCraft (pdf) from an editor server (`FERRUM_EDITORS_URL`). They run in the person's browser, and each save is a new version.
 - **Read-only for viewers.** Viewers of a spreadsheet or deck see the data without being able to change it.
 - **Documents opened as live documents.** A Word file offers "Open as a Ferrum document" when Docs is installed, last in the Open with list and never the default; the Word file is left as it is. Live documents open in Docs.
@@ -384,7 +384,7 @@ Drive is compared with Google Drive, OneDrive (with SharePoint), Dropbox and Nex
 | No per-user licence fee | ✅ | ❌ | ❌ | ❌ | ✅ |
 
 ¹ Pictures up to 1 MB show themselves in the grid; larger pictures and PDFs show a type icon.
-² Needs an office editor server (Collabora Online or ONLYOFFICE Docs) that your operator runs. The platform ships Collabora on by default in its standard deployments.
+² Needs an office editor server (Collabora Online or ONLYOFFICE Docs) that your operator runs. The platform ships Collabora on by default in its standard deployments. Save As and Save a copy write a new file in the same folder; that was tested against a stand-in editor server, not a real one.
 ³ Live documents are edited in Ferrum Docs.
 ⁴ When someone leaves, their files move to a successor; handing a file to someone else while the owner stays is not built.
 
@@ -438,6 +438,7 @@ What you can do in a spreadsheet or a deck is decided by the office editor your 
 
 ### ✅ Recently shipped
 
+- [x] **0.22.0**: Save As and Save a copy from the online editor write a new file beside the one open.
 - [x] **0.21.0**: Other apps learn what a file is now and which stored file holds a version, and hear when files change or go.
 - [x] **0.20.1**: An action another app or an automation runs for a person keeps to that person's access.
 - [x] **0.20.0**: Upkeep runs one workspace at a time, on whichever replica is free.
@@ -561,7 +562,7 @@ CHANGELOG.md          what changed in each version
 
 ## 📜 Changelog
 
-Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.21.0**.
+Every release is described in [CHANGELOG.md](CHANGELOG.md). The latest is **0.22.0**.
 
 ## 🤝 Contributing
 

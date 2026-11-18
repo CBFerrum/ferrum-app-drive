@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.22.0
+
+Needs the same platform as 0.21.0. Package `drive` unchanged.
+
+- **Save As from the online editor.** The editor's Save As, Save a copy and Export as write a new file beside the one
+  open, in the same folder, for whoever may add files there (WOPI `PutRelativeFile`). A name the editor suggests is
+  numbered when taken; a name it fixes is refused when taken unless it asks to overwrite, which adds a version to that
+  file. The copy is charged to the folder's space or team folder like any upload, and the editor gets a token for the
+  new file alone. `CheckFileInfo` offers Save As only to people with Edit on the folder, and a session opened to look
+  makes no file. Tested against a stand-in editor server, not a real one.
+- **Two people in one presentation.** The suite shows two people sharing the online editor's lock on a `.pptx`, each
+  save a version in its saver's name, and a browser editor kept out meanwhile.
+
+No database change, no interface change.
+
 ## 0.21.0
 
 Needs the same platform as 0.20.1. Package `drive` 0.3.2.

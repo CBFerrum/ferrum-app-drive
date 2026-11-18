@@ -31,7 +31,8 @@ impl Site for DriveSite {
     fn max_body_for(&self, method: &str, path: &str) -> usize {
         let p: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
         match (method, p.as_slice()) {
-            ("POST", ["upload"] | ["files", _, "versions"] | ["wopi", "files", _, "contents"]) => max_file_bytes(),
+            // A save (`/contents`) and a Save As (`PUT_RELATIVE` on the file itself) carry the file.
+            ("POST", ["upload"] | ["files", _, "versions"] | ["wopi", "files", _, "contents"] | ["wopi", "files", _]) => max_file_bytes(),
             _ => self.max_body(),
         }
     }
@@ -591,7 +592,7 @@ mod tests {
             (32 << 20, 200 << 20, 1 << 20, 1 << 30, 32 << 20)
         );
         let file = max_file_bytes();
-        for (method, path) in [("POST", "upload"), ("POST", "/files/abc/versions"), ("POST", "wopi/files/abc/contents")] {
+        for (method, path) in [("POST", "upload"), ("POST", "/files/abc/versions"), ("POST", "wopi/files/abc/contents"), ("POST", "wopi/files/abc")] {
             assert_eq!(DriveSite.max_body_for(method, path), file, "{method} {path}");
         }
         for (method, path) in [("POST", "list_folder"), ("GET", "wopi/files/abc/contents"), ("POST", "files/abc"), ("POST", "upload/x")] {
