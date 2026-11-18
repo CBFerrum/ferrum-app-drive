@@ -6,7 +6,7 @@
 use crate::{acl, ops, tree};
 use async_trait::async_trait;
 use ferrum_domain::util::{elevated, id, s};
-use ferrum_kernel::{Doc, DocHook, Error, HookCtx, Result};
+use ferrum_kernel::{Ctx, Doc, DocHook, Error, HookCtx, Result};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -88,8 +88,23 @@ impl DocHook for SpaceHook {
         Err(Error::Forbidden("Drive spaces are kept with their files; deactivate the person instead".into()))
     }
 
+    /// Runs a Drive operation. The gate runs one for a person (another app's call, a configured action's effect) as the
+    /// system acting for them, which Drive's sharing would take for an administrator (`acl::is_admin`): such a call runs
+    /// with the person's own rights instead, on their own space, so it reaches exactly what they could themselves.
+    /// The system with no person behind it keeps its reach.
     async fn action(&self, hc: &mut HookCtx<'_>, name: &str, doc: &Doc, params: &Value) -> Result<Option<Value>> {
         let space = tree::space_from_doc(doc)?;
+        if hc.ctx.is_system && !hc.ctx.user.is_nil() {
+            let zone = hc.ctx.zone.as_deref().and_then(|z| z.name());
+            let own = hc.kernel.load_ctx_in(hc.ctx.tenant, hc.ctx.user, zone, hc.ctx.request_id.clone()).await?;
+            // As the call stood, as the platform's jobs and approvals keep it: a step-up not made is still not made, and
+            // the automations it sets going count on from its depth.
+            let own = Ctx { proof: hc.ctx.proof, depth: hc.ctx.depth, origin: hc.ctx.origin.clone(), ..own };
+            if space.owner.to_lowercase() != own.email.trim().to_lowercase() && !acl::is_admin(&own) {
+                return Err(Error::Forbidden("Drive's actions run on your own Drive space".into()));
+            }
+            return ops::run(hc.kernel, &own, hc.tx, &space, name, params).await.map(Some);
+        }
         ops::run(hc.kernel, hc.ctx, hc.tx, &space, name, params).await.map(Some)
     }
 }

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20.1
+
+Needs the same platform as 0.20.0. Package `drive` 0.3.1, so that an app using Drive's actions can ask for this behaviour.
+
+- **A call made for a person keeps to their access.** Another app's call through the platform's gate, and a configured
+  action's effects, run Drive's actions as the system acting for a person, and Drive took that for an administrator:
+  such a call reached every file, whatever was shared. It now runs with that person's own rights, on their own space;
+  the system with nobody behind it (upkeep, someone leaving, public links) keeps its reach.
+
+No database or interface change.
+
 ## 0.20.0
 
 Needs Ferrum 0.4.0 (apps' upkeep runs one workspace at a time, on whichever replica is free).
