@@ -39,10 +39,13 @@ impl Site for DriveSite {
 
     async fn handle(&self, k: &Kernel, req: SiteRequest) -> Result<SiteResponse> {
         let path: Vec<&str> = req.path.split('/').filter(|p| !p.is_empty()).collect();
-        match &req.user {
-            None if path.first() == Some(&"wopi") => crate::office::wopi(k, &req, &path).await,
-            None => crate::sharing::public(k, &req, &path).await,
-            Some(ctx) => app(k, ctx, &req, &path).await,
+        // The public pages are the link's and the editor server's: a link's token and a WOPI access token are the right, so a signed-in
+        // customer (a site session) is served exactly as anyone, and neither page reads who is signed in. Every other route is a Drive user's.
+        match (&req.user, path.first().copied()) {
+            (_, Some("wopi")) => crate::office::wopi(k, &req, &path).await,
+            (_, Some("links")) => crate::sharing::public(k, &req, &path).await,
+            (Some(ctx), _) => app(k, ctx, &req, &path).await,
+            (None, _) => crate::sharing::public(k, &req, &path).await,
         }
     }
 }

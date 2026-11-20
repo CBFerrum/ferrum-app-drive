@@ -208,6 +208,8 @@ made a guest. `list_links` shows each link's `email`; `revoke_link` removes a gu
 
 ### Public — `/api/site/{tenant}/drive/…` (no sign-in)
 
+A link's token and the editor server's access token are the right: these routes answer someone signed in to a site (a customer's session) exactly as they answer anyone.
+
 | Method & path | Request → response |
 |---|---|
 | `GET /links/{token}` | query `folder?` (a folder inside a shared folder), `limit?` (≤ 200, 100), `offset?`; password-protected links need a grant (`X-Drive-Grant` header or `grant` query) → `{link: {access, expires_at, downloads_left, has_password, note}, item, folder?, breadcrumbs?, items?}` (names, sizes, types and dates only) |

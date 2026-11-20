@@ -1208,6 +1208,20 @@ async fn scenario() {
     let malformed = t.site(None, "GET", &tok("not-a-token"), &[], &[], vec![]).await.expect_err("malformed token");
     assert_eq!((refused.to_string(), code(&refused)), (unknown.to_string(), code(&unknown)));
     assert_eq!(malformed.to_string(), unknown.to_string());
+    // A signed-in customer (a site session, S4-P4) is served exactly as anyone: the link's token is the right, not the session. The
+    // page answers the same with and without one: the item, its preview, the refusal of a download a View link does not give, an unknown token.
+    let (_, customer) = t.person("customer@acme.test", &[]).await;
+    let seen = t.json(t.site(Some(&customer), "GET", &tok(&token), &[], &[], vec![]).await.expect("a signed-in customer opens the link"));
+    assert_eq!(seen, view, "the page answers the same with and without a session");
+    let seen_preview = t.site(Some(&customer), "GET", &format!("{}/content", tok(&token)), &[("inline", "1")], &[], vec![]).await.expect("preview");
+    assert_eq!((seen_preview.content_type.as_str(), seen_preview.body.len()), ("image/png", 1200));
+    let refused_signed =
+        t.site(Some(&customer), "GET", &format!("{}/content", tok(&token)), &[], &[], vec![]).await.expect_err("a View link does not download");
+    let unknown_signed = t.site(Some(&customer), "GET", &tok(&"A".repeat(43)), &[], &[], vec![]).await.expect_err("unknown token");
+    assert_eq!((refused_signed.to_string(), code(&refused_signed)), (refused.to_string(), code(&refused)));
+    assert_eq!((unknown_signed.to_string(), code(&unknown_signed)), (unknown.to_string(), code(&unknown)));
+    // The session is no right of its own: what is not a link's page is still a Drive user's alone, and a customer has no space.
+    assert!(t.site(Some(&customer), "GET", "/space", &[], &[], vec![]).await.is_err(), "a customer without Drive has no space");
     // A guest: someone outside the workspace gets a link for them alone, by mail. Sharing with them
     // again replaces it; they can only be Viewers.
     let shared = t.ok(&alice, "share", json!({"item": report_id, "email": "Pat@Partner.test", "permission": "View"})).await;
@@ -1480,6 +1494,9 @@ async fn scenario() {
     };
     let info = wopi(doc, "", "GET", token.clone(), vec![], vec![]).await;
     assert_eq!(info.status, 200);
+    let signed_info =
+        t.site(Some(&alice.ctx), "GET", &format!("/wopi/files/{doc}"), &[("access_token", token.as_str())], &[], vec![]).await.expect("wopi with a session");
+    assert_eq!(signed_info.body, info.body, "the editor server's call answers the same with a session: its token is the right");
     let info = t.json(info);
     assert_eq!((info["BaseFileName"].clone(), info["Size"].clone(), info["UserCanWrite"].clone()), (json!("plan.docx"), json!(16), json!(true)));
     assert_eq!(info["SupportsLocks"], json!(true));
