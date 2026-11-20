@@ -272,6 +272,14 @@
       permission: read
       params:
         - {name: name, label: Name, required: true}
+        - name: members
+          label: Members
+          type: list
+          max_items: 500
+          description: "Who is in the team folder from the start; each is told. More can be added with Add Team Member"
+          fields:
+            - {name: member, label: Member, type: data, required: true, description: "An active member's email"}
+            - {name: role, label: Role, type: select, options: [Viewer, Commenter, Editor, Manager], description: "Viewer by default"}
         - {name: quota_mb, label: Quota (MB), type: int, description: "0 = unlimited; the workspace's default when empty"}
         - {name: colour, label: Colour}
       contract:

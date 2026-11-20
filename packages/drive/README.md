@@ -113,7 +113,7 @@ modified_by, created_at, colour, locked_by, locked_at, trashed, trashed_at, perm
 | `delete_template` | `template` → `{deleted}` (Drive administrators; Drive's own stay) |
 | `append_to_document` | `file`, `markdown` → `{file, name, appended, change}` (Edit): added at the end of a live document as a change everyone with it open sees at once; its next version includes it |
 | `create_folder` | `name`, `parent?`, `colour?`, `on_conflict?` keep_both/fail → Item (Edit) |
-| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators). Another app or an agent going through the platform's gate cannot pass `members` yet (the gate has no list parameter): it adds them with `add_team_member` |
+| `create_team_folder` | `name` (unique among team folders), `members?: [{member, role}]`, `quota_mb?`, `colour?` → `{folder, members}` (Drive administrators). `members` is a declared list of rows (`member`, `role`, at most 500): the gate, MCP and the API show and check it, and a row key it does not declare, a role outside the four or a row without its member is refused with nothing made |
 | `add_team_member` / `remove_team_member` | `folder`, `member`, `role?` → `{folder, members}` (Manage on the team folder) |
 | `set_team_quota` | `folder`, `quota_mb` → `{folder, quota_mb}` (Drive administrators) |
 | `rename` | `item`, `name` → Item (Edit; team folders Manage); a taken name is **409** |
