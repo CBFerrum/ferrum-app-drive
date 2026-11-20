@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.25.0
+
+Needs the same platform as 0.24.0. Package `drive` 0.3.5 (one declared parameter).
+
+- **A team folder's members go through the gate.** `create_team_folder` declares `members` as a list of rows (`member`,
+  `role`, at most 500), so another app, an agent over MCP or the API can start a team folder with its people instead of
+  adding them one at a time. A row key it does not declare, a role outside Viewer, Commenter, Editor and Manager and a
+  row without its member are refused before anything is made.
+- **A signed-in customer opens a share link like anyone.** A person signed in to a site (a customer's session) was
+  turned away from a public link and from the editor server's calls; the link's token is the right, so both now answer
+  the same with and without a session. Everything else on the page's routes is still a Drive user's alone.
+
+No database change, no interface change.
+
 ## 0.24.0
 
 Needs the same platform as 0.23.0. Package `drive` 0.3.4 (two new actions).

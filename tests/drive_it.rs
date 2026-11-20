@@ -826,6 +826,27 @@ async fn scenario() {
     assert_eq!(code(&t.no(&erin, "create_team_folder", json!({"name": "engineering"})).await), "conflict");
     let e = t.no(&erin, "create_team_folder", json!({"name": "Ops", "members": [{"member": "ghost@acme.test"}]})).await;
     assert_eq!(code(&e), "validation_failed");
+    // `members` is a declared list of rows (the gate, MCP and the API document it and refuse what it does not declare): a row key it
+    // does not declare, a role outside its options, a row without its member and more than 500 rows never reach the handler, and
+    // nothing is made.
+    let declared = space_actions().into_iter().find(|(a, _)| a == "create_team_folder").expect("declared").1;
+    assert!(declared.contains(&"members".to_string()), "create_team_folder declares members");
+    let too_many: Vec<Value> = (0..501).map(|i| json!({"member": format!("m{i}@acme.test")})).collect();
+    for (bad, why) in [
+        (json!([{"member": "bob@acme.test", "note": "hello"}]), "a row key it does not declare"),
+        (json!([{"member": "bob@acme.test", "role": "Boss"}]), "a role outside the options"),
+        (json!([{"role": "Viewer"}]), "a row without its member"),
+        (json!("bob@acme.test"), "a text where a list is"),
+        (json!(too_many), "more than 500 rows"),
+    ] {
+        let e = t.no(&erin, "create_team_folder", json!({"name": "Declared", "members": bad})).await;
+        assert_eq!(code(&e), "validation_failed", "{why}: {e:?}");
+    }
+    assert_eq!(
+        t.scalar("select count(*) from e_drive_folder where tenant_id = $1 and name = 'Declared' and $2::uuid is null", None).await,
+        0,
+        "a refused list makes nothing"
+    );
     let spec = t.upload(&bob, eng, "spec.txt", &vec![b's'; 400_000]).await;
     assert_eq!(spec["owner"], Value::Null);
     assert_eq!(spec["team"], json!(eng));
@@ -1187,6 +1208,20 @@ async fn scenario() {
     let malformed = t.site(None, "GET", &tok("not-a-token"), &[], &[], vec![]).await.expect_err("malformed token");
     assert_eq!((refused.to_string(), code(&refused)), (unknown.to_string(), code(&unknown)));
     assert_eq!(malformed.to_string(), unknown.to_string());
+    // A signed-in customer (a site session, S4-P4) is served exactly as anyone: the link's token is the right, not the session. The
+    // page answers the same with and without one: the item, its preview, the refusal of a download a View link does not give, an unknown token.
+    let (_, customer) = t.person("customer@acme.test", &[]).await;
+    let seen = t.json(t.site(Some(&customer), "GET", &tok(&token), &[], &[], vec![]).await.expect("a signed-in customer opens the link"));
+    assert_eq!(seen, view, "the page answers the same with and without a session");
+    let seen_preview = t.site(Some(&customer), "GET", &format!("{}/content", tok(&token)), &[("inline", "1")], &[], vec![]).await.expect("preview");
+    assert_eq!((seen_preview.content_type.as_str(), seen_preview.body.len()), ("image/png", 1200));
+    let refused_signed =
+        t.site(Some(&customer), "GET", &format!("{}/content", tok(&token)), &[], &[], vec![]).await.expect_err("a View link does not download");
+    let unknown_signed = t.site(Some(&customer), "GET", &tok(&"A".repeat(43)), &[], &[], vec![]).await.expect_err("unknown token");
+    assert_eq!((refused_signed.to_string(), code(&refused_signed)), (refused.to_string(), code(&refused)));
+    assert_eq!((unknown_signed.to_string(), code(&unknown_signed)), (unknown.to_string(), code(&unknown)));
+    // The session is no right of its own: what is not a link's page is still a Drive user's alone, and a customer has no space.
+    assert!(t.site(Some(&customer), "GET", "/space", &[], &[], vec![]).await.is_err(), "a customer without Drive has no space");
     // A guest: someone outside the workspace gets a link for them alone, by mail. Sharing with them
     // again replaces it; they can only be Viewers.
     let shared = t.ok(&alice, "share", json!({"item": report_id, "email": "Pat@Partner.test", "permission": "View"})).await;
@@ -1459,6 +1494,9 @@ async fn scenario() {
     };
     let info = wopi(doc, "", "GET", token.clone(), vec![], vec![]).await;
     assert_eq!(info.status, 200);
+    let signed_info =
+        t.site(Some(&alice.ctx), "GET", &format!("/wopi/files/{doc}"), &[("access_token", token.as_str())], &[], vec![]).await.expect("wopi with a session");
+    assert_eq!(signed_info.body, info.body, "the editor server's call answers the same with a session: its token is the right");
     let info = t.json(info);
     assert_eq!((info["BaseFileName"].clone(), info["Size"].clone(), info["UserCanWrite"].clone()), (json!("plan.docx"), json!(16), json!(true)));
     assert_eq!(info["SupportsLocks"], json!(true));
